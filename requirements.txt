@@ -1,2 +1,3 @@
 pandas
-matplotlib[plotting]
+# matplotlib is only required if plotting (or at least that's my intention)
+matplotlib
