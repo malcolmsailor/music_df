@@ -3,9 +3,7 @@ import pandas as pd
 
 from music_df import sort_df, salami_slice, read_krn
 
-from tests.helpers_for_tests import (
-    get_input_kern_paths,
-)
+from tests.helpers_for_tests import get_input_kern_paths
 
 
 def _join_consecutive_notes(df: pd.DataFrame):
