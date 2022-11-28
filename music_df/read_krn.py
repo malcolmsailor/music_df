@@ -31,7 +31,7 @@ def read_krn(
         df = df[(df.type != "note") | (df.release > df.onset)].reset_index(
             drop=True
         )
-    # Kern files often contain a final barline, which we don't need
+    # Kern files often contain a final barline, which we don't generally need
     if no_final_barline and df.iloc[-1]["type"] == "bar":
         df = df.iloc[:-1]
     # On the other hand, we *do* want an initial barline (helps us calculate
@@ -43,7 +43,6 @@ def read_krn(
         df[df.type == "note"].iloc[-1]["release"]
     ]
     df.loc[df.type == "bar", "release"] = bar_releases
-    # TODO should we sort here?
     if sort:
         sort_df(df, inplace=True)
     return df
