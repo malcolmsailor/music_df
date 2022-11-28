@@ -120,6 +120,8 @@ def plot_piano_roll(
     title=None,
     legend: Optional[Dict[str, Any]] = None,
 ):
+    if "type" in df.columns and (df.type != "note").any():
+        raise ValueError("df should only have 'note' events")
     if labels is not None:
         labels = [str(label) for label in labels]
     begin = df.onset.min()
@@ -139,8 +141,7 @@ def plot_piano_roll(
     if not show_axes:
         plt.axis("off")
     add_piano_roll_background(ax)
-    for row_i, note in df.iterrows():
-        i = row_i - df.index[0]
+    for i, (row_i, note) in enumerate(df.iterrows()):
         add_note(
             ax,
             note,

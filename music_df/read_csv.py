@@ -14,4 +14,6 @@ def read_csv(path: str, onset_type=float, release_type=float) -> pd.DataFrame:
     df.loc[df.type == "time_signature", "other"] = df.loc[
         df.type == "time_signature", "other"
     ].map(ast.literal_eval)
+    if "color" in df.columns:
+        df.loc[df.color.isna(), "color"] = ""
     return df
