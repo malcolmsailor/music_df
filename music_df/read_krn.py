@@ -1,6 +1,6 @@
+import io
 import os
 import subprocess
-import io
 import tempfile
 
 import pandas as pd
@@ -22,15 +22,14 @@ def read_krn(
     ensure_initial_barline: bool = True,
     sort: bool = False,
 ) -> pd.DataFrame:
+    assert TOTABLE is not None, "TOTABLE environment variable undefined"
     result = subprocess.run(
         [TOTABLE, krn_path], check=True, capture_output=True
     ).stdout.decode()
     df = pd.read_csv(io.StringIO(result), sep="\t")
     df.attrs["score_name"] = krn_path
     if remove_graces:
-        df = df[(df.type != "note") | (df.release > df.onset)].reset_index(
-            drop=True
-        )
+        df = df[(df.type != "note") | (df.release > df.onset)].reset_index(drop=True)
     # Kern files often contain a final barline, which we don't generally need
     if no_final_barline and df.iloc[-1]["type"] == "bar":
         df = df.iloc[:-1]

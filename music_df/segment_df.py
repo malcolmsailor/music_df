@@ -1,20 +1,20 @@
-from types import MappingProxyType
 import typing as t
+from types import MappingProxyType
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from music_df.utils.search import get_item_leq
 
-DF_TYPE_SORT_ORDER = MappingProxyType(
-    {"bar": 0, "time_signature": 1, "note": 2}
-)
+DF_TYPE_SORT_ORDER = MappingProxyType({"bar": 0, "time_signature": 1, "note": 2})
 
 
 def get_eligible_onsets(
     df: pd.DataFrame,
     keep_onsets_together: bool = True,
     notes_only: bool = False,
-) -> t.Union[pd.Index, np.array]:
+) -> npt.NDArray[np.int_]:
     """
     This function should perhaps be renamed "get indices to eligible onsets".
     >>> df = pd.DataFrame({
@@ -41,16 +41,16 @@ def get_eligible_onsets(
     >>> get_eligible_onsets(df, notes_only=True)
     array([1, 3, 6, 7, 8])
     >>> get_eligible_onsets(df, keep_onsets_together=False)
-    RangeIndex(start=0, stop=11, step=1)
+    array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10])
     >>> get_eligible_onsets(df, keep_onsets_together=False, notes_only=True)
-    Int64Index([1, 2, 3, 4, 6, 7, 8, 9], dtype='int64')
+    array([1, 2, 3, 4, 6, 7, 8, 9])
     """
     if notes_only and "type" in df.columns:
         df = df[df.type == "note"]
     if not keep_onsets_together:
-        return df.index
+        return df.index.to_numpy()
     onset_indices = np.unique(df.onset, return_index=True)[1]
-    return df.index[onset_indices].values
+    return df.index[onset_indices].to_numpy()
 
 
 def get_eligible_releases(
@@ -113,13 +113,17 @@ def get_eligible_releases(
         by="release", inplace=False, ignore_index=False, kind="mergesort"
     )
     release_indices = (len(df2) - 1) - np.unique(
-        np.flip(df2.release.values), return_index=True
+        np.flip(df2.release.to_numpy()), return_index=True
     )[1]
     out = df2.iloc[release_indices]["release"]
     return out
 
 
-def get_df_segment_indices(eligible_onsets, eligible_releases, target_len):
+def get_df_segment_indices(
+    eligible_onsets: t.Union[t.Sequence[int], npt.NDArray[np.int_]],
+    eligible_releases: t.Union[t.Sequence[int], npt.NDArray[np.int_]],
+    target_len: int,
+):
     """
     # >>> eligible_onsets = list(range(32))
     # >>> eligible_releases = list(range(32))
@@ -167,9 +171,7 @@ def get_df_segment_indices(eligible_onsets, eligible_releases, target_len):
             start_i = eligible_onsets[0]
         else:
             try:
-                start_i = get_item_leq(
-                    eligible_onsets, end_i + 1, min_val=start_i + 1
-                )
+                start_i = get_item_leq(eligible_onsets, end_i + 1, min_val=start_i + 1)
             except ValueError:  # pylint: disable=try-except-raise
                 # We should never get here, I think this is a bug if we do
                 raise
@@ -185,9 +187,9 @@ def get_df_segment_indices(eligible_onsets, eligible_releases, target_len):
         yield start_i, end_i + 1
 
 
-def segment_df(df, target_len):
+def segment_df(df: pd.DataFrame, target_len):
     eligible_onsets = get_eligible_onsets(df)
-    eligible_releases = get_eligible_releases(df).index
+    eligible_releases = get_eligible_releases(df).index.to_numpy()
     for start_i, end_i in get_df_segment_indices(
         eligible_onsets, eligible_releases, target_len
     ):

@@ -1,12 +1,13 @@
 import sys
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
-from typing import Dict, Iterable, Optional, Any, List, Union
-import matplotlib
+import matplotlib.axes
+import matplotlib.cm
+import matplotlib.figure
+import matplotlib.lines
+import matplotlib.patches
 import matplotlib.pyplot as plt
-
 import pandas as pd
-
-# from chord_tones_data.constants import END_TOKEN, PAD_TOKEN, START_TOKEN
 
 
 def add_line_breaks(text, line_width):
@@ -60,7 +61,7 @@ def add_piano_roll_background(
                 [end, pitch],
                 [end, pitch + 1],
                 [begin, pitch + 1],
-            ],
+            ],  # type:ignore
             color=color,
             zorder=z["rect"],
         )
@@ -77,7 +78,12 @@ def add_piano_roll_background(
 
 
 def add_note(
-    ax, note: pd.Series, color="blue", label=None, label_color=None, number=None
+    ax,
+    note: pd.Series,
+    color: Optional[str] = "blue",
+    label=None,
+    label_color=None,
+    number=None,
 ):
     pitch = note.pitch
     begin = note.onset
@@ -89,7 +95,7 @@ def add_note(
             [end, pitch],
             [end, pitch + 1],
             [begin, pitch + 1],
-        ],
+        ],  # type:ignore
         color=color,
         zorder=z,
     )
@@ -108,9 +114,9 @@ def add_note(
 
 def plot_piano_roll(
     df: pd.DataFrame,
-    colors: Optional[Iterable[str]] = None,
-    labels: Optional[Iterable[Any]] = None,
-    label_colors: Optional[Iterable[str]] = None,
+    colors: Optional[Sequence[str]] = None,
+    labels: Optional[Sequence[Any]] = None,
+    label_colors: Optional[Sequence[str]] = None,
     number_notes: bool = False,
     ax=None,
     subplots_args=None,
@@ -129,9 +135,7 @@ def plot_piano_roll(
     low = df.pitch.min()
     hi = df.pitch.max() + 1
     if ax is None:
-        fig, ax = plt.subplots(
-            **({} if subplots_args is None else subplots_args)
-        )
+        fig, ax = plt.subplots(**({} if subplots_args is None else subplots_args))
     ax.set_ylim(float(low), float(hi))
     ax.set_xlim(float(begin), float(end))
     ax.set_ylabel("Midi pitch")
@@ -174,7 +178,9 @@ def plot_piano_roll(
         plt.show()
 
 
-def get_colormapping(feature, left_offset=0, right_offset=1):
+def get_colormapping(
+    feature, left_offset=0, right_offset=1
+) -> Dict[Any, matplotlib.colors.Colormap]:
     unique = pd.Series(feature).unique()
     unique.sort()
     viridis = matplotlib.cm.get_cmap("viridis")
@@ -185,9 +191,7 @@ def get_colormapping(feature, left_offset=0, right_offset=1):
     for i, item in enumerate(unique):
         scale = 1 - left_offset - (1 - right_offset)
         assert scale > 0
-        out[item] = viridis(
-            (i / (max(1, len(unique) - 1))) * scale + left_offset
-        )
+        out[item] = viridis((i / (max(1, len(unique) - 1))) * scale + left_offset)
     return out
 
 
@@ -209,9 +213,7 @@ def plot_piano_roll_and_feature(
         colormapping = get_colormapping(feature)
     colors = [colormapping[item] for item in feature]
     if transparencies is not None:
-        colors = [
-            color[:3] + (t,) for (color, t) in zip(colors, transparencies)
-        ]
+        colors = [color[:3] + (t,) for (color, t) in zip(colors, transparencies)]
     plot_piano_roll(
         df,
         colors,
@@ -234,7 +236,7 @@ def apply_text_annotations(
     red_text_flag: bool = False,
 ):
     bb = ax.get_window_extent()
-    bb_coords = fig.transFigure.inverted().transform(bb)
+    bb_coords = fig.transFigure.inverted().transform(bb)  # type:ignore
     plt.figtext(
         x=bb_coords[0, 0],
         y=0.01,
@@ -244,7 +246,7 @@ def apply_text_annotations(
 
 
 def plot_feature_and_accuracy(
-    events: List[str],
+    events: pd.DataFrame,
     target_feature: List[Any],
     pred_feature: List[Any],
     featuremapping=None,
@@ -254,8 +256,8 @@ def plot_feature_and_accuracy(
     title=None,
     number_notes: bool = False,
     transpose: Optional[int] = None,
-    ax=None,
-    fig=None,
+    ax: Optional[plt.Axes] = None,
+    fig: Optional[matplotlib.figure.Figure] = None,
     mpl_text=True,
     pred_start_token: Optional[Any] = None,
     start_token="<START>",
@@ -297,9 +299,7 @@ def plot_feature_and_accuracy(
         pred_feature = pred_feature[1:]
     if target_feature[-1] == end_token:
         if pred_feature[-1] == end_token:
-            text_annotations.append(
-                f"{green}Prediction ends with end symbol{reset}"
-            )
+            text_annotations.append(f"{green}Prediction ends with end symbol{reset}")
         else:
             text_annotations.append(
                 f"{red}Prediction doesn't end with end symbol{reset}"
@@ -326,19 +326,18 @@ def plot_feature_and_accuracy(
     if label_notes:
         labels = pred_feature.copy()
         labels.extend(
-            [
-                "None"
-                for _ in range(max(0, len(target_feature) - len(pred_feature)))
-            ]
+            ["None" for _ in range(max(0, len(target_feature) - len(pred_feature)))]
         )
         labels = labels[: len(df)]
         label_colors = ["black" if b else "red" for (b, _) in correct]
+        if labels[0] == "start":
+            labels = labels[1:]
+            label_colors = label_colors[1:]
+            colors = labels[1:]
     else:
         labels = None
-    if labels[0] == "start":
-        labels = labels[1:]
-        label_colors = label_colors[1:]
-        colors = labels[1:]
+        label_colors = None
+
     plot_piano_roll(
         df,
         colors,
@@ -349,6 +348,7 @@ def plot_feature_and_accuracy(
         ax=ax,
     )
     if mpl_text:
+        assert fig is not None and ax is not None
         apply_text_annotations(text_annotations, fig, ax)
     else:
         for t in text_annotations:
@@ -368,8 +368,8 @@ def plot_feature_and_accuracy_token_class(
     title=None,
     number_notes: bool = False,
     transpose: Optional[int] = None,
-    ax=None,
-    fig=None,
+    ax: Optional[plt.Axes] = None,
+    fig: Optional[matplotlib.figure.Figure] = None,
     mpl_text=True,
     pad_token: str = "<PAD>",
     start_token: str = "<START>",
@@ -408,9 +408,7 @@ def plot_feature_and_accuracy_token_class(
         pred_feature = pred_feature[1:]
     if target_feature[-1] == end_token:
         if pred_feature[-1] == end_token:
-            text_annotations.append(
-                f"{green}Prediction ends with end symbol{reset}"
-            )
+            text_annotations.append(f"{green}Prediction ends with end symbol{reset}")
         else:
             text_annotations.append(
                 f"{red}Prediction doesn't end with end symbol{reset}"
@@ -418,11 +416,13 @@ def plot_feature_and_accuracy_token_class(
             red_text_flag = True
     if featuremapping is not None:
         pred_feature = [featuremapping[f] for f in pred_feature]
+
     target_nonpad = []
     pred_nonpad = []
     pred_pad = []
     target_pad_count = 0
     pred_pad_count = 0
+
     for token1, token2 in zip(target_feature, pred_feature):
         if token1 == pad_token:
             target_pad_count += 1
@@ -448,12 +448,14 @@ def plot_feature_and_accuracy_token_class(
     if label_notes:
         labels = pred_nonpad.copy()
         label_colors = ["black" if b else "red" for (b, _) in correct]
+        if labels[0] == "start":
+            labels = labels[1:]
+            label_colors = label_colors[1:]
+            colors = labels[1:]
     else:
         labels = None
-    if labels[0] == "start":
-        labels = labels[1:]
-        label_colors = label_colors[1:]
-        colors = labels[1:]
+        label_colors = None
+
     plot_piano_roll(
         df,
         colors,
@@ -464,6 +466,7 @@ def plot_feature_and_accuracy_token_class(
         ax=ax,
     )
     if mpl_text:
+        assert fig is not None and ax is not None
         apply_text_annotations(text_annotations, fig, ax, red_text_flag)
     else:
         for t in text_annotations:
