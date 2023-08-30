@@ -1,4 +1,5 @@
 pandas
+mido
 # matplotlib is only required if plotting (or at least that's my intention)
 matplotlib
 -e /Users/malcolm/google_drive/python/malmus/metricker/
