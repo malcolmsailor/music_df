@@ -43,7 +43,7 @@ def read_midi(
     max_denominator: int = 8192,
     overlapping_notes: str = "end_all",
     pb_tup_dict: Optional[dict] = None,
-    display_name: str | None = None,
+    display_name: Optional[str] = None,
     # pitch_sort_asc: Optional[bool] = False,
     # track_sort_asc: Optional[bool] = False,
     # channel_sort_asc: Optional[bool] = None,
