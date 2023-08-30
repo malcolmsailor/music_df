@@ -1,15 +1,16 @@
-from .sort_df import sort_df
+from .quantize_df import quantize_df
 from .read_csv import read_csv
 from .read_krn import read_krn, read_krn_via_xml
 from .salami_slice import salami_slice
-from .quantize_df import quantize_df
-from .transpose import chromatic_transpose
 from .segment_df import (
-    segment_df,
+    get_df_segment_indices,
     get_eligible_onsets,
     get_eligible_releases,
-    get_df_segment_indices,
+    segment_df,
 )
+from .sort_df import sort_df
+from .split_df import split_musicdf
+from .transpose import chromatic_transpose
 
 # Don't want to import these at top-level because don't
 #   want matplotlib to be a non-optional dependency

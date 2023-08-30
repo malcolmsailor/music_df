@@ -3,8 +3,17 @@ from types import MappingProxyType
 import pandas as pd
 
 
-DF_TYPE_SORT_ORDER = MappingProxyType(
-    {"bar": 0, "time_signature": 1, "note": 2}
+class SortOrderMapping(dict):
+    def __init__(self, *args, missing_value, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._missing_value = missing_value
+
+    def __missing__(self, key):
+        return self._missing_value
+
+
+DF_TYPE_SORT_ORDER = SortOrderMapping(
+    {"bar": 0, "time_signature": 2, "note": 3}, missing_value=1
 )
 
 
@@ -16,6 +25,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
             inplace=False,
             ignore_index=True,
             key=lambda x: 0 if x is None else x,
+            kind="mergesort",  # default sort is not stable
         )
     else:
         df.sort_values(
@@ -24,6 +34,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
             inplace=True,
             ignore_index=True,
             key=lambda x: 0 if x is None else x,
+            kind="mergesort",  # default sort is not stable
         )
     df.sort_values(
         by="pitch",
@@ -34,6 +45,16 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
         kind="mergesort",  # default sort is not stable
     )
     if "type" in df.columns:
+        # We first sort by type so that result of sort will always be the same (i.e.,
+        #   the "all other" rows below will be sorted)
+        df.sort_values(
+            by="type", axis=0, inplace=True, ignore_index=True, kind="mergesort"
+        )
+        # Then we sort by type again to make sure we have rows in the following order:
+        #   bar
+        #   all other
+        #   time signature
+        #   note
         df.sort_values(
             by="type",
             axis=0,

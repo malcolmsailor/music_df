@@ -25,9 +25,7 @@ def get_idx_to_item_leq(sorted_array, val, return_first_if_larger=False):
     if val < sorted_array[0]:
         if return_first_if_larger:
             return 0
-        raise ValueError(
-            f"{val} < first item of `sorted_array` {sorted_array[0]}"
-        )
+        raise ValueError(f"{val} < first item of `sorted_array` {sorted_array[0]}")
     return np.searchsorted(sorted_array, val, "right") - 1
 
 
@@ -46,9 +44,7 @@ def get_idx_to_item_geq(sorted_array, val):
     ValueError: 7 > last item of `sorted_array` 6
     """
     if val > sorted_array[-1]:
-        raise ValueError(
-            f"{val} > last item of `sorted_array` {sorted_array[-1]}"
-        )
+        raise ValueError(f"{val} > last item of `sorted_array` {sorted_array[-1]}")
     return np.searchsorted(sorted_array, val, "left")
 
 
@@ -58,9 +54,7 @@ def _get_item_leq_sub(sorted_array, val, min_val):
         val = max(min_val, val)
     if val < sorted_array[0]:
         # TODO handle min case
-        raise ValueError(
-            f"{val} < first item of `sorted_array` {sorted_array[0]}"
-        )
+        raise ValueError(f"{val} < first item of `sorted_array` {sorted_array[0]}")
     if min_val is not None and min_val > sorted_array[-1]:
         raise ValueError(
             f"min_val={min_val} is greater than last item of "
@@ -120,9 +114,7 @@ def get_index_to_item_leq(sorted_series, val, min_val=None):
     Traceback (most recent call last):
     ValueError: min_val=8 is greater than last item of `sorted_array` 6
     """
-    return sorted_series.index[
-        _get_item_leq_sub(sorted_series.values, val, min_val)
-    ]
+    return sorted_series.index[_get_item_leq_sub(sorted_series.values, val, min_val)]
 
 
 def _get_item_geq_sub(sorted_array, val, max_val):
@@ -130,13 +122,10 @@ def _get_item_geq_sub(sorted_array, val, max_val):
     if max_val is not None:
         val = min(max_val, val)
     if val > sorted_array[-1]:
-        raise ValueError(
-            f"{val} > last item of `sorted_array` {sorted_array[-1]}"
-        )
+        raise ValueError(f"{val} > last item of `sorted_array` {sorted_array[-1]}")
     if max_val is not None and max_val < sorted_array[0]:
         raise ValueError(
-            f"max_val={max_val} < first item of "
-            f"`sorted_array` {sorted_array[0]}"
+            f"max_val={max_val} < first item of " f"`sorted_array` {sorted_array[0]}"
         )
     idx = get_idx_to_item_geq(sorted_array, val)
     if max_val is None or sorted_array[idx] <= max_val:
@@ -192,6 +181,4 @@ def get_index_to_item_geq(sorted_series, val, max_val=None):
     Traceback (most recent call last):
     ValueError: max_val=0 < first item of `sorted_array` 1
     """
-    return sorted_series.index[
-        _get_item_geq_sub(sorted_series.values, val, max_val)
-    ]
+    return sorted_series.index[_get_item_geq_sub(sorted_series.values, val, max_val)]
