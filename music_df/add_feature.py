@@ -20,6 +20,10 @@ def _time_sig_dur(time_sig: dict[str, int]):
     return time_sig["numerator"] * 4 / time_sig["denominator"]
 
 
+def _time_sig_dur_from_row(row):
+    return row.ts_numerator * 4 / row.ts_denominator
+
+
 def _time_signature_reduce(
     numerator, denominator, max_ts_denominator: int = 6, max_notes_per_bar: int = 2
 ):
@@ -122,8 +126,8 @@ def make_time_signatures_explicit(
         _to_dict_if_necessary(d)["denominator"] for _, d in time_sigs.other.items()
     ]
 
-    music_df["ts_numerator"] = music_df.ts_numerator.fillna(method="ffill")
-    music_df["ts_denominator"] = music_df.ts_denominator.fillna(method="ffill")
+    music_df["ts_numerator"] = music_df.ts_numerator.ffill()
+    music_df["ts_denominator"] = music_df.ts_denominator.ffill()
 
     music_df["ts_numerator"] = music_df.ts_numerator.fillna(
         value=default_time_signature["numerator"]
@@ -143,9 +147,74 @@ def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.Dat
         tempo2bpm(_to_dict_if_necessary(d)["tempo"])
         for _, d in music_df[tempo_mask].other.items()
     ]
-    music_df["tempo"] = music_df.tempo.fillna(method="ffill")
+    music_df["tempo"] = music_df.tempo.ffill()
     music_df["tempo"] = music_df.tempo.fillna(value=default_tempo)
     return music_df
+
+
+def add_time_sig_dur(music_df: pd.DataFrame) -> pd.DataFrame:
+    music_df["time_sig_dur"] = float("nan")
+    music_df.loc[music_df.type == "time_signature", "time_sig_dur"] = music_df[
+        music_df.type == "time_signature"
+    ].apply(_time_sig_dur_from_row, axis=1)
+    music_df["time_sig_dur"] = music_df.time_sig_dur.ffill()
+    return music_df
+
+
+def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
+    bar_mask = music_df.type == "bar"
+    bars = music_df[bar_mask]
+    bar_durs = bars.iloc[1:].onset.reset_index(drop=True) - bars.iloc[
+        :-1
+    ].onset.reset_index(drop=True)
+    last_bar_dur = music_df.release.max() - bars.iloc[-1].onset
+    bar_durs = pd.concat([bar_durs, pd.Series([last_bar_dur])]).reset_index(drop=True)
+    music_df["bar_dur"] = float("nan")
+    music_df.loc[bar_mask, "bar_dur"] = bar_durs.to_numpy()
+    return music_df
+
+
+def split_long_bars(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Note: sorts result before returning it.
+    """
+    assert (
+        "ts_numerator" in music_df.columns and "ts_denominator" in music_df.columns
+    ), "call make_time_signatures_explicit(music_df) first"
+
+    orig_cols = music_df.columns
+
+    music_df = add_time_sig_dur(music_df)
+
+    music_df = add_bar_durs(music_df)
+
+    long_bars = music_df["bar_dur"] > music_df["time_sig_dur"]
+    if long_bars.any():
+        added_bars = []
+        for i, long_bar in music_df[long_bars].iterrows():
+            last_release = long_bar.release
+            remaining_dur = long_bar.bar_dur - long_bar.time_sig_dur
+            onset = long_bar.onset
+            prev_bar = long_bar
+
+            # We need to modify the release of the long measure in place
+            music_df.loc[i, "release"] = onset + long_bar.time_sig_dur  # type:ignore
+
+            new_bar = None
+            while remaining_dur > 0:
+                onset += long_bar.time_sig_dur
+                new_bar = long_bar.copy()
+                new_bar.onset = onset
+                added_bars.append(new_bar)
+                prev_bar.release = onset
+                prev_bar = new_bar
+                remaining_dur -= long_bar.time_sig_dur
+
+            assert new_bar is not None
+            new_bar.release = last_release
+        music_df = pd.concat([music_df, pd.DataFrame(added_bars)])
+        music_df = sort_df(music_df)
+    return music_df[orig_cols]
 
 
 def number_bars(music_df: pd.DataFrame, initial_bar_number: int = 1) -> pd.DataFrame:
@@ -170,7 +239,7 @@ def make_bar_explicit(
         raise ValueError("No bars found")
 
     music_df = number_bars(music_df, initial_bar_number)
-    music_df["bar_number"] = music_df["bar_number"].fillna(method="ffill")
+    music_df["bar_number"] = music_df["bar_number"].ffill()
     music_df["bar_number"] = music_df["bar_number"].fillna(value=default_bar_number)
     music_df["bar_number"] = music_df.bar_number.astype(int)
     return music_df
@@ -182,7 +251,7 @@ def get_bar_relative_onset(music_df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("No bars found")
     music_df["bar_onset"] = float("nan")
     music_df.loc[bar_mask, "bar_onset"] = music_df.onset[bar_mask]
-    music_df["bar_onset"] = music_df.bar_onset.fillna(method="ffill")
+    music_df["bar_onset"] = music_df.bar_onset.ffill()
 
     null_mask = music_df["bar_onset"].isnull()
 
@@ -222,6 +291,8 @@ def add_default_midi_instrument(
 def make_instruments_explicit(
     music_df: pd.DataFrame, default_instrument: int = 0
 ) -> pd.DataFrame:
+    if "track" not in music_df.columns:
+        return add_default_midi_instrument(music_df, default_instrument)
     program_change_mask = music_df.type == "program_change"
     music_df["midi_instrument"] = float("nan")
     music_df.loc[program_change_mask, "midi_instrument"] = [
@@ -232,7 +303,7 @@ def make_instruments_explicit(
     grouped_by_track = music_df.groupby("track")
     accumulator = []
     for track, group_df in grouped_by_track:
-        group_df["midi_instrument"] = group_df.midi_instrument.fillna(method="ffill")
+        group_df["midi_instrument"] = group_df.midi_instrument.ffill()
         accumulator.append(group_df)
 
     out_df = pd.concat(accumulator)

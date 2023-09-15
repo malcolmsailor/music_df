@@ -18,6 +18,10 @@ def split_musicdf(
     else:
         raise ValueError
 
+    if isinstance(grouping, str):
+        if grouping not in music_df.columns:
+            return {None: music_df}
+
     grouped = music_df.groupby(grouping)
 
     output = {key: df.copy() for key, df in grouped}
