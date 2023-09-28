@@ -163,11 +163,14 @@ def add_time_sig_dur(music_df: pd.DataFrame) -> pd.DataFrame:
 
 def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
     bar_mask = music_df.type == "bar"
+    if not bar_mask.any():
+        raise ValueError(f"Score must have at least one bar")
     bars = music_df[bar_mask]
     bar_durs = bars.iloc[1:].onset.reset_index(drop=True) - bars.iloc[
         :-1
     ].onset.reset_index(drop=True)
-    last_bar_dur = music_df.release.max() - bars.iloc[-1].onset
+    last_bar = bars.iloc[-1]
+    last_bar_dur = music_df.release.max() - last_bar.onset
     bar_durs = pd.concat([bar_durs, pd.Series([last_bar_dur])]).reset_index(drop=True)
     music_df["bar_dur"] = float("nan")
     music_df.loc[bar_mask, "bar_dur"] = bar_durs.to_numpy()

@@ -114,7 +114,7 @@ def add_note(
 
 def plot_piano_roll(
     df: pd.DataFrame,
-    colors: Optional[Sequence[str]] = None,
+    colors=None,
     labels: Optional[Sequence[Any]] = None,
     label_colors: Optional[Sequence[str]] = None,
     number_notes: bool = False,
@@ -186,7 +186,7 @@ def get_colormapping(
     viridis = matplotlib.cm.get_cmap("viridis")
     if unique.dtype == bool:
         out = {True: viridis(0.0), False: viridis(0.5)}
-        return out
+        return out  # type:ignore
     out = {}
     for i, item in enumerate(unique):
         scale = 1 - left_offset - (1 - right_offset)
@@ -198,7 +198,7 @@ def get_colormapping(
 def plot_piano_roll_and_feature(
     df: pd.DataFrame,
     feature: List[Any],
-    featuremapping=None,
+    featuremapping: None = None,
     label_notes=True,
     colormapping=None,
     ax=None,
@@ -213,7 +213,10 @@ def plot_piano_roll_and_feature(
         colormapping = get_colormapping(feature)
     colors = [colormapping[item] for item in feature]
     if transparencies is not None:
-        colors = [color[:3] + (t,) for (color, t) in zip(colors, transparencies)]
+        colors = [
+            color[:3] + (t,)  # type:ignore
+            for (color, t) in zip(colors, transparencies)
+        ]
     plot_piano_roll(
         df,
         colors,
