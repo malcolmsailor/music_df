@@ -36,6 +36,27 @@ def show_score_and_predictions(
         music_df["correct"].astype(str) + music_df[feature_name]
     )
 
+    # Whatever the most common value is, we don't color it when it is correct
+
+    # Get most common value of the music_df[feature_name] column:
+    most_common_value = music_df[feature_name].mode()[0]
+    music_df["color_mask"] = (
+        music_df["correct_by_feature"] != f"{True}{most_common_value}"
+    )
+
+    # Only label incorrect notes
+    music_df["label_mask"] = ~music_df["correct"]
+
+    music_df["label_color"] = music_df["correct"].map(
+        {True: "#000000", False: "#FF0000"}
+    )
+
     df_to_pdf(
-        music_df, pdf_path, color_col="correct_by_feature", dont_color_values={True}
+        music_df,
+        pdf_path,
+        label_col=f"pred_{feature_name}",
+        label_mask_col="label_mask",
+        label_color_col="label_color",
+        color_col="correct_by_feature",
+        color_mask_col="color_mask",
     )
