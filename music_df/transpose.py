@@ -1,5 +1,6 @@
 import functools
 from collections import defaultdict
+from math import isnan
 from typing import Iterable
 
 import pandas as pd
@@ -16,6 +17,8 @@ SPELLING_MEMO = defaultdict(dict)
 MIDI_NUM_MEMO = defaultdict(dict)
 
 ALPHABET = "fcgdaeb".upper()
+
+KEY_CACHE = {}
 
 
 def chromatic_transpose(
@@ -46,12 +49,19 @@ class SpellingAlongLineOfFifthsTransposer:
     'C#'
     >>> transposer("C", -9)
     'Bbb'
+
+    Nan values are returned unchanged (this is likely to occur when transposing an
+    entire column of a DataFrame, where e.g., a key signature does not have a pitch):
+    >>> transposer(float("nan"), -3)
+    nan
     """
 
     def __init__(self):
         self._memo = defaultdict(dict)
 
-    def __call__(self, spelling, interval):
+    def __call__(self, spelling: str | float, interval: int) -> str | float:
+        if not isinstance(spelling, str) and isnan(spelling):
+            return spelling
         if spelling in self._memo[interval]:
             return self._memo[interval][spelling]
         else:
@@ -82,12 +92,21 @@ class MidiNumAlongLineOfFifthsTransposer:
 
     >>> transposer(60, -6, pc=True)
     6
+
+    Nan values are returned unchanged (this is likely to occur when transposing an
+    entire column of a DataFrame, where e.g., a key signature does not have a pitch):
+    >>> transposer(float("nan"), -3)
+    nan
     """
 
     def __init__(self):
         self._memo = defaultdict(dict)
 
-    def __call__(self, midi_num: int, interval: int, pc: bool = False) -> int:
+    def __call__(
+        self, midi_num: int | float, interval: int, pc: bool = False
+    ) -> int | float:
+        if isnan(midi_num):
+            return midi_num
         if midi_num in self._memo[interval]:
             out = self._memo[interval][midi_num]
         else:
@@ -110,17 +129,17 @@ MIDI_NUM_TRANSPOSER = MidiNumAlongLineOfFifthsTransposer()
 
 def transpose_to_key(
     df: pd.DataFrame,
-    new_key: int,
+    new_key_sig: int,
     inplace: bool = True,
 ):
     """
-    Dataframe must have a "global_key" int attribute in df.attrs. The int
-    indicates the number of sharps/flats in the key signature.
+    Dataframe must have a "global_key_sig" int attribute in df.attrs.
+    This attribute indicates the number of sharps/flats in the key signature.
 
     >>> df = pd.DataFrame(
     ...     {"pitch": [60, 62, 64], "spelling": ["C", "D", "E"], "pc": [0, 2, 4]}
     ... )
-    >>> df.attrs["global_key"] = 0
+    >>> df.attrs["global_key_sig"] = 0
 
     In order for spelled columns and pc columns to be transposed correctly,
     they need to be included in sequences in df.attrs:
@@ -133,7 +152,7 @@ def transpose_to_key(
     0     62        D   2
     1     64        E   4
     2     66       F#   6
-    >>> new_df.attrs["global_key"]
+    >>> new_df.attrs["global_key_sig"]
     2
     >>> new_df.attrs["transposed_by_n_sharps"]
     2
@@ -143,15 +162,19 @@ def transpose_to_key(
     0     59       Cb  11
     1     61       Db   1
     2     63       Eb   3
-    >>> newer_df.attrs["global_key"]
+    >>> newer_df.attrs["global_key_sig"]
     -7
     >>> newer_df.attrs["transposed_by_n_sharps"]
     -7
     """
-    orig_key = df.attrs["global_key"]
+    orig_key = df.attrs["global_key_sig"]
     transposed_by = df.attrs.get("transposed_by_n_sharps", 0)
-    interval = new_key - orig_key
+    interval = new_key_sig - orig_key
     out_df = df if inplace else df.copy()
+
+    if not interval:
+        return out_df
+
     for column in df.attrs.get("pitch_columns", ("pitch",)):
         out_df[column] = df[column].apply(
             functools.partial(MIDI_NUM_TRANSPOSER, interval=interval)
@@ -164,7 +187,7 @@ def transpose_to_key(
         out_df[column] = df[column].apply(
             functools.partial(MIDI_NUM_TRANSPOSER, interval=interval, pc=True)
         )
-
-    out_df.attrs["global_key"] = new_key
+    out_df.attrs.pop("global_key", None)  # global_key will no longer be accurate
+    out_df.attrs["global_key_sig"] = new_key_sig
     out_df.attrs["transposed_by_n_sharps"] = transposed_by + interval
     return out_df
