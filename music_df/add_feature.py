@@ -191,8 +191,6 @@ def split_long_bars(music_df: pd.DataFrame) -> pd.DataFrame:
 
     music_df = add_bar_durs(music_df)
 
-    breakpoint()
-
     long_bars = music_df["bar_dur"] > music_df["time_sig_dur"]
     if long_bars.any():
         added_bars = []

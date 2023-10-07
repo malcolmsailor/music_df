@@ -13,7 +13,7 @@ class SortOrderMapping(dict):
 
 
 DF_TYPE_SORT_ORDER = SortOrderMapping(
-    {"bar": 0, "time_signature": 2, "note": 3}, missing_value=1
+    {"bar": 1, "time_signature": 0, "note": 3}, missing_value=2
 )
 
 
@@ -51,9 +51,9 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
             by="type", axis=0, inplace=True, ignore_index=True, kind="mergesort"
         )
         # Then we sort by type again to make sure we have rows in the following order:
+        #   time signature
         #   bar
         #   all other
-        #   time signature
         #   note
         df.sort_values(
             by="type",
