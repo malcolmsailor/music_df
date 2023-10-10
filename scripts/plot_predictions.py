@@ -3,6 +3,7 @@ import ast
 import logging
 import os
 import pdb
+import random
 import sys
 import traceback
 from dataclasses import dataclass
@@ -32,12 +33,14 @@ DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_prediction
 
 @dataclass
 class Config:
-    feature_name: str
+    feature_name: str = ""
     csv_prefix_to_strip: None | str = None
     csv_prefix_to_add: None | str = None
     make_piano_rolls: bool = True
     make_score_pdfs: bool = True
     output_folder: str = DEFAULT_OUTPUT
+    n_examples: int = 1
+    random_examples: bool = True
 
 
 def read_config(config_path):
@@ -83,18 +86,22 @@ def make_humdrum(df: pd.DataFrame):
     char_map_f = lambda x: CHAR_MAPPER.get(x, "")
 
 
-def main():
-    args = parse_args()
-    config = read_config(args.config_file)
-    if not config.make_score_pdfs or config.make_piano_rolls:
-        print("Nothing to do!")
-        sys.exit(1)
-
-    metadata_csv = pd.read_csv(args.metadata)
-    with open(args.predictions) as inf:
+def handle_predictions(
+    predictions_path,
+    metadata_csv,
+    config,
+    feature_name=None,
+    indices: None | list[int] = None,
+):
+    with open(predictions_path) as inf:
         predictions_list = inf.readlines()
 
     assert len(metadata_csv) == len(predictions_list)
+
+    if indices is not None:
+        # get rows pointed to by indices from metadata_csv
+        metadata_csv = metadata_csv.iloc[indices]
+        predictions_list = [predictions_list[i] for i in indices]
 
     prev_csv_path: None | str = None
     music_df: pd.DataFrame | None = None
@@ -121,8 +128,9 @@ def main():
 
         if config.make_score_pdfs:
             pdf_basename = (
-                title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
-            ) + ".pdf"
+                (title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_"))
+                + f"_{feature_name if feature_name is not None else config.feature_name}.pdf"
+            )
             pdf_path = os.path.join(config.output_folder, pdf_basename)
             show_score_and_predictions(
                 music_df, config.feature_name, predictions, df_indices, pdf_path
@@ -133,15 +141,46 @@ def main():
             # TODO: (Malcolm 2023-09-29) save to a png rather than displaying
             plot_predictions(
                 music_df,
-                config.feature_name,
+                feature_name if feature_name is not None else config.feature_name,
                 predictions,
                 df_indices,
                 ax=ax,
                 title=title,
             )
             plt.show()
-        if input("print another y/n? ").lower().strip() != "y":
-            break
+        # if input("print another y/n? ").lower().strip() != "y":
+        #     break
+        break
+
+
+def main():
+    args = parse_args()
+    config = read_config(args.config_file)
+    if not config.make_score_pdfs or config.make_piano_rolls:
+        print("Nothing to do!")
+        sys.exit(1)
+
+    metadata_csv = pd.read_csv(args.metadata)
+
+    if config.random_examples:
+        indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
+    else:
+        indices = list(range(config.n_examples))
+
+    # check if args.predictions is a directory
+    if os.path.isdir(args.predictions):
+        for predictions_path in os.listdir(args.predictions):
+            feature_name = os.path.splitext(predictions_path)[0]
+            predictions_path = os.path.join(args.predictions, predictions_path)
+            handle_predictions(
+                predictions_path,
+                metadata_csv,
+                config,
+                feature_name=feature_name,
+                indices=indices,
+            )
+    else:
+        handle_predictions(args.predictions, metadata_csv, config, indices=indices)
 
 
 if __name__ == "__main__":
