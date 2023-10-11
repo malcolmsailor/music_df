@@ -4,3 +4,4 @@ mido
 matplotlib
 -e /Users/malcolm/google_drive/python/malmus/metricker/
 pyyaml
+music21
