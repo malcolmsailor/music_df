@@ -6,8 +6,9 @@ import pdb
 import random
 import sys
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 import yaml
 from matplotlib import pyplot as plt
@@ -33,7 +34,7 @@ DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_prediction
 
 @dataclass
 class Config:
-    feature_name: str = ""
+    feature_names: list[str] = field(default_factory=lambda: [])
     csv_prefix_to_strip: None | str = None
     csv_prefix_to_add: None | str = None
     make_piano_rolls: bool = True
@@ -41,6 +42,7 @@ class Config:
     output_folder: str = DEFAULT_OUTPUT
     n_examples: int = 1
     random_examples: bool = True
+    column_types: dict[str, str] = field(default_factory=lambda: {})
 
 
 def read_config(config_path):
@@ -76,7 +78,10 @@ def parse_args():
         required=True,
         help="Text file containing predicted tokens, one sequence per line. Rows should be in one-to-one correspondance with metadata.",
     )
+    parser.add_argument("--filter-scores", type=str, help="regex to filter score ids")
     parser.add_argument("--config-file", required=True)
+    parser.add_argument("--write-csv", action="store_true")
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     return args
 
@@ -91,6 +96,7 @@ def handle_predictions(
     metadata_csv,
     config,
     feature_name=None,
+    write_csv=False,
     indices: None | list[int] = None,
 ):
     with open(predictions_path) as inf:
@@ -127,13 +133,22 @@ def handle_predictions(
             title += f" {metadata_row.name}"
 
         if config.make_score_pdfs:
-            pdf_basename = (
-                (title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_"))
-                + f"_{feature_name if feature_name is not None else config.feature_name}.pdf"
+            feature_name = (
+                feature_name if feature_name is not None else config.feature_name
             )
+            pdf_basename = (
+                title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+            ) + f"_{feature_name}.pdf"
             pdf_path = os.path.join(config.output_folder, pdf_basename)
+            csv_path = pdf_path[:-4] + ".csv"
             show_score_and_predictions(
-                music_df, config.feature_name, predictions, df_indices, pdf_path
+                music_df,
+                feature_name,
+                predictions,
+                df_indices,
+                pdf_path,
+                csv_path if write_csv else None,
+                col_type=config.column_types.get(feature_name, str),
             )
             LOGGER.info(f"Wrote {pdf_path}")
         if config.make_piano_rolls:
@@ -148,8 +163,6 @@ def handle_predictions(
                 title=title,
             )
             plt.show()
-        # if input("print another y/n? ").lower().strip() != "y":
-        #     break
         break
 
 
@@ -162,22 +175,45 @@ def main():
 
     metadata_csv = pd.read_csv(args.metadata)
 
-    if config.random_examples:
-        indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
+    indices = None
+    if args.filter_scores is not None:
+        indices = list(
+            np.nonzero(
+                metadata_csv.score_id.str.contains(args.filter_scores)
+                | metadata_csv.score_path.str.contains(args.filter_scores)
+                | metadata_csv.csv_path.str.contains(args.filter_scores)
+            )[0]
+        )
+        if not indices:
+            raise ValueError(f"No scores match pattern {args.filter_scores}")
+
+    if indices is None:
+        if config.random_examples:
+            random.seed(args.seed)
+            indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
+        else:
+            indices = list(range(config.n_examples))
     else:
-        indices = list(range(config.n_examples))
+        if config.random_examples:
+            random.seed(args.seed)
+            indices = random.sample(indices, k=config.n_examples)
+        else:
+            indices = indices[: config.n_examples]
 
     # check if args.predictions is a directory
     if os.path.isdir(args.predictions):
         for predictions_path in os.listdir(args.predictions):
-            feature_name = os.path.splitext(predictions_path)[0]
+            this_feature_name = os.path.splitext(predictions_path)[0]
+            if config.feature_names and this_feature_name not in config.feature_names:
+                continue
             predictions_path = os.path.join(args.predictions, predictions_path)
             handle_predictions(
                 predictions_path,
                 metadata_csv,
                 config,
-                feature_name=feature_name,
+                feature_name=this_feature_name,
                 indices=indices,
+                write_csv=args.write_csv,
             )
     else:
         handle_predictions(args.predictions, metadata_csv, config, indices=indices)
