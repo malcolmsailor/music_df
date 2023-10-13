@@ -10,12 +10,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
-import yaml
 from matplotlib import pyplot as plt
 
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
-from music_df.read import read
 from music_df.read_csv import read_csv
+from music_df.script_helpers import get_csv_path, get_csv_title, read_config
 from music_df.show_scores.show_score import show_score_and_predictions
 
 LOGGER = logging.getLogger(__name__)
@@ -45,27 +44,6 @@ class Config:
     column_types: dict[str, str] = field(default_factory=lambda: {})
 
 
-def read_config(config_path):
-    with open(config_path) as inf:
-        config = Config(**yaml.safe_load(inf))
-    return config
-
-
-def get_csv_path(raw_path: str, config: Config) -> str:
-    if config.csv_prefix_to_strip is not None:
-        raw_path = raw_path.replace(config.csv_prefix_to_strip, "", 1)
-    if config.csv_prefix_to_add is not None:
-        raw_path = config.csv_prefix_to_add + raw_path
-    return raw_path
-
-
-def get_csv_title(raw_path, config):
-    if config.csv_prefix_to_strip is not None:
-        raw_path = raw_path.replace(config.csv_prefix_to_strip, "", 1)
-    out = os.path.splitext(raw_path)[0]
-    return out
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -84,11 +62,6 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     return args
-
-
-def make_humdrum(df: pd.DataFrame):
-    CHAR_MAPPER = {"no": "N"}
-    char_map_f = lambda x: CHAR_MAPPER.get(x, "")
 
 
 def handle_predictions(
@@ -163,12 +136,11 @@ def handle_predictions(
                 title=title,
             )
             plt.show()
-        break
 
 
 def main():
     args = parse_args()
-    config = read_config(args.config_file)
+    config = read_config(args.config_file, Config)
     if not config.make_score_pdfs or config.make_piano_rolls:
         print("Nothing to do!")
         sys.exit(1)

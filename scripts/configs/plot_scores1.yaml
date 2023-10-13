@@ -1,0 +1,17 @@
+feature_names:
+  - chord_tone
+  - harmony_onset
+  - chord_factors
+  - bass_pcs
+  - primary_degree
+  - primary_alteration
+  - secondary_degree
+  - secondary_alteration
+  - inversion
+  - mode
+  - key_pc
+  - quality
+column_types:
+  inversion: float
+make_piano_rolls: false
+make_score_pdfs: true

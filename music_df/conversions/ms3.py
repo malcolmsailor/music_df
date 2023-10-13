@@ -1,6 +1,7 @@
 from fractions import Fraction
 
 import pandas as pd
+
 from music_df.add_feature import infer_barlines
 from music_df.sort_df import sort_df
 
@@ -68,6 +69,41 @@ def _add_time_sigs(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _add_bars(df: pd.DataFrame) -> pd.DataFrame:
+    # There should be only notes and time signatures in the dataframe
+    assert set(df.type.unique()) == {"time_signature", "note"}
+
+    df_copy = df.copy()
+    # Because time signatures will have mc NAN, they will compare nonequal to
+    #   before and after, meaning barlines will go before and after. This is not
+    #   what we want. So instead we need to create a temporary column where we
+    #   assign mc of the following bar - 1 to each time signature
+    mask = df_copy["mc"].isna()
+    df_copy.loc[mask, "mc"] = df_copy["mc"].bfill() - 1
+
+    changes = df_copy["mc"] != df_copy["mc"].shift()
+
+    # don't add a bar before an initial time signature
+    if df.iloc[0]["type"] == "time_signature":
+        changes.iloc[0] = False
+
+    changes_df = df[changes]
+
+    bar_df = pd.DataFrame(
+        {
+            "type": ["bar" for _ in changes_df.index],
+            "onset": changes_df["onset"].values,
+            "release": changes_df["onset"].shift(-1).values,
+        }
+    )
+    bar_df.iloc[-1, -1] = df["release"].max()
+    bar_df.index = changes_df.index - 0.5
+
+    result = pd.concat([df, bar_df]).sort_index().reset_index(drop=True)
+
+    return result
+
+
 DENOM_LIMIT = 64
 
 remap_time_column = lambda x: Fraction(x).limit_denominator(DENOM_LIMIT)
@@ -88,12 +124,16 @@ def ms3_to_df(
     else:
         raise NotImplementedError
 
+    # (Malcolm 2023-10-12) Note: the "duration" column is in whole notes,
+    #   not quarter notes, which is why we need "duration_qb"
     if fractions:
         out_df["onset"] = out_df["quarterbeats"].map(remap_time_column)
-        out_df["release"] = out_df["onset"] + out_df["duration"].map(remap_time_column)
+        out_df["release"] = out_df["onset"] + out_df["duration_qb"].map(
+            remap_time_column
+        )
     else:
         out_df["onset"] = out_df["quarterbeats"].apply(_str_to_float)
-        out_df["release"] = out_df["onset"] + out_df["duration"].apply(_str_to_float)
+        out_df["release"] = out_df["onset"] + out_df["duration_qb"].apply(_str_to_float)
 
     if "name" in out_df.columns:
         # remove last character of "name" column (A4 -> A, etc.)
@@ -116,7 +156,9 @@ def ms3_to_df(
 
     out_df["type"] = "note"
     out_df = _add_time_sigs(out_df)
-    out_df = infer_barlines(out_df)
+    out_df = _add_bars(out_df)
+
+    # out_df = infer_barlines(out_df)
 
     if drop_unused_cols:
         return_columns = [

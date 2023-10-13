@@ -9,8 +9,31 @@ from music_df.crop_df import crop_df
 LOGGER = logging.getLogger(__name__)
 
 
-def show_score():
-    pass
+def show_score(
+    music_df: pd.DataFrame,
+    feature_name: str,
+    pdf_path: str,
+    csv_path: str | None = None,
+):
+    # Get most common value of the music_df[feature_name] column:
+    most_common_value = music_df[feature_name].mode()[0]
+
+    music_df["color_mask"] = (
+        (music_df[feature_name] != most_common_value)
+        & (music_df[feature_name] != "na")
+        & (~music_df[feature_name].isna())
+    )
+
+    if csv_path is not None:
+        music_df.to_csv(csv_path, index=False)
+        LOGGER.info(f"Wrote {csv_path}")
+    df_to_pdf(
+        music_df,
+        pdf_path,
+        color_col=feature_name,
+        color_mask_col="color_mask",
+        uncolored_val=most_common_value,
+    )
 
 
 def show_score_and_predictions(
@@ -39,16 +62,20 @@ def show_score_and_predictions(
         feature_name
     ].astype(col_type)
     # Concatenate strings in "correct" and feature_name columns:
-    music_df["correct_by_feature"] = music_df["correct"].astype(col_type) + music_df[
-        feature_name
-    ].astype(col_type)
+    music_df["correct_by_feature"] = music_df[feature_name].astype(str) + music_df[
+        "correct"
+    ].map({True: " (correct)", False: " (incorrect)"})
 
     # Whatever the most common value is, we don't color it when it is correct
 
     # Get most common value of the music_df[feature_name] column:
     most_common_value = music_df[feature_name].mode()[0]
+    uncolored_val = f"{most_common_value} (correct)"
+
     music_df["color_mask"] = (
-        music_df["correct_by_feature"] != f"{True}{most_common_value}"
+        (music_df["correct_by_feature"] != uncolored_val)
+        & (music_df[feature_name] != "na")
+        & (~music_df[feature_name].isna())
     )
 
     # Only label incorrect notes
@@ -71,4 +98,5 @@ def show_score_and_predictions(
         label_color_col="label_color",
         color_col="correct_by_feature",
         color_mask_col="color_mask",
+        uncolored_val=uncolored_val,
     )
