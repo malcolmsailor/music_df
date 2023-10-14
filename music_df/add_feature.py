@@ -107,10 +107,15 @@ def infer_barlines(music_df: pd.DataFrame) -> pd.DataFrame:
 def make_time_signatures_explicit(
     music_df: pd.DataFrame, default_time_signature: dict[str, int] | None = None
 ) -> pd.DataFrame:
+    if "ts_numerator" in music_df.columns and "ts_denominator" in music_df.columns:
+        # There appears to be nothing to be done
+        return music_df
+
+    music_df = music_df.copy()
+
     if default_time_signature is None:
         default_time_signature = {"numerator": 4, "denominator": 4}
-    # music_df["time_signature_numerator"]
-    # music_df["time_signature_denominator"]
+
     time_sig_mask = music_df.type == "time_signature"
     time_sigs = music_df[music_df.type == "time_signature"]
     music_df["ts_numerator"] = float("nan")
@@ -138,6 +143,123 @@ def make_time_signatures_explicit(
     music_df["ts_numerator"] = music_df.ts_numerator.astype(int)
     music_df["ts_denominator"] = music_df.ts_denominator.astype(int)
     return music_df
+
+
+def add_default_time_sig(
+    music_df: pd.DataFrame, default_time_signature: dict[str, int] | None = None
+) -> pd.DataFrame:
+    """
+    >>> nan = float("nan")  # Alias to simplify below assignments
+
+    No time signature at all:
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [nan, 60, nan, 62],
+    ...         "onset": [0, 0, 4, 4],
+    ...         "release": [4, 4, 8, 5],
+    ...         "type": ["bar", "note", "bar", "note"],
+    ...         "other": [nan, nan, nan, nan],
+    ...     }
+    ... )
+    >>> df
+       pitch  onset  release  type  other
+    0    NaN      0        4   bar    NaN
+    1   60.0      0        4  note    NaN
+    2    NaN      4        8   bar    NaN
+    3   62.0      4        5  note    NaN
+    >>> add_default_time_sig(df)
+       pitch  onset  release            type                               other
+    0    NaN      0      NaN  time_signature  {'numerator': 4, 'denominator': 4}
+    1    NaN      0      4.0             bar                                 NaN
+    2   60.0      0      4.0            note                                 NaN
+    3    NaN      4      8.0             bar                                 NaN
+    4   62.0      4      5.0            note                                 NaN
+
+    Missing initial time signature:
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [nan, 60, nan, nan, 62],
+    ...         "onset": [0, 0, 4, 4, 4],
+    ...         "release": [4, 4, nan, 7, 5],
+    ...         "type": ["bar", "note", "time_signature", "bar", "note"],
+    ...         "other": [nan, nan, {"numerator": 3, "denominator": 4}, nan, nan],
+    ...     }
+    ... )
+    >>> df
+       pitch  onset  release            type                               other
+    0    NaN      0      4.0             bar                                 NaN
+    1   60.0      0      4.0            note                                 NaN
+    2    NaN      4      NaN  time_signature  {'numerator': 3, 'denominator': 4}
+    3    NaN      4      7.0             bar                                 NaN
+    4   62.0      4      5.0            note                                 NaN
+    >>> add_default_time_sig(df)
+       pitch  onset  release            type                               other
+    0    NaN      0      NaN  time_signature  {'numerator': 4, 'denominator': 4}
+    1    NaN      0      4.0             bar                                 NaN
+    2   60.0      0      4.0            note                                 NaN
+    3    NaN      4      NaN  time_signature  {'numerator': 3, 'denominator': 4}
+    4    NaN      4      7.0             bar                                 NaN
+    5   62.0      4      5.0            note                                 NaN
+
+    No missing time signature:
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [nan, nan, 60, nan, nan, 62],
+    ...         "onset": [0, 0, 0, 4, 4, 4],
+    ...         "release": [nan, 4, 4, nan, 7, 5],
+    ...         "type": [
+    ...             "time_signature",
+    ...             "bar",
+    ...             "note",
+    ...             "time_signature",
+    ...             "bar",
+    ...             "note",
+    ...         ],
+    ...         "other": [
+    ...             {"numerator": 4, "denominator": 4},
+    ...             nan,
+    ...             nan,
+    ...             {"numerator": 3, "denominator": 4},
+    ...             nan,
+    ...             nan,
+    ...         ],
+    ...     }
+    ... )
+    >>> df
+       pitch  onset  release            type                               other
+    0    NaN      0      NaN  time_signature  {'numerator': 4, 'denominator': 4}
+    1    NaN      0      4.0             bar                                 NaN
+    2   60.0      0      4.0            note                                 NaN
+    3    NaN      4      NaN  time_signature  {'numerator': 3, 'denominator': 4}
+    4    NaN      4      7.0             bar                                 NaN
+    5   62.0      4      5.0            note                                 NaN
+    >>> df.equals(add_default_time_sig(df))
+    True
+    """
+    time_sig_mask = music_df.type == "time_signature"
+    if time_sig_mask.any() and (
+        music_df[time_sig_mask].index[0]
+        <= music_df[music_df.type.isin({"note", "bar"})].index[0]
+    ):
+        return music_df
+    if default_time_signature is None:
+        default_time_signature = {"numerator": 4, "denominator": 4}
+
+    out_df = pd.concat(
+        [
+            pd.DataFrame(
+                {
+                    "onset": [0],
+                    "type": ["time_signature"],
+                    "other": [default_time_signature],
+                }
+            ),
+            music_df,
+        ],
+        axis=0,
+        ignore_index=True,
+    )[music_df.columns]
+    return out_df
 
 
 def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.DataFrame:
@@ -173,7 +295,7 @@ def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
     last_bar_dur = music_df.release.max() - last_bar.onset
     bar_durs = pd.concat([bar_durs, pd.Series([last_bar_dur])]).reset_index(drop=True)
     music_df["bar_dur"] = float("nan")
-    music_df.loc[bar_mask, "bar_dur"] = bar_durs.to_numpy()
+    music_df.loc[bar_mask, "bar_dur"] = bar_durs.astype(float).to_numpy()
     return music_df
 
 

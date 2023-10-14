@@ -18,6 +18,8 @@ def show_score(
     # Get most common value of the music_df[feature_name] column:
     most_common_value = music_df[feature_name].mode()[0]
 
+    music_df = music_df.copy()
+
     music_df["color_mask"] = (
         (music_df[feature_name] != most_common_value)
         & (music_df[feature_name] != "na")

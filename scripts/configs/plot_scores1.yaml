@@ -1,4 +1,6 @@
 feature_names:
+  - quality
+  - key_pc
   - chord_tone
   - harmony_onset
   - chord_factors
@@ -9,8 +11,6 @@ feature_names:
   - secondary_alteration
   - inversion
   - mode
-  - key_pc
-  - quality
 column_types:
   inversion: float
 make_piano_rolls: false
