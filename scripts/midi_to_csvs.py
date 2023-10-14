@@ -1,8 +1,11 @@
 import glob
 import json
 import os
+import pdb
 import random
+import re
 import sys
+import traceback
 import warnings
 from dataclasses import dataclass, field
 from functools import partial
@@ -29,6 +32,8 @@ class MidiToCSVConfig:
     overwrite: bool = False
     filter_midi_reading_warnings: bool = True
     num_workers: int = 8
+    regex: str | None = None
+    debug: bool = False
 
 
 def get_midi_files(folder_path):
@@ -39,29 +44,32 @@ def get_midi_files(folder_path):
     return glob.glob(search_pattern, recursive=True)
 
 
-def do_midi_file(midi_file, config, output_list):
-    output_basename = (
-        midi_file.replace(config.input_folder, "")
-        .lstrip(os.path.sep)
-        .replace(" ", "_")
-        .replace(os.path.sep, "+")
-        .replace(".mid", ".csv")
-    )
-    output_path = os.path.join(config.output_folder, output_basename)
+def do_midi_file(midi_file, config, output_list, error_file_list):
+    try:
+        output_basename = (
+            midi_file.replace(config.input_folder, "")
+            .lstrip(os.path.sep)
+            .replace(" ", "_")
+            .replace(os.path.sep, "+")
+            .replace(".mid", ".csv")
+        )
+        output_path = os.path.join(config.output_folder, output_basename)
 
-    if os.path.exists(output_path) and not config.overwrite:
-        return
+        if os.path.exists(output_path) and not config.overwrite:
+            return
 
-    if config.filter_midi_reading_warnings:
-        warnings.filterwarnings("ignore", message="note_off event")
+        if config.filter_midi_reading_warnings:
+            warnings.filterwarnings("ignore", message="note_off event")
 
-    music_df = read_midi(midi_file)
-    music_df = music_df[music_df.type.isin(config.event_types)]
-    music_df.to_csv(output_path)
-    music_df = music_df.drop("filename", axis=1)
+        music_df = read_midi(midi_file)
+        music_df = music_df[music_df.type.isin(config.event_types)]
+        music_df.to_csv(output_path)
+        music_df = music_df.drop("filename", axis=1)
 
-    print(f"Wrote {output_path}")
-    output_list.append(midi_file)
+        print(f"Wrote {output_path}")
+        output_list.append(midi_file)
+    except Exception as exc:
+        error_file_list.append((midi_file, repr(exc)))
 
 
 def write_json(config, output_files):
@@ -80,7 +88,19 @@ def main():
     config = read_config_oc(
         config_path=None, cli_args=sys.argv[1:], config_cls=MidiToCSVConfig
     )
+    if config.debug:
+
+        def custom_excepthook(exc_type, exc_value, exc_traceback):
+            traceback.print_exception(
+                exc_type, exc_value, exc_traceback, file=sys.stdout
+            )
+            pdb.post_mortem(exc_traceback)
+
+        sys.excepthook = custom_excepthook
+
     midi_files = get_midi_files(config.input_folder)
+    if config.regex is not None:
+        midi_files = [f for f in midi_files if re.search(config.regex, f)]
     random.seed(config.seed)
     if config.random_files:
         random.shuffle(midi_files)
@@ -90,17 +110,30 @@ def main():
     if config.num_workers > 1:
         manager = Manager()
         output_files = manager.list()
+        error_files = manager.list()
         with Pool(config.num_workers) as pool:
             list(
                 pool.imap_unordered(
-                    partial(do_midi_file, config=config, output_list=output_files),
+                    partial(
+                        do_midi_file,
+                        config=config,
+                        output_list=output_files,
+                        error_file_list=error_files,
+                    ),
                     midi_files,
                 )
             )
     else:
         output_files = []
+        error_files = []
         for midi_file in midi_files:
-            do_midi_file(midi_file, config, output_files)
+            do_midi_file(midi_file, config, output_files, error_files)
+
+    if error_files:
+        print("Errors:")
+        for midi_file, exception_str in error_files:
+            print(f"{midi_file}: {exception_str}")
+        print(f"{len(error_files)} total error files")
 
 
 if __name__ == "__main__":

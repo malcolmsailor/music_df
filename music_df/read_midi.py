@@ -244,8 +244,8 @@ def read_midi(
     # Sorting the tracks avoids orphan note or pitchwheel events.
     try:
         in_mid = mido.MidiFile(in_midi_fname)
-    except:
-        raise MidiError(f"unable to read file {in_midi_fname}")
+    except Exception as exc:
+        raise MidiError(f"unable to read file {in_midi_fname}") from exc
     _convert_to_abs_time_and_sort(in_mid)
     num_tracks = len(in_mid.tracks)
     ticks_per_beat = in_mid.ticks_per_beat
