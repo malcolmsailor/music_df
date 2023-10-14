@@ -81,7 +81,7 @@ def write_json(config, output_files):
             json.dump(existing_contents + list(output_files), outf)
     else:
         with open(json_path, "w") as outf:
-            json.dump(list(output_files), outf)
+            json.dump(list(output_files), outf, indent=2)
 
 
 def main():
