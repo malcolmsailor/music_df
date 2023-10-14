@@ -129,6 +129,8 @@ def main():
         for midi_file in midi_files:
             do_midi_file(midi_file, config, output_files, error_files)
 
+    write_json(config, output_files)
+
     if error_files:
         print("Errors:")
         for midi_file, exception_str in error_files:
