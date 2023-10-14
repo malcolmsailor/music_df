@@ -14,7 +14,7 @@ from matplotlib import pyplot as plt
 
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
 from music_df.read_csv import read_csv
-from music_df.script_helpers import get_csv_path, get_csv_title, read_config
+from music_df.script_helpers import get_csv_path, get_csv_title, read_config_oc
 from music_df.show_scores.show_score import show_score_and_predictions
 
 LOGGER = logging.getLogger(__name__)
@@ -33,11 +33,16 @@ DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_prediction
 
 @dataclass
 class Config:
+    metadata: str
+    predictions: str
+    filter_scores: str | None = None
     feature_names: list[str] = field(default_factory=lambda: [])
     csv_prefix_to_strip: None | str = None
     csv_prefix_to_add: None | str = None
     make_piano_rolls: bool = True
     make_score_pdfs: bool = True
+    write_csv: bool = False
+    seed: int = 42
     output_folder: str = DEFAULT_OUTPUT
     n_examples: int = 1
     random_examples: bool = True
@@ -46,20 +51,22 @@ class Config:
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--metadata",
-        required=True,
-        help="Metadata csv containing at least the following columns: csv_path, df_indices. Rows should be in one-to-one correspondance with predictions.",
-    )
-    parser.add_argument(
-        "--predictions",
-        required=True,
-        help="Text file containing predicted tokens, one sequence per line. Rows should be in one-to-one correspondance with metadata.",
-    )
-    parser.add_argument("--filter-scores", type=str, help="regex to filter score ids")
+    # parser.add_argument(
+    #     "--metadata",
+    #     required=True,
+    #     help="Metadata csv containing at least the following columns: csv_path, df_indices. Rows should be in one-to-one correspondance with predictions.",
+    # )
+    # parser.add_argument(
+    #     "--predictions",
+    #     required=True,
+    #     help="Text file containing predicted tokens, one sequence per line. Rows should be in one-to-one correspondance with metadata.",
+    # )
+    # parser.add_argument("--filter-scores", type=str, help="regex to filter score ids")
     parser.add_argument("--config-file", required=True)
-    parser.add_argument("--write-csv", action="store_true")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("remaining", nargs=argparse.REMAINDER)
+    # parser.add_argument("--write-csv", action="store_true")
+    # parser.add_argument("--seed", type=int, default=42)
+
     args = parser.parse_args()
     return args
 
@@ -140,55 +147,55 @@ def handle_predictions(
 
 def main():
     args = parse_args()
-    config = read_config(args.config_file, Config)
+    config = read_config_oc(args.config_file, args.remaining, Config)
     if not config.make_score_pdfs or config.make_piano_rolls:
         print("Nothing to do!")
         sys.exit(1)
 
-    metadata_csv = pd.read_csv(args.metadata)
+    metadata_csv = pd.read_csv(config.metadata)
 
     indices = None
-    if args.filter_scores is not None:
+    if config.filter_scores is not None:
         indices = list(
             np.nonzero(
-                metadata_csv.score_id.str.contains(args.filter_scores)
-                | metadata_csv.score_path.str.contains(args.filter_scores)
-                | metadata_csv.csv_path.str.contains(args.filter_scores)
+                metadata_csv.score_id.str.contains(config.filter_scores)
+                | metadata_csv.score_path.str.contains(config.filter_scores)
+                | metadata_csv.csv_path.str.contains(config.filter_scores)
             )[0]
         )
         if not indices:
-            raise ValueError(f"No scores match pattern {args.filter_scores}")
+            raise ValueError(f"No scores match pattern {config.filter_scores}")
 
     if indices is None:
         if config.random_examples:
-            random.seed(args.seed)
+            random.seed(config.seed)
             indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
         else:
             indices = list(range(config.n_examples))
     else:
         if config.random_examples:
-            random.seed(args.seed)
+            random.seed(config.seed)
             indices = random.sample(indices, k=config.n_examples)
         else:
             indices = indices[: config.n_examples]
 
-    # check if args.predictions is a directory
-    if os.path.isdir(args.predictions):
-        for predictions_path in os.listdir(args.predictions):
+    # check if config.predictions is a directory
+    if os.path.isdir(config.predictions):
+        for predictions_path in os.listdir(config.predictions):
             this_feature_name = os.path.splitext(predictions_path)[0]
             if config.feature_names and this_feature_name not in config.feature_names:
                 continue
-            predictions_path = os.path.join(args.predictions, predictions_path)
+            predictions_path = os.path.join(config.predictions, predictions_path)
             handle_predictions(
                 predictions_path,
                 metadata_csv,
                 config,
                 feature_name=this_feature_name,
                 indices=indices,
-                write_csv=args.write_csv,
+                write_csv=config.write_csv,
             )
     else:
-        handle_predictions(args.predictions, metadata_csv, config, indices=indices)
+        handle_predictions(config.predictions, metadata_csv, config, indices=indices)
 
 
 if __name__ == "__main__":

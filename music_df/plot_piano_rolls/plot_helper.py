@@ -1,7 +1,6 @@
 from typing import Any, Sequence
 
 import pandas as pd
-from df2hum import df2hum
 from matplotlib import pyplot as plt
 
 from music_df.plot_piano_rolls.plot import get_colormapping, plot_piano_roll
