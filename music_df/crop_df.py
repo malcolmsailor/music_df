@@ -3,6 +3,7 @@ from typing import Any
 
 import pandas as pd
 
+from music_df.add_feature import infer_barlines
 from music_df.utils.search import get_idx_to_item_geq
 
 LOGGER = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def crop_df(
     start_time: float | None = None,
     end_i: Any | None = None,
     end_time: float | None = None,
+    infer_barlines_if_no_barlines_found: bool = True,
 ) -> pd.DataFrame:
     """
     NB we assume that the dataframe is sorted and that start_i points to a note (so
@@ -170,8 +172,16 @@ def crop_df(
         start_loc_i = get_idx_to_item_geq(notes_df.onset.values, start_time)
         start_i = notes_df.index[start_loc_i]
     if start_i is not None:
+        start_i = int(start_i)
         # TODO: (Malcolm 2023-09-29) what to do in case of no time signature or bar?
         prev_time_sig = last_time_signature_before(music_df, start_i)
+        if infer_barlines_if_no_barlines_found and "bar" not in music_df["type"]:
+            music_df = infer_barlines(music_df, keep_old_index=True)
+            start_i = music_df[music_df["index"] == start_i].index[0]
+            if end_i is not None:
+                end_i = music_df[music_df["index"] == end_i].index[0]
+            music_df = music_df.drop("index", axis=1)
+
         prev_bar = last_bar_before(music_df, start_i)
         if prev_time_sig.onset != prev_bar.onset:
             prev_time_sig = prev_time_sig.copy()
@@ -192,5 +202,6 @@ def crop_df(
         notes_df = music_df[music_df.type == "note"]
         end_i = notes_df.release[notes_df.release <= end_time].index[-1]
     if end_i is not None:
+        end_i = int(end_i)
         music_df = music_df.loc[:end_i]
     return music_df

@@ -17,13 +17,13 @@ DF_TYPE_SORT_ORDER = SortOrderMapping(
 )
 
 
-def sort_df(df: pd.DataFrame, inplace: bool = False):
+def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
     if not inplace:
         df = df.sort_values(
             by="release",
             axis=0,
             inplace=False,
-            ignore_index=True,
+            ignore_index=ignore_index,
             key=lambda x: 0 if x is None else x,
             kind="mergesort",  # default sort is not stable
         )
@@ -32,7 +32,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
             by="release",
             axis=0,
             inplace=True,
-            ignore_index=True,
+            ignore_index=ignore_index,
             key=lambda x: 0 if x is None else x,
             kind="mergesort",  # default sort is not stable
         )
@@ -40,7 +40,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
         by="pitch",
         axis=0,
         inplace=True,
-        ignore_index=True,
+        ignore_index=ignore_index,
         key=lambda x: 128 if x is None else x,
         kind="mergesort",  # default sort is not stable
     )
@@ -48,7 +48,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
         # We first sort by type so that result of sort will always be the same (i.e.,
         #   the "all other" rows below will be sorted)
         df.sort_values(
-            by="type", axis=0, inplace=True, ignore_index=True, kind="mergesort"
+            by="type", axis=0, inplace=True, ignore_index=ignore_index, kind="mergesort"
         )
         # Then we sort by type again to make sure we have rows in the following order:
         #   time signature
@@ -59,7 +59,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
             by="type",
             axis=0,
             inplace=True,
-            ignore_index=True,
+            ignore_index=ignore_index,
             key=lambda x: x.map(DF_TYPE_SORT_ORDER),
             kind="mergesort",  # default sort is not stable
         )
@@ -67,7 +67,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False):
         by="onset",
         axis=0,
         inplace=True,
-        ignore_index=True,
+        ignore_index=ignore_index,
         kind="mergesort",  # default sort is not stable
     )
     return df

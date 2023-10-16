@@ -13,6 +13,7 @@ from multiprocessing import Manager, Pool
 from typing import Iterable
 
 from music_df.read_midi import read_midi
+from music_df.salami_slice import salami_slice
 from music_df.script_helpers import read_config_oc
 
 # TODO: (Malcolm 2023-10-14) round releases somehow
@@ -25,6 +26,7 @@ class MidiToCSVConfig:
     output_folder: str
     max_files: int | None = None
     random_files: bool = False
+    salami_slice: bool = True
     seed: int = 42
     event_types: Iterable[str] = field(
         default_factory=lambda: {"note", "time_signature", "bar"}
@@ -63,8 +65,10 @@ def do_midi_file(midi_file, config, output_list, error_file_list):
 
         music_df = read_midi(midi_file)
         music_df = music_df[music_df.type.isin(config.event_types)]
-        music_df.to_csv(output_path)
         music_df = music_df.drop("filename", axis=1)
+        if config.salami_slice:
+            salami_slice(music_df)
+        music_df.to_csv(output_path)
 
         print(f"Wrote {output_path}")
         output_list.append(midi_file)

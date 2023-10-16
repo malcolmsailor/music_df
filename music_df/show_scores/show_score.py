@@ -19,7 +19,7 @@ except ImportError:
 
 else:
 
-    def show_score(
+    def show_score(  # type:ignore
         music_df: pd.DataFrame,
         feature_name: str,
         pdf_path: str,
@@ -47,7 +47,7 @@ else:
             uncolored_val=most_common_value,
         )
 
-    def show_score_and_predictions(
+    def show_score_and_predictions(  # type:ignore
         music_df: pd.DataFrame,
         feature_name: str,
         predicted_feature: Sequence[Any],
@@ -56,18 +56,22 @@ else:
         csv_path: str | None = None,
         col_type=str,
     ):
-        # TODO: (Malcolm 2023-09-29) allow cropping df to predicted indices but keep
-        #   immediately preceding barline and time signature
         music_df = music_df.copy()
-        music_df = crop_df(
-            music_df, start_i=min(prediction_indices), end_i=max(prediction_indices)
-        )
         if prediction_indices is None:
             prediction_indices = range(len(predicted_feature))
 
         music_df[f"pred_{feature_name}"] = None
         for pred, i in zip(predicted_feature, prediction_indices):
             music_df.loc[i, f"pred_{feature_name}"] = pred
+
+        music_df = crop_df(
+            music_df, start_i=min(prediction_indices), end_i=max(prediction_indices)
+        )
+
+        if feature_name not in music_df.columns:
+            # Unlabeled data
+            show_score(music_df, feature_name=f"pred_{feature_name}", pdf_path=pdf_path)
+            return
 
         music_df["correct"] = music_df[f"pred_{feature_name}"].astype(
             col_type

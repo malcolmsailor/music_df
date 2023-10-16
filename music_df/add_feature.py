@@ -63,7 +63,9 @@ def simplify_time_sigs(
     return music_df
 
 
-def infer_barlines(music_df: pd.DataFrame) -> pd.DataFrame:
+def infer_barlines(
+    music_df: pd.DataFrame, keep_old_index: bool = False
+) -> pd.DataFrame:
     time_sig_mask = music_df.type == "time_signature"
     time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
 
@@ -89,18 +91,29 @@ def infer_barlines(music_df: pd.DataFrame) -> pd.DataFrame:
     barlines = pd.DataFrame({"onset": barline_onsets, "release": barline_releases})
     barlines["type"] = "bar"
 
+    # Ensure that index values will be unique
+    barlines.index += max(music_df.index) + 1
+
     out_df = pd.concat([music_df, barlines])
+    # TODO: (Malcolm 2023-10-16) why are we sorting by onset and type here? Can we
+    #       remove this?
     out_df = out_df.sort_values(
-        by="onset", axis=0, kind="mergesort"  # default sort is not stable
+        by="onset",
+        axis=0,
+        kind="mergesort",  # default sort is not stable
+        ignore_index=False,
     )
     out_df = out_df.sort_values(
         by="type",
         axis=0,
         key=lambda col: col.where(col != "bar", "zzz"),
         kind="mergesort",  # default sort is not stable
+        ignore_index=False,
     )
-    out_df = sort_df(out_df)
-    out_df = out_df.reset_index(drop=True)
+    out_df = sort_df(out_df, ignore_index=False)
+
+    out_df = out_df.reset_index(drop=not keep_old_index)
+
     return out_df
 
 
