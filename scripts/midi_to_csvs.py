@@ -67,7 +67,7 @@ def do_midi_file(midi_file, config, output_list, error_file_list):
         music_df = music_df[music_df.type.isin(config.event_types)]
         music_df = music_df.drop("filename", axis=1)
         if config.salami_slice:
-            salami_slice(music_df)
+            music_df = salami_slice(music_df)
         music_df.to_csv(output_path)
 
         print(f"Wrote {output_path}")
