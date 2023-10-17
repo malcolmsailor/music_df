@@ -1,3 +1,12 @@
+"""For unlabeled data, we are using the YCAC midi corpus.
+
+But midi data is often un- or strangely quantized. We can use the Musescore quantization
+algorithm by reading it into musescore and then out again. The issue with that is that
+musescore abbreviates the releases when writing to midi by small amounts, presumably for
+performance reasons. If we save the files as xml, however, the note values are
+complete. Therefore we do that, then use this script to write to csvs.
+"""
+
 import glob
 import json
 import os
