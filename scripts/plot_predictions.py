@@ -21,13 +21,6 @@ LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def custom_excepthook(exc_type, exc_value, exc_traceback):
-    traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stdout)
-    pdb.post_mortem(exc_traceback)
-
-
-sys.excepthook = custom_excepthook
-
 DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_predictions"))
 
 
@@ -47,6 +40,8 @@ class Config:
     n_examples: int = 1
     random_examples: bool = True
     column_types: dict[str, str] = field(default_factory=lambda: {})
+    debug: bool = False
+    quantize_tpq: int = 16
 
 
 def parse_args():
@@ -98,7 +93,9 @@ def handle_predictions(
             prev_csv_path = metadata_row.csv_path
             assert isinstance(prev_csv_path, str)
             LOGGER.info(f"Reading {get_csv_path(prev_csv_path, config)}")
-            music_df = read_csv(get_csv_path(prev_csv_path, config))
+            music_df = read_csv(
+                get_csv_path(prev_csv_path, config), quantize_tpq=config.quantize_tpq
+            )
 
         assert music_df is not None
 
@@ -112,14 +109,14 @@ def handle_predictions(
         else:
             title += f" {metadata_row.name}"
 
+        subfolder = title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+
         if config.make_score_pdfs:
             feature_name = (
                 feature_name if feature_name is not None else config.feature_name
             )
-            pdf_basename = (
-                title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
-            ) + f"_{feature_name}.pdf"
-            pdf_path = os.path.join(config.output_folder, pdf_basename)
+            pdf_basename = f"{feature_name}.pdf"
+            pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
             csv_path = pdf_path[:-4] + ".csv"
             show_score_and_predictions(
                 music_df,
@@ -151,6 +148,16 @@ def main():
     if not config.make_score_pdfs or config.make_piano_rolls:
         print("Nothing to do!")
         sys.exit(1)
+
+    if config.debug:
+
+        def custom_excepthook(exc_type, exc_value, exc_traceback):
+            traceback.print_exception(
+                exc_type, exc_value, exc_traceback, file=sys.stdout
+            )
+            pdb.post_mortem(exc_traceback)
+
+        sys.excepthook = custom_excepthook
 
     metadata_csv = pd.read_csv(config.metadata)
 

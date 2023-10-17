@@ -95,21 +95,21 @@ def infer_barlines(
     barlines.index += max(music_df.index) + 1
 
     out_df = pd.concat([music_df, barlines])
-    # TODO: (Malcolm 2023-10-16) why are we sorting by onset and type here? Can we
+    # (Malcolm 2023-10-16) why are we sorting by onset and type here? Can we
     #       remove this?
-    out_df = out_df.sort_values(
-        by="onset",
-        axis=0,
-        kind="mergesort",  # default sort is not stable
-        ignore_index=False,
-    )
-    out_df = out_df.sort_values(
-        by="type",
-        axis=0,
-        key=lambda col: col.where(col != "bar", "zzz"),
-        kind="mergesort",  # default sort is not stable
-        ignore_index=False,
-    )
+    # out_df = out_df.sort_values(
+    #     by="onset",
+    #     axis=0,
+    #     kind="mergesort",  # default sort is not stable
+    #     ignore_index=False,
+    # )
+    # out_df = out_df.sort_values(
+    #     by="type",
+    #     axis=0,
+    #     key=lambda col: col.where(col != "bar", "zzz"),
+    #     kind="mergesort",  # default sort is not stable
+    #     ignore_index=False,
+    # )
     out_df = sort_df(out_df, ignore_index=False)
 
     out_df = out_df.reset_index(drop=not keep_old_index)
@@ -415,7 +415,7 @@ def add_default_velocity(
 
 def add_default_midi_instrument(
     music_df: pd.DataFrame,
-    default_instrument: int = 0,  # TODO: (Malcolm 2023-08-22) verify
+    default_instrument: int = 0,
 ) -> pd.DataFrame:
     if "midi_instrument" not in music_df.columns:
         music_df["midi_instrument"] = default_instrument
