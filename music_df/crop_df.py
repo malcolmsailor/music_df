@@ -175,7 +175,7 @@ def crop_df(
         start_i = int(start_i)
         # TODO: (Malcolm 2023-09-29) what to do in case of no time signature or bar?
         prev_time_sig = last_time_signature_before(music_df, start_i)
-        if infer_barlines_if_no_barlines_found and "bar" not in music_df["type"]:
+        if infer_barlines_if_no_barlines_found and "bar" not in music_df["type"].values:
             music_df = infer_barlines(music_df, keep_old_index=True)
             start_i = music_df[music_df["index"] == start_i].index[0]
             if end_i is not None:
