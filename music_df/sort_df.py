@@ -36,14 +36,15 @@ def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
             key=lambda x: 0 if x is None else x,
             kind="mergesort",  # default sort is not stable
         )
-    df.sort_values(
-        by="pitch",
-        axis=0,
-        inplace=True,
-        ignore_index=ignore_index,
-        key=lambda x: 128 if x is None else x,
-        kind="mergesort",  # default sort is not stable
-    )
+    if "pitch" in df.columns:
+        df.sort_values(
+            by="pitch",
+            axis=0,
+            inplace=True,
+            ignore_index=ignore_index,
+            key=lambda x: 128 if x is None else x,
+            kind="mergesort",  # default sort is not stable
+        )
     if "type" in df.columns:
         # We first sort by type so that result of sort will always be the same (i.e.,
         #   the "all other" rows below will be sorted)

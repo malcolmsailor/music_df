@@ -32,9 +32,10 @@ def read_csv(
     #     release_type(o) for o in df.loc[df.type == "note", "release"]
     # ]
     df.loc[df.type != "note", "release"] = float("nan")
-    df.loc[df.type == "time_signature", "other"] = df.loc[
-        df.type == "time_signature", "other"
-    ].map(ast.literal_eval)
+    if "other" in df.columns:
+        df.loc[df.type == "time_signature", "other"] = df.loc[
+            df.type == "time_signature", "other"
+        ].map(ast.literal_eval)
     if "color" in df.columns:
         df.loc[df.color.isna(), "color"] = ""
     if quantize_tpq is not None:

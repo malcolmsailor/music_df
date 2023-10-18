@@ -3,6 +3,7 @@ import pandas as pd
 from music_df.read_csv import read_csv
 from music_df.read_krn import read_krn
 from music_df.read_midi import read_midi
+from music_df.read_rntxt import read_rntxt
 from music_df.read_xml import read_xml
 
 
@@ -15,4 +16,7 @@ def read(input_path: str, **kwargs) -> pd.DataFrame:
         return read_csv(input_path, **kwargs)
     elif any(input_path.endswith(suffix) for suffix in ("xml", "mxl", "mscx", "mscz")):
         return read_xml(input_path, sort=True)
+    elif any(input_path.endswith(suffix) for suffix in (".txt", ".rntxt")):
+        # Roman text
+        return read_rntxt(input_path)
     raise ValueError
