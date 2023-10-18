@@ -41,7 +41,6 @@ class Config:
     random_examples: bool = True
     column_types: dict[str, str] = field(default_factory=lambda: {})
     debug: bool = False
-    quantize_tpq: int = 16
 
 
 def parse_args():
@@ -93,9 +92,7 @@ def handle_predictions(
             prev_csv_path = metadata_row.csv_path
             assert isinstance(prev_csv_path, str)
             LOGGER.info(f"Reading {get_csv_path(prev_csv_path, config)}")
-            music_df = read_csv(
-                get_csv_path(prev_csv_path, config), quantize_tpq=config.quantize_tpq
-            )
+            music_df = read_csv(get_csv_path(prev_csv_path, config))
 
         assert music_df is not None
 
@@ -187,6 +184,7 @@ def main():
             indices = indices[: config.n_examples]
 
     # check if config.predictions is a directory
+    args = []
     if os.path.isdir(config.predictions):
         for predictions_path in os.listdir(config.predictions):
             this_feature_name = os.path.splitext(predictions_path)[0]

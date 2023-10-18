@@ -6,11 +6,6 @@ from functools import partial
 from multiprocessing import Manager, Pool
 from pathlib import Path
 
-# Musescore appears to trim this amount from the duration of every note, so we
-#   add it back in.
-# TODO: (Malcolm 2023-10-17) do we want to do some sort of rounding afterwards?
-RELEASE_DELTA = 0.00208333000000005
-
 DATASETS = os.environ.get("DATASETS", os.path.expanduser("~/datasets"))
 
 

@@ -71,6 +71,7 @@ def do_xml_file(xml_file, config, output_list, error_file_list):
         music_df = music_df[music_df.type.isin(config.event_types)]
         if config.salami_slice:
             music_df = salami_slice(music_df)
+        music_df = music_df.drop("spelling", axis=1)
         music_df.to_csv(output_path)
 
         print(f"Wrote {output_path}")
