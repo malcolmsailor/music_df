@@ -170,10 +170,7 @@ def read_midi(
         return time_type(tick_time / ticks_per_beat)
 
     def _pitch_bend_handler(track_pb_dict, msg):
-        try:
-            track_pb_dict[msg.channel] = msg.pitch
-        except:
-            breakpoint()
+        track_pb_dict[msg.channel] = msg.pitch
 
     def _note_on_handler(msg, track_note_on_dict, track_pb_dict):
         if track_pb_dict is None:

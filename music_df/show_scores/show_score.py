@@ -39,7 +39,7 @@ else:
         if csv_path is not None:
             music_df.to_csv(csv_path, index=False)
             LOGGER.info(f"Wrote {csv_path}")
-        df_to_pdf(
+        return df_to_pdf(
             music_df,
             pdf_path,
             color_col=feature_name,
@@ -105,7 +105,7 @@ else:
         if csv_path is not None:
             music_df.to_csv(csv_path, index=False)
             LOGGER.info(f"Wrote {csv_path}")
-        df_to_pdf(
+        return df_to_pdf(
             music_df,
             pdf_path,
             label_col=f"pred_{feature_name}",

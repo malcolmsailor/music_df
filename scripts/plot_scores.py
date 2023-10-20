@@ -97,8 +97,9 @@ def main():
                     title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
                 ) + f"_{feature_name}.pdf"
                 pdf_path = os.path.join(config.output_folder, pdf_basename)
-                show_score(music_df, feature_name, pdf_path)
-                LOGGER.info(f"Wrote {pdf_path}")
+                return_code = show_score(music_df, feature_name, pdf_path)
+                if not return_code:
+                    LOGGER.info(f"Wrote {pdf_path}")
             if config.make_piano_rolls:
                 raise NotImplementedError
 

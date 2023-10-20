@@ -115,7 +115,7 @@ def handle_predictions(
             pdf_basename = f"{feature_name}.pdf"
             pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
             csv_path = pdf_path[:-4] + ".csv"
-            show_score_and_predictions(
+            return_code = show_score_and_predictions(
                 music_df,
                 feature_name,
                 predictions,
@@ -124,7 +124,8 @@ def handle_predictions(
                 csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
             )
-            LOGGER.info(f"Wrote {pdf_path}")
+            if not return_code:
+                LOGGER.info(f"Wrote {pdf_path}")
         if config.make_piano_rolls:
             fig, ax = plt.subplots()
             # TODO: (Malcolm 2023-09-29) save to a png rather than displaying
