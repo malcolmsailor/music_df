@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
 from music_df.read_csv import read_csv
 from music_df.script_helpers import get_csv_path, get_csv_title, read_config_oc

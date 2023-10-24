@@ -9,9 +9,8 @@ import traceback
 from dataclasses import dataclass, field
 
 import yaml
-
 from music_df import read_csv
-from music_df.script_helpers import get_csv_title, read_config
+from music_df.script_helpers import read_config
 from music_df.show_scores.show_score import show_score
 
 LOGGER = logging.getLogger(__name__)
@@ -66,6 +65,12 @@ def find_csv_files(directory):
     return csv_files
 
 
+def get_csv_title(raw_path, input_folder):
+    raw_path = raw_path.replace(input_folder, "", 1)
+    out = os.path.splitext(raw_path)[0]
+    return out
+
+
 def main():
     args = parse_args()
     config = read_config(args.config_file, Config)
@@ -90,13 +95,16 @@ def main():
 
     for csv_file in csv_files:
         music_df = read_csv(csv_file)
-        title = get_csv_title(csv_file, config)
+        title = get_csv_title(csv_file, args.input_folder)
+        subfolder = title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
         for feature_name in config.feature_names:
             if config.make_score_pdfs:
-                pdf_basename = (
-                    title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
-                ) + f"_{feature_name}.pdf"
-                pdf_path = os.path.join(config.output_folder, pdf_basename)
+                # pdf_basename = (
+                #     title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+                # ) + f"_{feature_name}.pdf"
+                pdf_basename = f"{feature_name}.pdf"
+                pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
+                # pdf_path = os.path.join(config.output_folder, pdf_basename)
                 return_code = show_score(music_df, feature_name, pdf_path)
                 if not return_code:
                     LOGGER.info(f"Wrote {pdf_path}")
