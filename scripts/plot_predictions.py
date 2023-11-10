@@ -1,5 +1,6 @@
 import argparse
 import ast
+import glob
 import logging
 import os
 import pdb
@@ -8,13 +9,16 @@ import sys
 import traceback
 from dataclasses import dataclass, field
 
+import h5py
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from music_df.crop_df import crop_df
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
 from music_df.read_csv import read_csv
 from music_df.script_helpers import get_csv_path, get_csv_title, read_config_oc
 from music_df.show_scores.show_score import show_score_and_predictions
+from music_df.sync_df import sync_array_by_df
 
 LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -22,11 +26,25 @@ logging.basicConfig(level=logging.INFO)
 
 DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_predictions"))
 
+# features are either note-level (like "chord_tone") or onset-level (like "primary_degree")
+ONSET_LEVEL_FEATURES = {
+    "harmony_onset",
+    "primary_degree",
+    "primary_alteration",
+    "secondary_degree",
+    "secondary_alteration",
+    "inversion",
+    "mode",
+    "quality",
+    "key_pc",
+}
+
 
 @dataclass
 class Config:
     metadata: str
     predictions: str
+    dictionary_folder: str | None = None
     filter_scores: str | None = None
     feature_names: list[str] = field(default_factory=lambda: [])
     csv_prefix_to_strip: None | str = None
@@ -40,6 +58,9 @@ class Config:
     random_examples: bool = True
     column_types: dict[str, str] = field(default_factory=lambda: {})
     debug: bool = False
+    sync_onsets: bool = True
+    # When predicting tokens we need to subtract the number of specials
+    n_specials: int = 4
 
 
 def parse_args():
@@ -62,6 +83,101 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
+
+def sync_predictions(
+    h5_path,
+    metadata_csv,
+    config,
+    feature_name,
+    feature_vocab,
+    write_csv=False,
+    indices: None | list[int] = None,
+):
+    h5file = h5py.File(h5_path, mode="r")
+
+    assert len(metadata_csv) >= len(h5file)
+
+    if indices is None:
+        indices = list(range(len(h5file)))
+
+    prev_csv_path: None | str = None
+    music_df: pd.DataFrame | None = None
+    for i in indices:
+        metadata_row = metadata_csv.iloc[i]
+        logits: np.ndarray = (h5file[f"logits_{i}"])[:]  # type:ignore
+        # TODO: (Malcolm 2023-11-08) here, we trim the start/stop tokens. We should
+        #   do this when saving the logits.
+        logits = logits[1:-1]
+
+        if prev_csv_path is None or metadata_row.csv_path != prev_csv_path:
+            prev_csv_path = metadata_row.csv_path
+            assert isinstance(prev_csv_path, str)
+            LOGGER.info(f"Reading {get_csv_path(prev_csv_path, config)}")
+            music_df = read_csv(get_csv_path(prev_csv_path, config))
+
+        assert music_df is not None
+
+        df_indices = metadata_row.df_indices
+        if isinstance(df_indices, str):
+            df_indices = ast.literal_eval(df_indices)
+
+        title = get_csv_title(prev_csv_path, config)
+        if "start_offset" in metadata_row.index:
+            title += f" {metadata_row.start_offset}"
+        else:
+            title += f" {metadata_row.name}"
+
+        subfolder = (
+            title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+            + "_synced"
+        )
+
+        cropped_df = crop_df(music_df, start_i=min(df_indices), end_i=max(df_indices))
+        notes_df = cropped_df[cropped_df.type == "note"].reset_index(drop=True)
+
+        # In case logits were ragged, only take the logits corresponding to notes
+        logits = logits[: len(notes_df)]
+
+        if feature_name in ONSET_LEVEL_FEATURES:
+            logits = sync_array_by_df(logits, notes_df, sync_col_name_or_names="onset")
+
+        predicted_indices = logits.argmax(axis=-1)
+
+        assert predicted_indices.min() >= config.n_specials
+        predicted_indices -= config.n_specials
+        predictions = [feature_vocab[i] for i in predicted_indices]
+        if config.make_score_pdfs:
+            feature_name = (
+                feature_name if feature_name is not None else config.feature_name
+            )
+            pdf_basename = f"{feature_name}.pdf"
+            pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
+            csv_path = pdf_path[:-4] + ".csv"
+            return_code = show_score_and_predictions(
+                music_df=music_df,
+                feature_name=feature_name,
+                predicted_feature=predictions,
+                prediction_indices=df_indices,
+                pdf_path=pdf_path,
+                csv_path=csv_path if write_csv else None,
+                col_type=config.column_types.get(feature_name, str),
+            )
+            if not return_code:
+                LOGGER.info(f"Wrote {pdf_path}")
+        if config.make_piano_rolls:
+            fig, ax = plt.subplots()
+            # TODO: (Malcolm 2023-09-29) save to a png rather than displaying
+            plot_predictions(
+                music_df,
+                feature_name if feature_name is not None else config.feature_name,
+                predictions,
+                df_indices,
+                ax=ax,
+                title=title,
+            )
+            plt.show()
+    h5file.close()
 
 
 def handle_predictions(
@@ -115,12 +231,12 @@ def handle_predictions(
             pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
             csv_path = pdf_path[:-4] + ".csv"
             return_code = show_score_and_predictions(
-                music_df,
-                feature_name,
-                predictions,
-                df_indices,
-                pdf_path,
-                csv_path if write_csv else None,
+                music_df=music_df,
+                feature_name=feature_name,
+                predicted_feature=predictions,
+                prediction_indices=df_indices,
+                pdf_path=pdf_path,
+                csv_path=csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
             )
             if not return_code:
@@ -137,6 +253,21 @@ def handle_predictions(
                 title=title,
             )
             plt.show()
+
+
+def get_dictionaries(dictionary_paths: list[str]) -> dict[str, list[str]]:
+    out = {}
+    for dictionary_path in dictionary_paths:
+        feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
+        with open(dictionary_path) as inf:
+            data = inf.readlines()
+        contents = [
+            line.split(" ", maxsplit=1)[0]
+            for line in data
+            if line and not line.startswith("madeupword")
+        ]
+        out[feature_name] = contents
+    return out
 
 
 def main():
@@ -173,7 +304,9 @@ def main():
     if indices is None:
         if config.random_examples:
             random.seed(config.seed)
-            indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
+            # TODO: (Malcolm 2023-11-09) restore
+            indices = random.sample(range(100), k=config.n_examples)
+            # indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
         else:
             indices = list(range(config.n_examples))
     else:
@@ -186,19 +319,54 @@ def main():
     # check if config.predictions is a directory
     args = []
     if os.path.isdir(config.predictions):
-        for predictions_path in os.listdir(config.predictions):
-            this_feature_name = os.path.splitext(predictions_path)[0]
-            if config.feature_names and this_feature_name not in config.feature_names:
-                continue
-            predictions_path = os.path.join(config.predictions, predictions_path)
-            handle_predictions(
-                predictions_path,
-                metadata_csv,
-                config,
-                feature_name=this_feature_name,
-                indices=indices,
-                write_csv=config.write_csv,
-            )
+        if config.sync_onsets:
+            if config.dictionary_folder is None:
+                raise ValueError
+            else:
+                dictionary_paths = glob.glob(
+                    os.path.join(config.dictionary_folder, "*_dictionary.txt")
+                )
+                vocabs = get_dictionaries(dictionary_paths)
+            for predictions_path in glob.glob(os.path.join(config.predictions, "*.h5")):
+                this_feature_name = os.path.basename(
+                    os.path.splitext(predictions_path)[0]
+                )
+                if (
+                    config.feature_names
+                    and this_feature_name not in config.feature_names
+                ):
+                    continue
+                # predictions_path = os.path.join(config.predictions, predictions_path)
+                sync_predictions(
+                    predictions_path,
+                    metadata_csv,
+                    config,
+                    feature_name=this_feature_name,
+                    feature_vocab=vocabs[this_feature_name],
+                    indices=indices,
+                    write_csv=config.write_csv,
+                )
+        else:
+            for predictions_path in glob.glob(
+                os.path.join(config.predictions, "*.txt")
+            ):
+                this_feature_name = os.path.basename(
+                    os.path.splitext(predictions_path)[0]
+                )
+                if (
+                    config.feature_names
+                    and this_feature_name not in config.feature_names
+                ):
+                    continue
+                # predictions_path = os.path.join(config.predictions, predictions_path)
+                handle_predictions(
+                    predictions_path,
+                    metadata_csv,
+                    config,
+                    feature_name=this_feature_name,
+                    indices=indices,
+                    write_csv=config.write_csv,
+                )
     else:
         handle_predictions(config.predictions, metadata_csv, config, indices=indices)
 
