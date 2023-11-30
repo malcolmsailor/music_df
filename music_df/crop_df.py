@@ -111,24 +111,25 @@ def crop_df(
 
 
     >>> crop_df(music_df, start_time=2.0)  # doctest: +ELLIPSIS
-       onset release            type
-    0    0.0     NaN  time_signature
-    1    0.0     4.0             bar
-    3    2.0     3.0            note
-    4    ...
-    >>> crop_df(music_df, start_time=4)  # doctest: +ELLIPSIS
+        onset  release            type
+    0     0.0      NaN  time_signature
+    1     0.0      4.0             bar
+    3     2.0      3.0            note
+    4     ...
+
+    >>> crop_df(music_df, start_time=4)  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
        onset release            type
     0    4.0     NaN  time_signature
     4    4.0     8.0             bar
     5    5.0     8.0            note
     6    ...
-    >>> crop_df(music_df, start_time=10.9)  # doctest: +ELLIPSIS
+    >>> crop_df(music_df, start_time=10.9)  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
        onset release            type
     7   11.0     NaN  time_signature
     11  11.0    14.0             bar
     12  12.0    14.0            note
     13  ...
-    >>> crop_df(music_df, start_i=12)  # doctest: +ELLIPSIS
+    >>> crop_df(music_df, start_i=12)  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
        onset release            type
     7   11.0     NaN  time_signature
     11  11.0    14.0             bar
@@ -136,7 +137,7 @@ def crop_df(
     13  13.0    13.5            note
 
     Note that end_i is inclusive (like label-based indexing in Pandas):
-    >>> crop_df(music_df, end_i=3)
+    >>> crop_df(music_df, end_i=3)  # doctest: +NORMALIZE_WHITESPACE
        onset  release            type
     0    0.0      NaN  time_signature
     1    0.0      4.0             bar
@@ -149,7 +150,7 @@ def crop_df(
     Traceback (most recent call last):
     NotImplementedError
 
-    >>> crop_df(music_df, start_time=6, end_i=10)
+    >>> crop_df(music_df, start_time=6, end_i=10)  # doctest: +NORMALIZE_WHITESPACE
        onset release            type
     0    4.0     NaN  time_signature
     4    4.0     8.0             bar
@@ -188,7 +189,11 @@ def crop_df(
             prev_time_sig["onset"] = prev_bar.onset
         # Concatenate prev_time_sig series, prev_bar series, and music_df dataframe:
         music_df = pd.concat(
-            [prev_time_sig.to_frame().T, prev_bar.to_frame().T, music_df.loc[start_i:]]
+            [
+                prev_time_sig.to_frame().T.astype(music_df.dtypes),
+                prev_bar.to_frame().T.astype(music_df.dtypes),
+                music_df.loc[start_i:],
+            ]
         )
 
     if end_time is not None:

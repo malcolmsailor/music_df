@@ -13,10 +13,16 @@ import h5py
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+
 from music_df.crop_df import crop_df
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
 from music_df.read_csv import read_csv
-from music_df.script_helpers import get_csv_path, get_csv_title, read_config_oc
+from music_df.script_helpers import (
+    get_csv_path,
+    get_csv_title,
+    get_itos,
+    read_config_oc,
+)
 from music_df.show_scores.show_score import show_score_and_predictions
 from music_df.sync_df import sync_array_by_df
 
@@ -42,9 +48,15 @@ ONSET_LEVEL_FEATURES = {
 
 @dataclass
 class Config:
+    # metadata: path to metadata csv containing at least the following columns:
+    # csv_path, df_indices. Rows should be in one-to-one correspondance with
+    # predictions.
     metadata: str
+    # predictions: h5 file containing predicted tokens. Rows
+    # should be in one-to-one correspondance with metadata.
     predictions: str
     dictionary_folder: str | None = None
+    # regex to filter score ids
     filter_scores: str | None = None
     feature_names: list[str] = field(default_factory=lambda: [])
     csv_prefix_to_strip: None | str = None
@@ -61,25 +73,14 @@ class Config:
     sync_onsets: bool = True
     # When predicting tokens we need to subtract the number of specials
     n_specials: int = 4
+    data_has_start_and_stop_tokens: bool = False
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    # parser.add_argument(
-    #     "--metadata",
-    #     required=True,
-    #     help="Metadata csv containing at least the following columns: csv_path, df_indices. Rows should be in one-to-one correspondance with predictions.",
-    # )
-    # parser.add_argument(
-    #     "--predictions",
-    #     required=True,
-    #     help="Text file containing predicted tokens, one sequence per line. Rows should be in one-to-one correspondance with metadata.",
-    # )
-    # parser.add_argument("--filter-scores", type=str, help="regex to filter score ids")
     parser.add_argument("--config-file", required=True)
+    # remaining passed through to omegaconf
     parser.add_argument("remaining", nargs=argparse.REMAINDER)
-    # parser.add_argument("--write-csv", action="store_true")
-    # parser.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
     return args
@@ -87,7 +88,7 @@ def parse_args():
 
 def sync_predictions(
     h5_path,
-    metadata_csv,
+    metadata_df,
     config,
     feature_name,
     feature_vocab,
@@ -96,7 +97,7 @@ def sync_predictions(
 ):
     h5file = h5py.File(h5_path, mode="r")
 
-    assert len(metadata_csv) >= len(h5file)
+    assert len(metadata_df) >= len(h5file)
 
     if indices is None:
         indices = list(range(len(h5file)))
@@ -104,11 +105,11 @@ def sync_predictions(
     prev_csv_path: None | str = None
     music_df: pd.DataFrame | None = None
     for i in indices:
-        metadata_row = metadata_csv.iloc[i]
+        metadata_row = metadata_df.iloc[i]
         logits: np.ndarray = (h5file[f"logits_{i}"])[:]  # type:ignore
-        # TODO: (Malcolm 2023-11-08) here, we trim the start/stop tokens. We should
-        #   do this when saving the logits.
-        logits = logits[1:-1]
+
+        if config.data_has_start_and_stop_tokens:
+            logits = logits[1:-1]
 
         if prev_csv_path is None or metadata_row.csv_path != prev_csv_path:
             prev_csv_path = metadata_row.csv_path
@@ -133,8 +134,12 @@ def sync_predictions(
             + "_synced"
         )
 
-        cropped_df = crop_df(music_df, start_i=min(df_indices), end_i=max(df_indices))
-        notes_df = cropped_df[cropped_df.type == "note"].reset_index(drop=True)
+        # This former strategy for cropping led to incorrect results sometimes:
+        # cropped_df = crop_df(music_df, start_i=min(df_indices), end_i=max(df_indices))
+        cropped_df = music_df.loc[df_indices]
+        assert cropped_df.type.unique().tolist() == ["note"]
+
+        notes_df = cropped_df.reset_index(drop=True)
 
         # In case logits were ragged, only take the logits corresponding to notes
         logits = logits[: len(notes_df)]
@@ -182,7 +187,7 @@ def sync_predictions(
 
 def handle_predictions(
     predictions_path,
-    metadata_csv,
+    metadata_df,
     config,
     feature_name=None,
     write_csv=False,
@@ -191,16 +196,16 @@ def handle_predictions(
     with open(predictions_path) as inf:
         predictions_list = inf.readlines()
 
-    assert len(metadata_csv) == len(predictions_list)
+    assert len(metadata_df) == len(predictions_list)
 
     if indices is not None:
-        # get rows pointed to by indices from metadata_csv
-        metadata_csv = metadata_csv.iloc[indices]
+        # get rows pointed to by indices from metadata_df
+        metadata_df = metadata_df.iloc[indices]
         predictions_list = [predictions_list[i] for i in indices]
 
     prev_csv_path: None | str = None
     music_df: pd.DataFrame | None = None
-    for (_, metadata_row), preds_str in zip(metadata_csv.iterrows(), predictions_list):
+    for (_, metadata_row), preds_str in zip(metadata_df.iterrows(), predictions_list):
         predictions = preds_str.split()
 
         if prev_csv_path is None or metadata_row.csv_path != prev_csv_path:
@@ -255,21 +260,6 @@ def handle_predictions(
             plt.show()
 
 
-def get_dictionaries(dictionary_paths: list[str]) -> dict[str, list[str]]:
-    out = {}
-    for dictionary_path in dictionary_paths:
-        feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
-        with open(dictionary_path) as inf:
-            data = inf.readlines()
-        contents = [
-            line.split(" ", maxsplit=1)[0]
-            for line in data
-            if line and not line.startswith("madeupword")
-        ]
-        out[feature_name] = contents
-    return out
-
-
 def main():
     args = parse_args()
     config = read_config_oc(args.config_file, args.remaining, Config)
@@ -277,25 +267,15 @@ def main():
         print("Nothing to do!")
         sys.exit(1)
 
-    if config.debug:
-
-        def custom_excepthook(exc_type, exc_value, exc_traceback):
-            traceback.print_exception(
-                exc_type, exc_value, exc_traceback, file=sys.stdout
-            )
-            pdb.post_mortem(exc_traceback)
-
-        sys.excepthook = custom_excepthook
-
-    metadata_csv = pd.read_csv(config.metadata)
+    metadata_df = pd.read_csv(config.metadata)
 
     indices = None
     if config.filter_scores is not None:
         indices = list(
             np.nonzero(
-                metadata_csv.score_id.str.contains(config.filter_scores)
-                | metadata_csv.score_path.str.contains(config.filter_scores)
-                | metadata_csv.csv_path.str.contains(config.filter_scores)
+                metadata_df.score_id.str.contains(config.filter_scores)
+                | metadata_df.score_path.str.contains(config.filter_scores)
+                | metadata_df.csv_path.str.contains(config.filter_scores)
             )[0]
         )
         if not indices:
@@ -304,9 +284,7 @@ def main():
     if indices is None:
         if config.random_examples:
             random.seed(config.seed)
-            # TODO: (Malcolm 2023-11-09) restore
-            indices = random.sample(range(100), k=config.n_examples)
-            # indices = random.sample(range(len(metadata_csv)), k=config.n_examples)
+            indices = random.sample(range(len(metadata_df)), k=config.n_examples)
         else:
             indices = list(range(config.n_examples))
     else:
@@ -316,8 +294,8 @@ def main():
         else:
             indices = indices[: config.n_examples]
 
-    # check if config.predictions is a directory
     args = []
+
     if os.path.isdir(config.predictions):
         if config.sync_onsets:
             if config.dictionary_folder is None:
@@ -326,7 +304,7 @@ def main():
                 dictionary_paths = glob.glob(
                     os.path.join(config.dictionary_folder, "*_dictionary.txt")
                 )
-                vocabs = get_dictionaries(dictionary_paths)
+                vocabs = get_itos(dictionary_paths)
             for predictions_path in glob.glob(os.path.join(config.predictions, "*.h5")):
                 this_feature_name = os.path.basename(
                     os.path.splitext(predictions_path)[0]
@@ -336,10 +314,9 @@ def main():
                     and this_feature_name not in config.feature_names
                 ):
                     continue
-                # predictions_path = os.path.join(config.predictions, predictions_path)
                 sync_predictions(
                     predictions_path,
-                    metadata_csv,
+                    metadata_df,
                     config,
                     feature_name=this_feature_name,
                     feature_vocab=vocabs[this_feature_name],
@@ -358,17 +335,16 @@ def main():
                     and this_feature_name not in config.feature_names
                 ):
                     continue
-                # predictions_path = os.path.join(config.predictions, predictions_path)
                 handle_predictions(
                     predictions_path,
-                    metadata_csv,
+                    metadata_df,
                     config,
                     feature_name=this_feature_name,
                     indices=indices,
                     write_csv=config.write_csv,
                 )
     else:
-        handle_predictions(config.predictions, metadata_csv, config, indices=indices)
+        handle_predictions(config.predictions, metadata_df, config, indices=indices)
 
 
 if __name__ == "__main__":

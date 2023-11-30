@@ -1,9 +1,13 @@
 import ast
+import logging
+import os
 from fractions import Fraction
 
 import pandas as pd
 
 from music_df.quantize_df import quantize_df
+
+LOGGER = logging.getLogger(__name__)
 
 
 def fraction_to_float(x):
@@ -22,10 +26,12 @@ def read_csv(
     onset_type=fraction_to_float,
     release_type=fraction_to_float,
     quantize_tpq: int | None = None,
-) -> pd.DataFrame:
+) -> pd.DataFrame | None:
+    if not os.path.exists(path):
+        LOGGER.warning(f"{path} does not appear to exist")
+        return None
     df = pd.read_csv(
-        path,
-        converters={"onset": onset_type, "release": release_type},
+        path, converters={"onset": onset_type, "release": release_type}, index_col=0
     )
     # df["onset"] = [onset_type(o) for o in df.onset]
     # df.loc[df.type == "note", "release"] = [

@@ -1,16 +1,25 @@
+from typing import Literal, get_args
+
 import numpy as np
 import pandas as pd
 
+ZeroDurAction = Literal["remove", "drop", "min_dur", "preserve"]
+
 
 def quantize_df(
-    df, tpq: int = 4, ticks_out: bool = False, avoid_zero_dur_notes: bool = True
+    df,
+    tpq: int = 4,
+    ticks_out: bool = False,
+    zero_dur_action: ZeroDurAction = "min_dur",
 ) -> pd.DataFrame:
     """
-    >>> df = pd.DataFrame({
-    ...     "pitch": [60, 61, 62, 63],
-    ...     "onset": [-0.01, 1.01, 1.95, 2.9],
-    ...     "release": [0.99, 2.03, 3.0, 3.97],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [60, 61, 62, 63],
+    ...         "onset": [-0.01, 1.01, 1.95, 2.9],
+    ...         "release": [0.99, 2.03, 3.0, 3.97],
+    ...     }
+    ... )
     >>> df
        pitch  onset  release
     0     60  -0.01     0.99
@@ -42,34 +51,44 @@ def quantize_df(
 
     Note that by default, notes that would be rounded to have zero length
     are given the minimum length.
-    >>> df = pd.DataFrame({
-    ...     "pitch": [60, 61, 62],
-    ...     "onset": [0.0, 0.5, 1.0],
-    ...     "release": [0.4, 1.0, 2.0],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [60, 61, 62],
+    ...         "onset": [0.0, 0.5, 1.0],
+    ...         "release": [0.4, 1.0, 2.0],
+    ...     }
+    ... )
     >>> quantize_df(df, tpq=1)
        pitch  onset  release
     0     60    0.0      1.0
     1     61    0.0      1.0
     2     62    1.0      2.0
 
-    To avoid that, pass `avoid_zero_dur_notes=False`:
-    >>> quantize_df(df, tpq=1, avoid_zero_dur_notes=False)
+    To preserve zero-dur notes, pass `zero_dur_action="preserve"`:
+    >>> quantize_df(df, tpq=1, zero_dur_action="preserve")
        pitch  onset  release
     0     60    0.0      0.0
     1     61    0.0      1.0
     2     62    1.0      2.0
 
-    If you want to remove notes that have length < some threshold, do it to
-    the dataframe before calling this function:
-    >>> quantize_df(df[(df.release - df.onset) >= 0.5], tpq=1)
+    To remove zero-dur notes, pass `zero_dur_action="remove"` (NB the index is not
+    reset):
+    >>> quantize_df(df, tpq=1, zero_dur_action="remove")
+       pitch  onset  release
+    1     61    0.0      1.0
+    2     62    1.0      2.0
+
+    "drop" is an alias for "remove"
+    >>> quantize_df(df, tpq=1, zero_dur_action="drop")
        pitch  onset  release
     1     61    0.0      1.0
     2     62    1.0      2.0
     """
+    assert zero_dur_action in get_args(ZeroDurAction)
+
     onsets = np.rint(df.onset.to_numpy() * tpq)
     releases = np.rint(df.release.to_numpy() * tpq)
-    if avoid_zero_dur_notes:
+    if zero_dur_action == "min_dur":
         releases[releases == onsets] += 1
     if ticks_out:
         onsets = onsets.astype(int)
@@ -77,7 +96,7 @@ def quantize_df(
     else:
         onsets /= tpq
         releases /= tpq
-    return pd.DataFrame(
+    out = pd.DataFrame(
         {
             col_name: (
                 df[col_name].copy()
@@ -87,3 +106,6 @@ def quantize_df(
             for col_name in df.columns
         }
     )
+    if zero_dur_action in {"remove", "drop"}:
+        out = out[out["onset"] != out["release"]]
+    return out
