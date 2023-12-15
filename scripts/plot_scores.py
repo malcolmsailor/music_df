@@ -8,7 +8,6 @@ import sys
 import traceback
 from dataclasses import dataclass, field
 
-import yaml
 from music_df import read_csv
 from music_df.script_helpers import read_config
 from music_df.show_scores.show_score import show_score

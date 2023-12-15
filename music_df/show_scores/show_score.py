@@ -55,6 +55,8 @@ else:
         pdf_path: str,
         csv_path: str | None = None,
         col_type=str,
+        entropy: Sequence[float] | None = None,
+        n_entropy_levels: int = 4,
     ):
         music_df = music_df.copy()
         if prediction_indices is None:
@@ -64,12 +66,27 @@ else:
         for pred, i in zip(predicted_feature, prediction_indices):
             music_df.loc[i, f"pred_{feature_name}"] = pred
 
+        if entropy is not None:
+            music_df["entropy"] = float("nan")
+            for e, i in zip(entropy, prediction_indices):
+                # Flip the sign so that low entropy notes have solid color and high
+                #   entropy notes are progressively more transparent
+                music_df.loc[i, "entropy"] = -e
+            transparency_args = {
+                "n_transparency_levels": n_entropy_levels,
+                "color_transparency_col": "entropy",
+            }
+        else:
+            transparency_args = {}
+
         music_df = crop_df(
             music_df, start_i=min(prediction_indices), end_i=max(prediction_indices)
         )
 
         if feature_name not in music_df.columns:
             # Unlabeled data
+            if entropy is not None:
+                raise NotImplementedError
             show_score(music_df, feature_name=f"pred_{feature_name}", pdf_path=pdf_path)
             return
 
@@ -114,4 +131,5 @@ else:
             color_col="correct_by_feature",
             color_mask_col="color_mask",
             uncolored_val=uncolored_val,
+            **transparency_args,
         )

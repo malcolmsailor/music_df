@@ -86,6 +86,11 @@ def parse_args():
     return args
 
 
+def softmax(a):
+    z = np.exp(a)
+    return z / np.sum(z, axis=-1, keepdims=True)
+
+
 def sync_predictions(
     h5_path,
     metadata_df,
@@ -94,6 +99,7 @@ def sync_predictions(
     feature_vocab,
     write_csv=False,
     indices: None | list[int] = None,
+    entropy_to_transparency: bool = True,
 ):
     h5file = h5py.File(h5_path, mode="r")
 
@@ -147,10 +153,22 @@ def sync_predictions(
         if feature_name in ONSET_LEVEL_FEATURES:
             logits = sync_array_by_df(logits, notes_df, sync_col_name_or_names="onset")
 
+        if entropy_to_transparency:
+            probs = softmax(logits)
+            entropy = -np.sum(probs * np.log2(probs), axis=1)
+        else:
+            entropy = None
+
         predicted_indices = logits.argmax(axis=-1)
 
-        assert predicted_indices.min() >= config.n_specials
         predicted_indices -= config.n_specials
+        if predicted_indices.min() < 0:
+            LOGGER.warning(
+                f"Predicted at least one special token in {metadata_row.csv_path}; "
+                "replacing with 0"
+            )
+            predicted_indices[predicted_indices < 0] = 0
+
         predictions = [feature_vocab[i] for i in predicted_indices]
         if config.make_score_pdfs:
             feature_name = (
@@ -167,6 +185,7 @@ def sync_predictions(
                 pdf_path=pdf_path,
                 csv_path=csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
+                entropy=entropy,
             )
             if not return_code:
                 LOGGER.info(f"Wrote {pdf_path}")
@@ -299,7 +318,7 @@ def main():
     if os.path.isdir(config.predictions):
         if config.sync_onsets:
             if config.dictionary_folder is None:
-                raise ValueError
+                raise ValueError("must provide dictionary folder if syncing onsets")
             else:
                 dictionary_paths = glob.glob(
                     os.path.join(config.dictionary_folder, "*_dictionary.txt")
