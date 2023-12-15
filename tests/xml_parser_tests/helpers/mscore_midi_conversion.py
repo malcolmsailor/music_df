@@ -44,6 +44,7 @@ def handle_xml(path):
         handler = MxlMetaHandler()
         with archive.open("META-INF/container.xml") as inf:
             xml.sax.parse(inf, handler)
+        assert handler.musicxml_path is not None
         with archive.open(handler.musicxml_path) as inf:
             yield inf
         # return handler.musicxml_path
@@ -133,6 +134,7 @@ def preprocess_musescore(
                 contents = _remove_element_with_start_tag_only(contents, "glissando")
             if remove_graces:
                 contents = _remove_graces(contents)
+            assert isinstance(contents, str)
             with open(tmp_xml, "w") as outf:
                 outf.write(contents)
             yield tmp_xml
@@ -142,7 +144,6 @@ def preprocess_musescore(
 
 def musescore_to_midi(in_path, only_if_newer=True, only_if_cached=False) -> str:
     assert MIDI_CACHE is not None
-    breakpoint()
     out_path = os.path.join(
         MIDI_CACHE,
         os.path.splitext(in_path)[0].lstrip(os.path.sep) + ".mid",
@@ -199,4 +200,3 @@ def test_preprocess_musescore():
 
 if __name__ == "__main__":
     ff = filter_files(re.compile(r"sound segno="), get_xml_files())
-    breakpoint()

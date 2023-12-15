@@ -1,3 +1,2 @@
-${PYTHON_STUFF}/malmus/midi_to_note_table
 black
 pytest

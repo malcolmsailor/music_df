@@ -6,6 +6,8 @@ import tempfile
 import pandas as pd
 
 from music_df.sort_df import sort_df
+from music_df.xml_parser import xml_parse
+from music_df.xml_parser.parser import RepeatOptions
 
 TOTABLE = os.getenv("TOTABLE")
 
@@ -47,12 +49,9 @@ def read_krn(
     return df
 
 
-def read_krn_via_xml(krn_path: str, expand_repeats="yes") -> pd.DataFrame:
-    try:
-        from xml_to_note_table.parser import parse as xml_parse  # type:ignore
-    except ImportError:
-        raise ValueError("Running this function requires `xml_to_note_table`")
-
+def read_krn_via_xml(
+    krn_path: str, expand_repeats: RepeatOptions = "yes"
+) -> pd.DataFrame:
     result = subprocess.run(
         ["hum2xml", krn_path], check=True, capture_output=True
     ).stdout.decode()

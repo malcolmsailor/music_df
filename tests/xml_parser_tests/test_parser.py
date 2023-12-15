@@ -27,7 +27,6 @@ def test_parse():
     ]
     for xml_file in xml_files:
         df = xml_parse(xml_file)
-        breakpoint()
 
 
 def test_expand_repeats():
@@ -258,7 +257,6 @@ def test_compare_parses_with_mscore():
             if not da_segno:
                 print("Frame lengths do not match")
                 # TODO some tests are not passing
-                breakpoint()
         else:
             pitches_match = (pdf.pitch == mdf.pitch).all()
             # numpy "isclose" doesn't work because of fractions
