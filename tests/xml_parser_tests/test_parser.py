@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# TODO: (Malcolm 2023-12-15) restore
 from music_df.midi_parser import midi_to_table
 from music_df.xml_parser import xml_parse
 from tests.xml_parser_tests.helpers.get_xml_files import get_xml_files
