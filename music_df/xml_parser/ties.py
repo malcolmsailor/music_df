@@ -4,7 +4,7 @@ import typing as t
 import warnings
 from collections import defaultdict, deque
 
-from music_df.xml_parser.note import Note
+from music_df.xml_parser.objects import Note
 
 
 def merge_ties(notes: t.Iterable[Note]) -> t.List[Note]:

@@ -7,14 +7,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+# TODO: (Malcolm 2023-12-15) restore
+from music_df.midi_parser import midi_to_table
 from music_df.xml_parser import xml_parse
 from tests.xml_parser_tests.helpers.get_xml_files import get_xml_files
 from tests.xml_parser_tests.helpers.mscore_midi_conversion import musescore_to_midi
 from tests.xml_parser_tests.helpers.run_scorext import run_scorext
-
-# TODO: (Malcolm 2023-12-15) restore
-# from midi_to_note_table import midi_to_table
-
 
 MODULE_DIR = os.path.dirname((os.path.realpath(__file__)))
 

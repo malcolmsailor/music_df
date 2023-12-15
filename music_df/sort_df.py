@@ -13,7 +13,7 @@ class SortOrderMapping(dict):
 
 
 DF_TYPE_SORT_ORDER = SortOrderMapping(
-    {"bar": 1, "time_signature": 0, "note": 3}, missing_value=2
+    {"bar": 2, "time_signature": 0, "tempo": 1, "note": 4}, missing_value=3
 )
 
 

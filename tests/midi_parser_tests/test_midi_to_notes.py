@@ -275,7 +275,7 @@ def test_sort_order():
     #             return i
 
     # with temp_midi(mid) as output_path:
-    #     out_df = midi_to_note_table.midi_to_table(
+    #     out_df = midi_to_table(
     #         output_path,
     #         time_type=float,
     #         overlapping_notes="end_first",
@@ -318,7 +318,7 @@ def test_sort_order():
     # # score = music21.converter.parse(in_path, format="musicxml")
     # # score = score.stripTies()
     # # score.write("midi", mid_path)
-    # # df = midi_to_note_table.midi_to_table(
+    # # df = midi_to_table(
     # #     mid_path,
     # #     time_type=float,
     # #     overlapping_notes="end_first",

@@ -19,6 +19,8 @@ from zipfile import ZipFile
 
 import pandas as pd
 
+from music_df.sort_df import sort_df
+
 try:
     from cache_lib import cacher  # type:ignore
 except ImportError:
@@ -30,7 +32,13 @@ except ImportError:
         return identity_wrap
 
 
-from music_df.xml_parser.note import LIMIT_DENOMINATOR, Measure, Note, TimeSignature
+from music_df.xml_parser.objects import (
+    LIMIT_DENOMINATOR,
+    Measure,
+    Note,
+    Tempo,
+    TimeSignature,
+)
 from music_df.xml_parser.repeats import get_repeat_segments
 from music_df.xml_parser.ties import merge_ties
 
@@ -148,7 +156,6 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._current_part_repeats: t.Optional[
             t.DefaultDict[int, t.Dict[str, t.Dict[str, t.Any]]]
         ] = None
-        self._tempi: dict[Fraction, float] = {}
         self._repeats_have_been_expanded = False
         self._measure_rests = defaultdict(set)
         self._cue = False
@@ -156,6 +163,8 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._ts_denom: t.Optional[int] = None
         self._time_sigs: t.Optional[t.List[TimeSignature]] = None
         self._time_sig_i: t.Optional[int] = None
+        self._tempi: t.Optional[t.List[Tempo]] = None
+        self._tempo_i: t.Optional[int] = None
 
     def _advance(self):
         assert self._now is not None and self._time_shift is not None
@@ -173,8 +182,10 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         if not self._current_part_number:
             self._measures = []
             self._time_sigs = []
+            self._tempi = []
         self._measure_i = 0
         self._time_sig_i = 0
+        self._tempo_i = 0
         self._measure_num = 0
         self._part_measure_ends = self._measure_ends[self._current_part_number]
         self._at_measure_start = False
@@ -632,9 +643,17 @@ class MusicXmlHandler(xml.sax.ContentHandler):
                 "number": attrs["number"]
             }
 
+    def _add_tempo(self, bpm: float):
+        if not self._current_part_number:
+            self._tempi.append(Tempo(onset=self._now, bpm=bpm))
+        else:
+            tempo = self._tempi[self._tempo_i]
+            assert tempo.onset == self._now
+            assert tempo.bpm == bpm
+        self._tempo_i += 1
+
     def _process_sound(self, attrs):
         assert self._measure_num is not None and self._current_part_repeats is not None
-        # TODO: (Malcolm 2023-10-10) what is `sound`?`
         if "forward-repeat" in attrs:
             if "forward" not in self._current_part_repeats[self._measure_num]:
                 self._current_part_repeats[self._measure_num]["forward"] = {"times": 2}
@@ -645,7 +664,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
                 )
         if "tempo" in attrs:
             assert self._now is not None
-            self._tempi[self._now] = float(attrs.get("tempo"))
+            self._add_tempo(float(attrs.get("tempo")))
         # if "fine" in attrs:
         #     pass
         # if "coda" in attrs:
@@ -781,30 +800,16 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             merged_ties.append(merge_ties(part))
         # merged_ties = [merge_ties(part) for part in no_rests]
         all_parts = reduce(
-            list.__add__, merged_ties + [self._measures, self._time_sigs]
+            list.__add__, merged_ties + [self._measures, self._time_sigs, self._tempi]
         )
         df = pd.DataFrame([item.asdict() for item in all_parts])
         if not len(df):
             return df
-        # TODO: (Malcolm 2023-12-15) add tempo events
         if "pitch" not in df.columns:
             # this occurs if there are no notes in the score
             df["pitch"] = float("nan")
         if sort:
-            df.sort_values(by="release", inplace=True, ignore_index=True)
-            df.sort_values(
-                by="pitch", inplace=True, ignore_index=True, kind="mergesort"
-            )
-            df.sort_values(
-                by="type",
-                inplace=True,
-                ignore_index=True,
-                kind="mergesort",
-                key=lambda x: x.map({"bar": 0, "time_signature": 1, "note": 2}),
-            )
-            df.sort_values(
-                by="onset", inplace=True, ignore_index=True, kind="mergesort"
-            )
+            df = sort_df(df)
         return df
 
 

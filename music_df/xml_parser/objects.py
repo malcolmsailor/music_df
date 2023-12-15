@@ -81,6 +81,25 @@ class Measure(DFItem):
 
 
 @dataclass
+class Tempo(DFItem):
+    _type = "tempo"
+    onset: Fraction
+    bpm: float
+
+    def asdict(self):
+        return {
+            "type": self._type,
+            "onset": self.onset,
+            "other": {"tempo": self.bpm},
+            "release": self.release,
+        }
+
+    @property
+    def release(self):
+        return None
+
+
+@dataclass
 class TimeSignature(DFItem):
     _type = "time_signature"
     onset: Fraction
@@ -88,11 +107,10 @@ class TimeSignature(DFItem):
     denom: int
 
     def asdict(self):
-        # to be consistent with how time-sigs are indicated in midi_to_note_table
+        # to be consistent with how time-sigs are indicated in midi_parser
         return {
             "type": self._type,
             "onset": self.onset,
-            # TODO verify
             "other": {"numerator": self.numer, "denominator": self.denom},
             "release": self.release,
         }
