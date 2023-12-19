@@ -37,6 +37,7 @@ from music_df.xml_parser.objects import (
     Measure,
     Note,
     Tempo,
+    Text,
     TimeSignature,
 )
 from music_df.xml_parser.repeats import get_repeat_segments
@@ -81,6 +82,8 @@ class State(Enum):
     BEAT_TYPE = auto()
     FIGURED_BASS = auto()
     DIRECTION = auto()
+    WORDS = auto()
+    MOVEMENT_TITLE = auto()
 
 
 WHITE_KEYS = MappingProxyType({"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11})
@@ -113,6 +116,8 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         "beat_type",
         "figured_bass",
         "direction",
+        "words",
+        "movement_title",
     }
     _process = {
         "rest",
@@ -165,6 +170,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._time_sig_i: t.Optional[int] = None
         self._tempi: t.Optional[t.List[Tempo]] = None
         self._tempo_i: t.Optional[int] = None
+        self._words: t.List[Text] = []
 
     def _advance(self):
         assert self._now is not None and self._time_shift is not None
@@ -517,6 +523,20 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         assert self._state_stack[-1] is State.DIRECTION
         self._state_stack.pop()
 
+    def _init_words(self, attrs):
+        self._state_stack.append(State.WORDS)
+
+    def _end_words(self):
+        assert self._state_stack[-1] is State.WORDS
+        self._state_stack.pop()
+
+    def _init_movement_title(self, attrs):
+        self._state_stack.append(State.MOVEMENT_TITLE)
+
+    def _end_movement_title(self):
+        assert self._state_stack[-1] is State.MOVEMENT_TITLE
+        self._state_stack.pop()
+
     def startElement(self, name, attrs):
         name = name.replace("-", "_")
         if name in self._init_and_end:
@@ -542,6 +562,8 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             State.VOICE,
             State.BEATS,
             State.BEAT_TYPE,
+            State.WORDS,
+            State.MOVEMENT_TITLE,
         }:
             self._char_accumulator.append(content)
 
@@ -571,6 +593,10 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         elif self._state_stack[-1] is State.MIDI_PROGRAM:
             assert self._current_part_id is not None
             self._part_info[self._current_part_id]["midi_instrument"] = int(content)
+        elif self._state_stack[-1] is State.WORDS:
+            self._words.append(Text(self._now, content))
+        elif self._state_stack[-1] is State.MOVEMENT_TITLE:
+            self._words.append(Text(Fraction(0), f"Movement title: {content}"))
 
     def endDocument(self):
         self._parsed = True
@@ -800,7 +826,8 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             merged_ties.append(merge_ties(part))
         # merged_ties = [merge_ties(part) for part in no_rests]
         all_parts = reduce(
-            list.__add__, merged_ties + [self._measures, self._time_sigs, self._tempi]
+            list.__add__,
+            merged_ties + [self._measures, self._time_sigs, self._tempi, self._words],
         )
         df = pd.DataFrame([item.asdict() for item in all_parts])
         if not len(df):
@@ -911,4 +938,4 @@ def parse(path, sort=True, expand_repeats: RepeatOptions = "yes") -> pd.DataFram
     except FileNotFoundError:
         raise
     except Exception as e:
-        raise XMLParseException from e
+        raise XMLParseException(f"Parsing {path} failed") from e

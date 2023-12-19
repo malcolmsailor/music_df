@@ -118,3 +118,22 @@ class TimeSignature(DFItem):
     @property
     def release(self):
         return None
+
+
+@dataclass
+class Text(DFItem):
+    _type = "text"
+    onset: Fraction
+    content: str
+
+    def asdict(self):
+        return {
+            "type": self._type,
+            "onset": self.onset,
+            "other": {"text": self.content},
+            "release": self.release,
+        }
+
+    @property
+    def release(self):
+        return None

@@ -17,9 +17,8 @@ Supported formats are:
 # Usage
 
 ```
->>> import xml_to_note_table
->>> from xml_to_note_table import parse
->>> parse("tests/resources/temp.xml")
+>>> from music_df.xml_parser import xml_parse
+>>> xml_parse("tests/resources/temp.xml")
 /Users/malcolm/google_drive/python/malmus/xml_to_note_table/xml_to_note_table/ties.py:215: UserWarning: Release of note at 76 < onset of note at 140
   warnings.warn(
       pitch onset release tie_to_next tie_to_prev  grace voice part spelling instrument  midi_instrument            type                               other

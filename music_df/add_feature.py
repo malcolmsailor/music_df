@@ -276,11 +276,17 @@ def add_default_time_sig(
 
 
 def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.DataFrame:
+    # First handle midi tempi
     tempo_mask = music_df.type == "set_tempo"
     music_df["tempo"] = float("nan")
     music_df.loc[tempo_mask, "tempo"] = [
         tempo2bpm(_to_dict_if_necessary(d)["tempo"])
         for _, d in music_df[tempo_mask].other.items()
+    ]
+    # Next handle BPM tempi from musicxml etc
+    tempo_mask = music_df.type == "tempo"
+    music_df.loc[tempo_mask, "tempo"] = [
+        _to_dict_if_necessary(d)["tempo"] for _, d in music_df[tempo_mask].other.items()
     ]
     music_df["tempo"] = music_df.tempo.ffill()
     music_df["tempo"] = music_df.tempo.fillna(value=default_tempo)
