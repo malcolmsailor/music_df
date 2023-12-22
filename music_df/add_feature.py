@@ -476,3 +476,76 @@ def instruments_to_midi_instruments(
         lambda x: translation.get(x, default_instrument)
     )
     return music_df
+
+
+def add_scale_degrees(music_df: pd.DataFrame):
+    """
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         # we omit all other columns
+    ...         # (Malcolm 2023-12-22) Note that "bb" is not supported by music21 so
+    ...         #   we handle it separately.
+    ...         "type": ["bar"] + ["note"] * 9,
+    ...         "spelling": [
+    ...             float("nan"),
+    ...             "Db",
+    ...             "F",
+    ...             "Gb",
+    ...             "C",
+    ...             "C#",
+    ...             "C##",
+    ...             "Fb",
+    ...             "F--",
+    ...             "Fbb",
+    ...         ],
+    ...         "key": ["na"] + ["Gb"] * 9,
+    ...     }
+    ... )
+    >>> add_scale_degrees(df)
+       type spelling key scale_degree
+    0   bar      NaN  na          NaN
+    1  note       Db  Gb            5
+    2  note        F  Gb            7
+    3  note       Gb  Gb            1
+    4  note        C  Gb           #4
+    5  note       C#  Gb          ##4
+    6  note      C##  Gb         ###4
+    7  note       Fb  Gb           b7
+    8  note      F--  Gb          bb7
+    9  note      Fbb  Gb          bb7
+    """
+    from music21.key import Key
+    from music21.pitch import Pitch
+
+    assert "spelling" in music_df.columns
+    assert "key" in music_df.columns
+
+    mapping = {}
+
+    # (Malcolm 2023-12-22) we could save a little time caching keys globally
+    keys = {}
+
+    for (spelling, key), _ in music_df.groupby(["spelling", "key"]):
+        if key not in keys:
+            key_obj = Key(key)
+            keys[key] = key_obj
+        else:
+            key_obj = keys[key]
+
+        scale_degree_int, accidental = key_obj.getScaleDegreeAndAccidentalFromPitch(
+            Pitch(spelling[0] + spelling[1:].replace("b", "-"))
+        )
+
+        if accidental is None:
+            scale_degree = str(scale_degree_int)
+        else:
+            scale_degree = f"{accidental.modifier.replace('-', 'b')}{scale_degree_int}"
+
+        mapping[(spelling, key)] = scale_degree
+
+    note_mask = music_df.type == "note"
+    music_df.loc[note_mask, "scale_degree"] = music_df.loc[note_mask].apply(
+        lambda row: mapping[(row.spelling, row.key)], axis=1, result_type=None
+    )
+
+    return music_df
