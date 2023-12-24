@@ -24,7 +24,7 @@ def read_config_oc(config_path: str | None, cli_args: list[str] | None, config_c
         configs.append(OmegaConf.from_cli(cli_args))
     merged_conf = OmegaConf.merge(*configs)
     out = config_cls(**merged_conf)
-    if out.debug:
+    if getattr(out, "debug", False):
         set_debug_hook()
     return out
 
