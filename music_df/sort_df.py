@@ -47,7 +47,7 @@ def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
         )
     if "type" in df.columns:
         # We first sort by type so that result of sort will always be the same (i.e.,
-        #   the "all other" rows below will be sorted)
+        #   the "missing value" rows below will be sorted)
         df.sort_values(
             by="type", axis=0, inplace=True, ignore_index=ignore_index, kind="mergesort"
         )

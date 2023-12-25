@@ -24,7 +24,6 @@ def test_parse():
     ]
     for xml_file in xml_files:
         df = xml_parse(xml_file)
-        breakpoint()
 
 
 def test_expand_repeats():

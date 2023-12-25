@@ -5,3 +5,4 @@ matplotlib
 pyyaml
 music21
 omegaconf
+-e ../spell # mspell
