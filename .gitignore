@@ -2,3 +2,4 @@ venvvars
 build
 pyrightconfig.json
 user_scripts
+**/test_output

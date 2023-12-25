@@ -1,5 +1,6 @@
 from ast import literal_eval
 from itertools import chain
+from math import isnan
 from typing import Callable
 
 import numpy as np
@@ -315,6 +316,9 @@ def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
     bar_durs = pd.concat([bar_durs, pd.Series([last_bar_dur])]).reset_index(drop=True)
     music_df["bar_dur"] = float("nan")
     music_df.loc[bar_mask, "bar_dur"] = bar_durs.astype(float).to_numpy()
+    music_df.loc[bar_mask, "release"] = (
+        music_df.loc[bar_mask, "onset"] + music_df.loc[bar_mask, "bar_dur"]
+    )
     return music_df
 
 
@@ -337,6 +341,7 @@ def split_long_bars(music_df: pd.DataFrame) -> pd.DataFrame:
         added_bars = []
         for i, long_bar in music_df[long_bars].iterrows():
             last_release = long_bar.release
+            assert not isnan(last_release)
             remaining_dur = long_bar.bar_dur - long_bar.time_sig_dur
             onset = long_bar.onset
             prev_bar = long_bar
@@ -379,6 +384,8 @@ def make_bar_explicit(
     music_df: pd.DataFrame, default_bar_number: int = -1, initial_bar_number: int = 1
 ) -> pd.DataFrame:
     bar_mask = music_df.type == "bar"
+    # TODO: (Malcolm 2023-12-25) maybe I should use appears_to_have_pickup_measure to
+    #   determine initial_bar_number?
     if not len(bar_mask):
         raise ValueError("No bars found")
 

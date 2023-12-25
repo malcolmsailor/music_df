@@ -7,5 +7,7 @@ def test_ms3_to_df():
     #   the conversion runs without an exception
     # TODO: (Malcolm 2023-10-11) update the path
     TEST_PATH = "/Users/malcolm/google_drive/python/third_party/dcml_corpora/corelli/notes/op03n10d.tsv"
+    TEST_MEASURES_PATH = "/Users/malcolm/google_drive/python/third_party/dcml_corpora/corelli/measures/op03n10d.tsv"
     ms3_df = pd.read_csv(TEST_PATH, sep="\t")
-    music_df = ms3_to_df(ms3_df)
+    measures_df = pd.read_csv(TEST_MEASURES_PATH, sep="\t")
+    music_df = ms3_to_df(ms3_df, measures_df)
