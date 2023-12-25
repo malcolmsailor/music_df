@@ -1,5 +1,5 @@
-from fractions import Fraction
 import logging
+from fractions import Fraction
 
 import pandas as pd
 from music_df.add_feature import infer_barlines
@@ -169,6 +169,11 @@ def ms3_to_df(
 
     if drop_first_endings:
         out_df = out_df[~out_df["quarterbeats"].isna()].reset_index(drop=True)
+        if measures_df is not None:
+            if "quarterbeats" in measures_df.columns:
+                measures_df = measures_df[
+                    ~measures_df["quarterbeats"].isna()
+                ].reset_index(drop=True)
     else:
         raise NotImplementedError
 
