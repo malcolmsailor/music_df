@@ -98,6 +98,7 @@ def read_krn(
     remove_graces: bool = True,
     no_final_barline: bool = True,
     ensure_initial_barline: bool = True,
+    # TODO: (Malcolm 2023-12-28) why is sort False by default?
     sort: bool = False,
     infer_tempo: bool = False,
     default_tempo: float | None = None,
@@ -131,7 +132,8 @@ def read_krn(
             bpm = default_tempo
         if bpm is not None:
             df = pd.concat(
-                [pd.DataFrame([{"type": "tempo", "onset": 0.0, "tempo": bpm}]), df]
+                [pd.DataFrame([{"type": "tempo", "onset": 0.0, "tempo": bpm}]), df],
+                ignore_index=True,
             )
 
     if sort:

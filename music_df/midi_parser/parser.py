@@ -12,6 +12,8 @@ from typing import List, Optional, Tuple, Type, Union
 import mido
 import pandas as pd
 
+from music_df.sort_df import sort_df
+
 NUM_CHANNELS = 16
 
 
@@ -47,13 +49,10 @@ def midi_to_table(
     overlapping_notes: str = "end_all",
     pb_tup_dict: Optional[dict] = None,
     display_name: str | None = None,
-    pitch_sort_asc: Optional[bool] = False,
-    track_sort_asc: Optional[bool] = False,
-    channel_sort_asc: Optional[bool] = None,
     notes_only: bool = False,
     warn_for_orphan_note_offs: bool = True,
 ) -> pd.DataFrame:
-    """Read a midi file and return a list of events.
+    """Read a midi file and return a pandas DataFrame.
 
     Note-on and note-off events will be compiled into a single event with
     attack and release.
@@ -101,12 +100,6 @@ def midi_to_table(
         pb_tup_dict: dictionary. TODO document.
         display_name: the value of the "filename" column in the returned dataframe. If
             not passed, uses in_midi_fname.
-        pitch_sort_asc: whether to sort by pitch ascending (or descending). If
-            None, output is not sorted by pitch.
-        track_sort_asc: whether to sort by track ascending (or descending). If
-                    None, output is not sorted by track.
-        channel_sort_asc: whether to sort by channel ascending (or descending). If
-                            None, output is not sorted by channel.
     Returns: a dataframe "events".
         - note events are the combination of a note-on with the following
             note-off message.
@@ -125,7 +118,8 @@ def midi_to_table(
         understand repeated notes on the same pitch (and expect a preceding
         note-on and a following note-off), rather than a note with zero length)
 
-        Output will be sorted as follows:
+        Output will be sorted with `sort_df()` function. I believe (haven't double
+        checked recently) this sorts notes as follows:
             - by onset
             - by type (alphabetical, except for note events, which go after all
                 other message types)
@@ -249,8 +243,8 @@ def midi_to_table(
     # Sorting the tracks avoids orphan note or pitchwheel events.
     try:
         in_mid = mido.MidiFile(in_midi_fname)
-    except:
-        raise MidiError(f"unable to read file {in_midi_fname}")
+    except Exception as exc:
+        raise MidiError(f"unable to read file {in_midi_fname}") from exc
     _convert_to_abs_time_and_sort(in_mid)
     num_tracks = len(in_mid.tracks)
     ticks_per_beat = in_mid.ticks_per_beat
@@ -305,57 +299,7 @@ def midi_to_table(
                         )
 
     df = pd.DataFrame(out)
-    df.sort_values(
-        by="release",
-        axis=0,
-        inplace=True,
-        ignore_index=True,
-        key=lambda x: 0 if x is None else x,
-    )
-    if pitch_sort_asc is not None:
-        df.sort_values(
-            by="pitch",
-            axis=0,
-            inplace=True,
-            ignore_index=True,
-            ascending=pitch_sort_asc,
-            key=lambda x: 128 if x is None else x,
-            kind="mergesort",  # default sort is not stable
-        )
-    if channel_sort_asc is not None:
-        df.sort_values(
-            by="channel",
-            axis=0,
-            inplace=True,
-            ignore_index=True,
-            ascending=channel_sort_asc,
-            kind="mergesort",  # default sort is not stable
-        )
-    if track_sort_asc is not None:
-        df.sort_values(
-            by="track",
-            axis=0,
-            inplace=True,
-            ignore_index=True,
-            ascending=track_sort_asc,
-            kind="mergesort",  # default sort is not stable
-        )
-    df.sort_values(
-        by="type",
-        axis=0,
-        inplace=True,
-        ignore_index=True,
-        key=lambda col: col.where(col != "note", "~~~note"),
-        kind="mergesort",  # default sort is not stable
-    )
-    df.sort_values(
-        by="onset",
-        axis=0,
-        inplace=True,
-        ignore_index=True,
-        kind="mergesort",  # default sort is not stable
-    )
-    return df
+    return sort_df(df)
 
 
 def midi_to_csv(in_midi_fname, out_csv_fname, *args, **kwargs):
