@@ -4,6 +4,8 @@ import fractions
 import os
 import re
 import warnings
+from ast import literal_eval
+from math import isnan
 from numbers import Number
 from typing import List, Optional, Tuple, Type, Union
 
@@ -420,6 +422,12 @@ def midi_files_to_csv(list_of_files, out_csv_fname, append=False):
             csvwriter.writerows(rows)
 
 
+def _to_dict_if_necessary(d):
+    if isinstance(d, str):
+        return literal_eval(d)
+    return d
+
+
 def df_to_midi(
     df: pd.DataFrame,
     midi_path: str,
@@ -435,8 +443,9 @@ def df_to_midi(
     tracks.
     """
     mid = mido.MidiFile()
+
     if "track" in df.columns:
-        n_tracks = df.track.max() + 1
+        n_tracks = int(df.track.max()) + 1
     else:
         n_tracks = 1
     for _ in range(n_tracks):
@@ -457,20 +466,35 @@ def df_to_midi(
         # notes
         df["type"] = "note"
     for _, event in df.iterrows():
-        track_i = 0 if n_tracks == 1 else event.track
+        track_i = (
+            0
+            if (
+                n_tracks == 1 or (isinstance(event.track, float) and isnan(event.track))
+            )
+            else int(event.track)
+        )
         event_type = event.type
         if event_type == "text":
             mid.tracks[0].append(
                 mido.MetaMessage("text", text=event.text, time=event.onset)
             )
         elif event_type == "time_signature":
+            attrs = _to_dict_if_necessary(event.other)
             mid.tracks[0].append(
                 mido.MetaMessage(
                     "time_signature",
-                    numerator=event.other["numerator"],
-                    denominator=event.other["denominator"],
+                    numerator=attrs["numerator"],
+                    denominator=attrs["denominator"],
                     time=event.onset,
                 )
+            )
+        elif event_type == "set_tempo":
+            # Midi tempo
+            mid.tracks[0].append(mido.MetaMessage("set_tempo", tempo=event.tempo))
+        elif event_type == "tempo":
+            # BPM tempo
+            mid.tracks[0].append(
+                mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(event.tempo))
             )
         elif event_type == "pitchwheel":
             try:

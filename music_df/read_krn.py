@@ -1,5 +1,7 @@
 import io
+import logging
 import os
+import re
 import subprocess
 import tempfile
 
@@ -10,11 +12,85 @@ from music_df.xml_parser import xml_parse
 from music_df.xml_parser.parser import RepeatOptions
 
 TOTABLE = os.getenv("TOTABLE")
+LOGGER = logging.getLogger(__name__)
 
 
 def _insert_initial_barline(df: pd.DataFrame) -> pd.DataFrame:
     barline = pd.DataFrame({"onset": [0], "type": ["bar"]})
     return pd.concat([barline, df]).reset_index(drop=True)
+
+
+# TODO: (Malcolm 2023-12-26 update tempi
+NAMED_TEMPI = {
+    # More specific tempi (like "vivace assai") should come before less specific tempi
+    #   (like "vivace")
+    "presto": 172,
+    "molto allegro": 152,
+    "allegro di molto": 152,
+    "allegro non troppo": 112,
+    "allegro moderato": 112,
+    "allegro assai": 144,
+    "allegro": 120,
+    "vivace assai": 144,
+    "vivace": 136,
+    "andante con moto": 100,
+    "andante": 84,
+    "largo assai": 60,
+    "largo": 66,
+    "lento": 72,
+    "poco adagio": 72,
+    "adagio": 60,
+    "allegretto ma non troppo": 100,
+    "allegretto": 108,
+    "moderato": 100,
+    "menuetto": 100,
+    "slow march": 80,
+    "march": 120,
+    "andantino": 88,
+}
+
+# Missing tempi:
+# affettuoso
+# finale
+# fuga
+# etwas bewegt
+
+# Aliases
+NAMED_TEMPI["adatio"] = NAMED_TEMPI["adagio"]  # typo in source files
+NAMED_TEMPI["minuetto"] = NAMED_TEMPI["menuetto"]
+NAMED_TEMPI["mneuetto"] = NAMED_TEMPI["menuetto"]
+NAMED_TEMPI["vivaci assai"] = NAMED_TEMPI["vivace assai"]
+
+
+def infer_bpm(krn_path: str, encoding="utf-8") -> float | None:
+    tempo = None
+    tempo_text = None
+    with open(krn_path, encoding=encoding) as inf:
+        for line in inf:
+            if line.startswith("="):
+                break
+            if line.startswith("*"):
+                m = re.match(r"\*MM(?P<bpm>\d+)", line)
+                if m is not None:
+                    tempo = float(m.group("bpm"))
+            if line.startswith("!!!OMD:"):
+                tempo_text = line[7:].strip().lower()
+
+    if tempo is None:
+        if tempo_text is not None:
+            for named_tempo, bpm in NAMED_TEMPI.items():
+                if named_tempo in tempo_text:
+                    tempo = float(bpm)
+                    break
+    if tempo is None:
+        if tempo_text is not None:
+            LOGGER.warning(
+                f"Couldn't infer bpm of {krn_path} but found tempo text {tempo_text}"
+            )
+        else:
+            LOGGER.warning(f"Couldn't infer bpm of {krn_path}")
+
+    return tempo
 
 
 def read_krn(
@@ -23,6 +99,8 @@ def read_krn(
     no_final_barline: bool = True,
     ensure_initial_barline: bool = True,
     sort: bool = False,
+    infer_tempo: bool = False,
+    default_tempo: float | None = None,
 ) -> pd.DataFrame:
     assert TOTABLE is not None, "TOTABLE environment variable undefined"
     result = subprocess.run(
@@ -44,6 +122,18 @@ def read_krn(
         df[df.type == "note"].iloc[-1]["release"]
     ]
     df.loc[df.type == "bar", "release"] = bar_releases
+    if infer_tempo:
+        # TODO: (Malcolm 2023-12-27) re-encode kern files to utf-8 so we don't need to
+        #   set encoding here?
+        bpm = infer_bpm(krn_path, encoding="cp1252")
+        if bpm is None and default_tempo is not None:
+            # TODO: (Malcolm 2023-12-27) set tempo heuristically?
+            bpm = default_tempo
+        if bpm is not None:
+            df = pd.concat(
+                [pd.DataFrame([{"type": "tempo", "onset": 0.0, "tempo": bpm}]), df]
+            )
+
     if sort:
         sort_df(df, inplace=True)
     return df

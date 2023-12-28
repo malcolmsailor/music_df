@@ -13,8 +13,6 @@ from music_df.time import merge_contiguous_durations, time_to_bar_number_and_off
 class Config:
     feature_name: str
     feature_values: Iterable[Any]
-    # TODO: (Malcolm 2023-12-23) figure out a graceful way of supplying
-    #   multiple input files
     input_files: Iterable[str]
 
 
@@ -23,7 +21,6 @@ def parse_args():
     parser.add_argument("--config-file")
     parser.add_argument("--input-files", nargs="+")
     # remaining passed through to omegaconf
-    # parser.add_argument("remaining", nargs=argparse.REMAINDER)
 
     args, remaining = parser.parse_known_args()
     return args, remaining

@@ -7,9 +7,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_csv")
     parser.add_argument("output_pdf")
+    parser.add_argument("--color-col", default=None, type=str)
     args = parser.parse_args()
 
-    df_to_pdf(read_csv(args.input_csv), args.output_pdf)
+    df_to_pdf(read_csv(args.input_csv), args.output_pdf, color_col=args.color_col)
 
 
 if __name__ == "__main__":

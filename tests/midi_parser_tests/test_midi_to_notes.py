@@ -7,8 +7,10 @@ import tempfile
 import warnings
 
 import mido
+import pandas as pd
 import pytest
 
+from music_df import sort_df
 from music_df.midi_parser import df_to_midi, midi_to_csv, midi_to_table
 
 SCRIPT_DIR = os.path.dirname((os.path.realpath(__file__)))
@@ -339,19 +341,36 @@ def test_midi_to_csv():
 
 
 def test_df_to_midi():
-    df = midi_to_table(PALMID)
+    orig_df = midi_to_table(PALMID)
+    _, csv_path = tempfile.mkstemp(suffix=".csv")
+    orig_df.to_csv(csv_path, index=False)
+    df = pd.read_csv(csv_path)
+
+    # "track" is a float if any items are nan; that can cause issues so we
+    #   explicitly set it to nan here
+    df["track"] = df.track.astype(float)
+
     _, mid_path = tempfile.mkstemp(suffix=".mid")
     df_to_midi(df, mid_path)
     df2 = midi_to_table(mid_path)
     os.remove(mid_path)
-    df = df[df.type == "note"]
-    df2 = df2[df2.type == "note"]
-    df.drop(columns=["filename", "other", "type"], inplace=True)
-    df2.drop(columns=["filename", "other", "type"], inplace=True)
+    df = df[df.type == "note"].reset_index(drop=True)
+    df2 = df2[df2.type == "note"].reset_index(drop=True)
+    df.drop(
+        columns=["filename", "other", "type", "instrument", "label"],
+        inplace=True,
+        errors="ignore",
+    )
+    df2.drop(columns=["filename", "other", "type"], inplace=True, errors="ignore")
+    df = sort_df(df)
+    df2 = sort_df(df2)
     assert len(df) == len(df2)
     for (_, note1), (_, note2) in zip(df.iterrows(), df2.iterrows()):
         for name, val in note1.items():
-            assert val == note2[name]  # type:ignore
+            if isinstance(val, float):
+                assert math.isclose(val, note2[name])  # type:ignore
+            else:
+                assert val == note2[name]  # type:ignore
 
 
 if __name__ == "__main__":
