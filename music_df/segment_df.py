@@ -17,12 +17,14 @@ def get_eligible_onsets(
 ) -> npt.NDArray[np.int_]:
     """
     This function should perhaps be renamed "get indices to eligible onsets".
-    >>> df = pd.DataFrame({
-    ...     "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
-    ...     "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
-    ...     "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
-    ...     "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
+    ...         "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
+    ...         "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
+    ...         "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
+    ...     }
+    ... )
     >>> df
         pitch  onset  release  type
     0       0    0.0      0.0   bar
@@ -60,12 +62,14 @@ def get_eligible_releases(
     """
     Returns a series where the Index gives the indices into the dataframe
     and the values are the associated release times.
-    >>> df = pd.DataFrame({
-    ...     "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
-    ...     "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
-    ...     "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
-    ...     "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
+    ...         "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
+    ...         "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
+    ...         "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
+    ...     }
+    ... )
     >>> df
         pitch  onset  release  type
     0       0    0.0      0.0   bar
@@ -194,3 +198,12 @@ def segment_df(df: pd.DataFrame, target_len):
         eligible_onsets, eligible_releases, target_len
     ):
         yield df[start_i:end_i]
+
+
+def get_notes_sounding_during(
+    df: pd.DataFrame, onset: float, release: float
+) -> pd.DataFrame:
+    df = df[df.type == "note"]
+    df = df[df.onset < release]
+    df = df[df.release > onset]
+    return df
