@@ -5,6 +5,8 @@ from copy import copy
 from dataclasses import asdict, dataclass
 from fractions import Fraction
 
+from mspell.transpose import transpose_spelling
+
 LIMIT_DENOMINATOR = 64
 
 
@@ -60,12 +62,27 @@ class Note(DFItem):
             out.tie_to_prev = False
         return out
 
-    def set_spelling(self, step: str, alter: int):
+    def set_spelling(
+        self,
+        step: str,
+        alter: int,
+        chromatic_transpose: None | int,
+        diatonic_transpose: None | int,
+    ):
         if alter < 0:
             acc = -alter * "-"
         else:
             acc = alter * "#"
-        self.spelling = step + acc
+        spelling = step + acc
+        if chromatic_transpose is not None:
+            assert diatonic_transpose is not None
+            spelling = transpose_spelling(
+                [spelling],
+                chromatic_steps=chromatic_transpose,
+                diatonic_steps=diatonic_transpose,
+                flat_char="-",
+            )[0]
+        self.spelling = spelling
 
     def __str__(self):
         init_tie = "⌒" if self.tie_to_prev else ""

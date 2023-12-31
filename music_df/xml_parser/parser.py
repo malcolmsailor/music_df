@@ -84,6 +84,9 @@ class State(Enum):
     DIRECTION = auto()
     WORDS = auto()
     MOVEMENT_TITLE = auto()
+    TRANSPOSE = auto()
+    DIATONIC = auto()
+    CHROMATIC = auto()
 
 
 WHITE_KEYS = MappingProxyType({"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11})
@@ -118,6 +121,9 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         "direction",
         "words",
         "movement_title",
+        "transpose",
+        "chromatic",
+        "diatonic",
     }
     _process = {
         "rest",
@@ -508,6 +514,31 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         assert self._state_stack[-1] is State.MIDI_PROGRAM
         self._state_stack.pop()
 
+    def _init_transpose(self, attrs):
+        # (Malcolm 2023-12-30) <transpose> occurs within an <attributes> tag
+        #   but we don't parse that. I'm omitting an assertion here.
+        self._state_stack.append(State.TRANSPOSE)
+
+    def _end_transpose(self):
+        assert self._state_stack[-1] is State.TRANSPOSE
+        self._state_stack.pop()
+
+    def _init_diatonic(self, attrs):
+        assert self._state_stack[-1] is State.TRANSPOSE
+        self._state_stack.append(State.DIATONIC)
+
+    def _end_diatonic(self):
+        assert self._state_stack[-1] is State.DIATONIC
+        self._state_stack.pop()
+
+    def _init_chromatic(self, attrs):
+        assert self._state_stack[-1] is State.TRANSPOSE
+        self._state_stack.append(State.CHROMATIC)
+
+    def _end_chromatic(self):
+        assert self._state_stack[-1] is State.CHROMATIC
+        self._state_stack.pop()
+
     def _init_figured_bass(self, attrs):
         assert self._state_stack[-1] is State.MEASURE
         self._state_stack.append(State.FIGURED_BASS)
@@ -564,6 +595,8 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             State.BEAT_TYPE,
             State.WORDS,
             State.MOVEMENT_TITLE,
+            State.CHROMATIC,
+            State.DIATONIC,
         }:
             self._char_accumulator.append(content)
 
@@ -597,6 +630,10 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             self._words.append(Text(self._now, content))
         elif self._state_stack[-1] is State.MOVEMENT_TITLE:
             self._words.append(Text(Fraction(0), f"Movement title: {content}"))
+        elif self._state_stack[-1] is State.CHROMATIC:
+            self._part_info[self._current_part_id]["chromatic_transpose"] = int(content)
+        elif self._state_stack[-1] is State.DIATONIC:
+            self._part_info[self._current_part_id]["diatonic_transpose"] = int(content)
 
     def endDocument(self):
         self._parsed = True
@@ -605,14 +642,22 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         return Fraction(ticks, self._divisions)
 
     def _handle_pitch(self):
+        assert self._current_note is not None
         self._current_note.set_spelling(
-            self._current_pitch["step"], self._current_pitch.get("alter", 0)
+            step=self._current_pitch["step"],
+            alter=self._current_pitch.get("alter", 0),
+            chromatic_transpose=self._part_info[self._current_part_id].get(
+                "chromatic_transpose", None
+            ),
+            diatonic_transpose=self._part_info[self._current_part_id].get(
+                "diatonic_transpose", None
+            ),
         )
         self._current_note.pitch = (
             WHITE_KEYS[self._current_pitch["step"]]
             + self._current_pitch.get("alter", 0)
             + (self._current_pitch["octave"] + 1) * 12
-        )
+        ) + self._part_info[self._current_part_id].get("chromatic_transpose", 0)
 
     def _process_rest(self, attrs):
         assert self._state_stack[-1] is State.NOTE

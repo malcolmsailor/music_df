@@ -437,8 +437,12 @@ def df_to_midi(
             mid.tracks[0].append(mido.MetaMessage("set_tempo", tempo=event.tempo))
         elif event_type == "tempo":
             # BPM tempo
+            if hasattr(event, "tempo"):
+                midi_tempo = event.tempo
+            else:
+                midi_tempo = _to_dict_if_necessary(event.other)["tempo"]
             mid.tracks[0].append(
-                mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(event.tempo))
+                mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(midi_tempo))
             )
         elif event_type == "pitchwheel":
             try:
