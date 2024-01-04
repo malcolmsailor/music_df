@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple, Type, Union
 
 import mido
 import pandas as pd
-
 from music_df.sort_df import sort_df
 
 NUM_CHANNELS = 16
@@ -434,7 +433,14 @@ def df_to_midi(
             )
         elif event_type == "set_tempo":
             # Midi tempo
-            mid.tracks[0].append(mido.MetaMessage("set_tempo", tempo=event.tempo))
+            mid.tracks[0].append(
+                mido.MetaMessage(
+                    "set_tempo",
+                    tempo=event.tempo
+                    if hasattr(event, "tempo")
+                    else _to_dict_if_necessary(event.other)["tempo"],
+                )
+            )
         elif event_type == "tempo":
             # BPM tempo
             if hasattr(event, "tempo"):

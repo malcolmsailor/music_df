@@ -277,6 +277,15 @@ def add_default_time_sig(
 
 
 def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.DataFrame:
+    # If there already *is* a tempo column, we just want to make sure it doesn't
+    #   have any nans in it
+    if "tempo" in music_df.columns:
+        music_df["tempo"] = music_df.tempo.ffill()
+        music_df["tempo"] = music_df.tempo.fillna(value=default_tempo)
+        return music_df
+
+    # Otherwise, we check for tempo events
+
     # First handle midi tempi
     tempo_mask = music_df.type == "set_tempo"
     music_df["tempo"] = float("nan")
