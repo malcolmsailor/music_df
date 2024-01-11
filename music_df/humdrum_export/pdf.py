@@ -1,12 +1,17 @@
 import ast
+import logging
 import os
 import subprocess
 import tempfile
 from fractions import Fraction
 
 import pandas as pd
+from metricker.meter import MeterError
 
+from music_df.humdrum_export.dur_to_kern import KernDurError
 from music_df.humdrum_export.humdrum_export import df2hum
+
+LOGGER = logging.getLogger(__name__)
 
 HUM2PDF = os.path.join(
     os.path.dirname((os.path.realpath(__file__))),
@@ -130,6 +135,9 @@ def run_hum2pdf(
         finally:
             if not keep_intermediate_files:
                 os.remove(tmp_krn_path)
+
+    # TODO: (Malcolm 2024-01-11) the test of this function is failing,
+    #   work out why
     return return_code
 
 
@@ -139,7 +147,12 @@ def df_to_pdf(
     keep_intermediate_files: bool = False,
     **df2hum_args,
 ):
-    humdrum = df2hum(music_df, **df2hum_args)
+    try:
+        humdrum = df2hum(music_df, **df2hum_args)
+    except (KernDurError, MeterError) as exc:
+        LOGGER.warning(f"Can't plot {pdf_path} due to {exc}")
+        return 37
+
     has_colors = "color" in music_df.columns
 
     with tempfile.NamedTemporaryFile(suffix=".krn") as tempf:
@@ -147,9 +160,9 @@ def df_to_pdf(
             outf.write(humdrum)
         with open(tempf.name, "w") as outf:
             outf.write(humdrum)
-        return run_hum2pdf(
-            tempf.name,
-            pdf_path,
-            has_colors=has_colors,
-            keep_intermediate_files=keep_intermediate_files,
-        )
+            return run_hum2pdf(
+                tempf.name,
+                pdf_path,
+                has_colors=has_colors,
+                keep_intermediate_files=keep_intermediate_files,
+            )

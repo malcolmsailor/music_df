@@ -52,8 +52,8 @@ class Config:
     # csv_path, df_indices. Rows should be in one-to-one correspondance with
     # predictions.
     metadata: str
-    # predictions: h5 file containing predicted tokens. Rows
-    # should be in one-to-one correspondance with metadata.
+    # predictions: path to a folder with either an .h5 file or a .txt file containing
+    # predicted tokens. Rows should be in one-to-one correspondance with metadata.
     predictions: str
     dictionary_folder: str | None = None
     # regex to filter score ids
@@ -346,6 +346,8 @@ def main():
             for predictions_path in glob.glob(
                 os.path.join(config.predictions, "*.txt")
             ):
+                if os.path.basename(predictions_path).startswith("metadata"):
+                    continue
                 this_feature_name = os.path.basename(
                     os.path.splitext(predictions_path)[0]
                 )

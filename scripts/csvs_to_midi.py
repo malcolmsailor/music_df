@@ -1,0 +1,108 @@
+import argparse
+import ast
+import glob
+import logging
+import os
+import pdb
+import sys
+import traceback
+from dataclasses import dataclass
+from functools import partial
+from multiprocessing import Manager, Pool
+from multiprocessing.managers import ListProxy
+
+from music_df.midi_parser.parser import df_to_midi
+from music_df.read_csv import read_csv
+
+LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
+def custom_excepthook(exc_type, exc_value, exc_traceback):
+    if exc_type != KeyboardInterrupt:
+        traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stdout)
+        pdb.post_mortem(exc_traceback)
+
+
+sys.excepthook = custom_excepthook
+
+
+@dataclass
+class Config:
+    input_folder: str
+    output_folder: str
+    debug: bool = False
+    num_workers: int = 0
+    max_files: None | int = None
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_folder")
+    parser.add_argument("output_folder")
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--num-workers", type=int, default=0)
+    args = parser.parse_args()
+    return args
+
+
+def do_csv_file(
+    inputf: str,
+    config: Config,
+    output_list: list | ListProxy,
+    error_file_list: list | ListProxy,
+):
+    # try:
+    out_path = os.path.join(
+        config.output_folder, os.path.splitext(os.path.basename(inputf))[0] + ".mid"
+    )
+    music_df = read_csv(inputf)
+    assert music_df is not None
+    df_to_midi(music_df, out_path)
+    print(f"Wrote {out_path}")
+
+    output_list.append(out_path)
+    # except Exception as exc:
+    #     error_file_list.append((inputf, repr(exc)))
+
+
+def main():
+    args = parse_args()
+    config = Config(**vars(args))
+
+    input_files = glob.glob(f"{config.input_folder}/*.csv")
+    if config.max_files is not None:
+        input_files = input_files[: config.max_files]
+
+    os.makedirs(config.output_folder, exist_ok=True)
+    if config.num_workers > 1:
+        manager = Manager()
+        output_files = manager.list()
+        error_files = manager.list()
+        with Pool(config.num_workers) as pool:
+            list(
+                pool.imap_unordered(
+                    partial(
+                        do_csv_file,
+                        config=config,
+                        output_list=output_files,
+                        error_file_list=error_files,
+                    ),
+                    input_files,
+                )
+            )
+    else:
+        output_files = []
+        error_files = []
+        for inputf in input_files:
+            do_csv_file(inputf, config, output_files, error_files)
+
+    if error_files:
+        print("Errors:")
+        for xml_file, exception_str in error_files:
+            print(f"{xml_file}: {exception_str}")
+        print(f"{len(error_files)} total error files")
+
+
+if __name__ == "__main__":
+    main()

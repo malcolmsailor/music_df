@@ -4,6 +4,8 @@ from typing import Any, Sequence
 import pandas as pd
 
 from music_df.crop_df import crop_df
+from music_df.humdrum_export.dur_to_kern import KernDurError
+from music_df.label_df import label_df
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,21 +45,27 @@ def show_score_and_predictions(  # type:ignore
     music_df: pd.DataFrame,
     feature_name: str,
     predicted_feature: Sequence[Any],
-    prediction_indices: Sequence[int],
+    prediction_indices: Sequence[int] | None,
     pdf_path: str,
     csv_path: str | None = None,
     col_type=str,
     entropy: Sequence[float] | None = None,
     n_entropy_levels: int = 4,
 ):
-    music_df = music_df.copy()
+    # music_df = music_df.copy()
     if prediction_indices is None:
         prediction_indices = range(len(predicted_feature))
 
-    music_df[f"pred_{feature_name}"] = None
-    for pred, i in zip(predicted_feature, prediction_indices):
-        music_df.loc[i, f"pred_{feature_name}"] = pred
-
+    # music_df[f"pred_{feature_name}"] = None
+    # for pred, i in zip(predicted_feature, prediction_indices):
+    #     music_df.loc[i, f"pred_{feature_name}"] = pred
+    music_df = label_df(
+        music_df,
+        labels=predicted_feature,
+        label_indices=prediction_indices,
+        label_col_name=f"pred_{feature_name}",
+        inplace=False,
+    )
     if entropy is not None:
         music_df["entropy"] = float("nan")
         for e, i in zip(entropy, prediction_indices):
@@ -79,8 +87,9 @@ def show_score_and_predictions(  # type:ignore
         # Unlabeled data
         if entropy is not None:
             raise NotImplementedError
-        show_score(music_df, feature_name=f"pred_{feature_name}", pdf_path=pdf_path)
-        return
+        return show_score(
+            music_df, feature_name=f"pred_{feature_name}", pdf_path=pdf_path
+        )
 
     music_df["correct"] = music_df[f"pred_{feature_name}"].astype(col_type) == music_df[
         feature_name

@@ -399,9 +399,11 @@ def make_bar_explicit(
         raise ValueError("No bars found")
 
     music_df = number_bars(music_df, initial_bar_number)
-    music_df["bar_number"] = music_df["bar_number"].ffill()
-    music_df["bar_number"] = music_df["bar_number"].fillna(value=default_bar_number)
-    music_df["bar_number"] = music_df.bar_number.astype(int)
+    music_df.loc[:, "bar_number"] = music_df["bar_number"].ffill()
+    music_df.loc[:, "bar_number"] = music_df["bar_number"].fillna(
+        value=default_bar_number
+    )
+    music_df.loc[:, "bar_number"] = music_df.bar_number.astype(int)
     return music_df
 
 
