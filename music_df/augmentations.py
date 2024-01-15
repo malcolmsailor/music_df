@@ -6,6 +6,7 @@ from typing import Iterable, Iterator
 
 import pandas as pd
 
+from music_df.constants import MAX_PIANO_PITCH, MIN_PIANO_PITCH
 from music_df.transpose import transpose_to_key
 
 STANDARD_KEYS = list(range(-6, 7))
@@ -49,6 +50,38 @@ def aug_by_trans(
                     continue
 
             yield out
+
+
+def aug_within_range(
+    df_iter: Iterable[pd.DataFrame],
+    n_keys: int,
+    hi: int = MAX_PIANO_PITCH,
+    low: int = MIN_PIANO_PITCH,
+    min_trans: int = -5,
+    max_trans: int = 6,
+):
+    # if n_keys is None, we transpose to every step within range
+    avail_range = hi - low
+    for df in df_iter:
+        if "spelling" in df.columns:
+            raise ValueError("need to use 'tranpose_to_key' with spelled data")
+        actual_max = int(df.pitch.max())
+        actual_min = int(df.pitch.min())
+        actual_range = actual_max - actual_min
+        n_trans = avail_range - actual_range + 1
+        if n_trans <= 0:
+            continue
+        trans = list(
+            range(
+                max(low - actual_min, min_trans),
+                min(max_trans, low - actual_min + n_trans),
+            )
+        )
+        if n_keys < n_trans:
+            random.shuffle(trans)
+            trans = trans[:n_keys]
+        for t in trans:
+            yield chromatic_transpose(df, t, inplace=False, label=True)
 
 
 def _to_dict_if_necessary(d):

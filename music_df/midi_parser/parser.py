@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Type, Union
 
 import mido
 import pandas as pd
+
 from music_df.sort_df import sort_df
 
 NUM_CHANNELS = 16

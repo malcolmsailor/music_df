@@ -1,3 +1,7 @@
+MIN_PIANO_PITCH = 21
+MAX_PIANO_PITCH = 108
+
+
 MIDI_INSTRUMENTS: list[str | list[str]] = [
     "acoustic grand piano",
     "bright acoustic piano",
