@@ -6,6 +6,7 @@ from typing import Iterable, Iterator
 
 import pandas as pd
 
+from music_df import chromatic_transpose
 from music_df.constants import MAX_PIANO_PITCH, MIN_PIANO_PITCH
 from music_df.transpose import transpose_to_key
 

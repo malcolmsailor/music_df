@@ -205,6 +205,7 @@ def plot_piano_roll_and_feature(
     title=None,
     transparencies=None,
     legend=False,
+    show=False,
 ):
     # TODO implement legend?
     if featuremapping is not None:
@@ -224,6 +225,7 @@ def plot_piano_roll_and_feature(
         labels=feature if label_notes else None,
         ax=ax,
         legend=colormapping,
+        show=show,
     )
 
 

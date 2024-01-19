@@ -52,7 +52,9 @@ def get_csv_title(raw_path, config):
     return out
 
 
-def get_itos(dictionary_paths: list[str]) -> dict[str, list[str]]:
+def get_itos(dictionary_paths: list[str] | str) -> dict[str, list[str]]:
+    if isinstance(dictionary_paths, str):
+        dictionary_paths = [dictionary_paths]
     out = {}
     for dictionary_path in dictionary_paths:
         feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
