@@ -482,6 +482,10 @@ def instruments_to_midi_instruments(
     translation: dict[str, int] = NAME_TO_MIDI_INSTRUMENT,
     raise_error_on_missing: bool = False,
 ) -> pd.DataFrame:
+    """This function sends an "instrument" column with string values to a
+    "midi_instrument" column with ints specifying General MIDI programs.
+    I am not actually using it anywhere, however.
+    """
     music_df = music_df.copy()
     if raise_error_on_missing:
         missing = []
@@ -521,7 +525,7 @@ def add_scale_degrees(music_df: pd.DataFrame):
     ... )
     >>> add_scale_degrees(df)
        type spelling key scale_degree
-    0   bar      NaN  na          NaN
+    0   bar      NaN  na           na
     1  note       Db  Gb            5
     2  note        F  Gb            7
     3  note       Gb  Gb            1
@@ -531,6 +535,35 @@ def add_scale_degrees(music_df: pd.DataFrame):
     7  note       Fb  Gb           b7
     8  note      F--  Gb          bb7
     9  note      Fbb  Gb          bb7
+
+    There is an issue with some scale degrees turning up as floats when reading saved
+    CSVs later. To avoid this, we replace NaN with "na" string.
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         # we omit all other columns
+    ...         "type": ["bar"] + ["note"] * 2,
+    ...         "spelling": [float("nan"), "C", "F"],
+    ...         "key": ["na"] + ["C"] * 2,
+    ...     }
+    ... )
+    >>> scale_degrees_df = add_scale_degrees(df)
+    >>> scale_degrees_df
+       type spelling key scale_degree
+    0   bar      NaN  na           na
+    1  note        C   C            1
+    2  note        F   C            4
+    >>> from io import StringIO
+    >>> output = StringIO()
+    >>> df.to_csv(output)
+    >>> csv_str = output.getvalue()
+    >>> input_ = StringIO(csv_str)
+    >>> df2 = pd.read_csv(input_)
+    >>> df2
+       Unnamed: 0  type spelling key scale_degree
+    0           0   bar      NaN  na           na
+    1           1  note        C   C            1
+    2           2  note        F   C            4
+
     """
     from music21.key import Key
     from music21.pitch import Pitch
@@ -562,6 +595,7 @@ def add_scale_degrees(music_df: pd.DataFrame):
         mapping[(spelling, key)] = scale_degree
 
     note_mask = music_df.type == "note"
+    music_df["scale_degree"] = "na"
     music_df.loc[note_mask, "scale_degree"] = music_df.loc[note_mask].apply(
         lambda row: mapping[(row.spelling, row.key)], axis=1, result_type=None
     )

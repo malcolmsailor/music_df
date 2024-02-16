@@ -46,11 +46,12 @@ class XMLToCSVConfig:
 
 
 def get_xml_files(folder_path):
-    # Use os.path.join to construct the search pattern
-    search_pattern = os.path.join(folder_path, "**", "*.xml")
-
     # Use glob.glob with recursive=True to get all matching files
-    return glob.glob(search_pattern, recursive=True)
+    return (
+        glob.glob(os.path.join(folder_path, "**", "*.xml"), recursive=True)
+        + glob.glob(os.path.join(folder_path, "**", "*.mxl"), recursive=True)
+        + glob.glob(os.path.join(folder_path, "**", "*.mscx"), recursive=True)
+    )
 
 
 def do_xml_file(xml_file, config, output_list, error_file_list):
@@ -61,6 +62,8 @@ def do_xml_file(xml_file, config, output_list, error_file_list):
             .replace(" ", "_")
             .replace(os.path.sep, "+")
             .replace(".xml", ".csv")
+            .replace(".mxl", ".csv")
+            .replace(".mscx", ".csv")
         )
         output_path = os.path.join(config.output_folder, output_basename)
 

@@ -13,6 +13,9 @@ def _merge_nonnotes(note_df: pd.DataFrame, nonnote_df: pd.DataFrame) -> pd.DataF
 
 def df_to_homo_df(df: pd.DataFrame) -> t.Tuple[pd.DataFrame, ...]:
     """
+    Returns a tuple of dataframes where all notes are "homophonic" (meaning each unique
+    onset is paired with a unique release and all onsets are >= to the release paired
+    with the previous onset).
     >>> df = pd.DataFrame(
     ...     {
     ...         "pitch": [0, 60, 64, 60, 64, 60],

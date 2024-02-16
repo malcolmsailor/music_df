@@ -3,6 +3,7 @@ import ast
 import logging
 import os
 import pdb
+import random
 import sys
 import traceback
 from dataclasses import dataclass
@@ -40,6 +41,8 @@ class Config:
     csv_prefix_to_add: None | str = None
     feature_name: str = "label"
     debug: bool = False
+    max_rows: int | None = None  # TODO: (Malcolm 2024-01-27) implement
+    row_p: float | None = 1.0
 
 
 def handle_labels(
@@ -71,7 +74,14 @@ def handle_labels(
     music_df: pd.DataFrame | None = None
 
     assert isinstance(metadata_df.index, pd.RangeIndex) and metadata_df.index.start == 0
+
+    if config.row_p is None:
+        config.row_p = 1.0
+    random.seed(42)
+
     for row_i, metadata_row in metadata_df.iterrows():
+        if config.row_p is not None and random.random() > config.row_p:
+            continue
         if prev_csv_path is None or metadata_row.csv_path != prev_csv_path:
             prev_csv_path = metadata_row.csv_path
             assert isinstance(prev_csv_path, str)

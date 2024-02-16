@@ -68,6 +68,7 @@ def get_kern_notes(
     color: t.Optional[str] = None,
     label_name: t.Optional[str] = None,
     label_mask_col: t.Optional[str] = None,
+    nth_note_label_col: t.Optional[str] = None,
 ):
     """
     >>> fourfour, threefour = Meter("4/4"), Meter("3/4")
@@ -108,6 +109,18 @@ def get_kern_notes(
             labels = ["" for _ in notes]
         else:
             labels = [label for _ in notes]
+
+    if nth_note_label_col:
+        nth_note_label = note[nth_note_label_col]
+        if not nth_note_label:
+            nth_note_label = ""
+        if label_name is not None:
+            labels = [
+                nth_note_label if not l else f"{nth_note_label} {l}"
+                for l in labels  # type:ignore
+            ]
+        else:
+            labels = [nth_note_label for _ in notes]
     return offsets, notes, labels
 
 
@@ -136,6 +149,7 @@ def get_kern_spine(
     label_col: t.Optional[str] = None,
     label_mask_col: t.Optional[str] = None,
     label_color_col: t.Optional[str] = None,
+    nth_note_label_col: t.Optional[str] = "nth_note_labels",
 ) -> t.List[str]:
     """
     >>> speller = Speller(pitches=True, letter_format="kern")
@@ -246,7 +260,7 @@ def get_kern_spine(
                 tokens.append(
                     (prev_release + offset, TOKEN_ORDER["note"], rest)  # type:ignore
                 )
-                if label_col is not None:
+                if label_col is not None or nth_note_label_col is not None:
                     # We need to append a dummy value so we can zip tokens and labels
                     #   together below
                     labels.append("REMOVE")
@@ -255,7 +269,7 @@ def get_kern_spine(
         if row.type == "bar":
             measure_start = row.onset
             tokens.append((row.onset, TOKEN_ORDER["bar"], kern_barline()))
-            if label_col is not None:
+            if label_col is not None or nth_note_label_col is not None:
                 # We need to append a dummy value so we can zip tokens and labels
                 #   together below
                 labels.append("REMOVE")
@@ -272,7 +286,7 @@ def get_kern_spine(
                 )
             )
             meter = Meter(f"{row.other['numerator']}/{row.other['denominator']}")
-            if label_col is not None:
+            if label_col is not None or nth_note_label_col is not None:
                 # We need to append a dummy value so we can zip tokens and labels
                 #   together below
                 labels.append("REMOVE")
@@ -290,6 +304,7 @@ def get_kern_spine(
                 row.color_char if "color_char" in row.index else None,
                 label_name=label_col,
                 label_mask_col=label_mask_col,
+                nth_note_label_col=nth_note_label_col,
             )
             if note_labels is None:
                 note_labels = [None] * len(kern_notes)
@@ -300,14 +315,12 @@ def get_kern_spine(
                 if prev_onset == row.onset and prev_release == row.release:
                     j = -(len(offsets) - i)
                     tokens[j][2] += f" {kern_note}"
-                    if label_col is not None:
+                    if label_col is not None or nth_note_label_col is not None:
                         if label == "":
                             pass
                         elif not labels[j]:
                             if label_color_col is not None:
                                 label_color = row[label_color_col]
-                                # if label_color == "#000000":
-                                #     breakpoint()
                                 text_token = f"!LO:TX:b:color={label_color}:t={label}"
                             else:
                                 text_token = f"!LO:TX:b:t={label}"
@@ -325,10 +338,9 @@ def get_kern_spine(
                             labels[j] += rf"\n{label}"
                 else:
                     tokens.append([row.onset + offset, TOKEN_ORDER["note"], kern_note])
-                    if label_col is not None:
+                    if label_col is not None or nth_note_label_col is not None:
                         if label == "":
                             labels.append("")
-                            assert len(labels) == len(tokens)
                         elif label is not None:
                             if label_color_col is not None:
                                 label_color = row[label_color_col]
@@ -336,7 +348,7 @@ def get_kern_spine(
                             else:
                                 text_token = f"!LO:TX:b:t={label}"
                             labels.append(text_token)
-                            assert len(labels) == len(tokens)
+                        assert len(labels) == len(tokens)
 
         prev_onset = row.onset
         if row.type == "note":
@@ -365,6 +377,7 @@ def df_to_spines(
     label_col: t.Optional[str] = None,
     label_mask_col: t.Optional[str] = None,
     label_color_col: t.Optional[str] = None,
+    nth_note_label_col: t.Optional[str] = None,
 ) -> t.List[t.List[str]]:
     if label_mask_col is not None:
         assert len(df.loc[df[label_mask_col], label_color_col].unique()) == 1
@@ -406,6 +419,7 @@ def df_to_spines(
                     label_col=label_col,
                     label_mask_col=label_mask_col,
                     label_color_col=label_color_col,
+                    nth_note_label_col=nth_note_label_col,
                 )
                 for homo_part in homo_parts
             ]

@@ -17,6 +17,7 @@ def show_score(  # type:ignore
     feature_name: str,
     pdf_path: str,
     csv_path: str | None = None,
+    **df_to_pdf_kwargs,
 ):
     # Get most common value of the music_df[feature_name] column:
     most_common_value = music_df[feature_name].mode()[0]
@@ -38,6 +39,7 @@ def show_score(  # type:ignore
         color_col=feature_name,
         color_mask_col="color_mask",
         uncolored_val=most_common_value,
+        **df_to_pdf_kwargs,
     )
 
 
@@ -51,6 +53,8 @@ def show_score_and_predictions(  # type:ignore
     col_type=str,
     entropy: Sequence[float] | None = None,
     n_entropy_levels: int = 4,
+    keep_intermediate_files: bool = False,
+    label_every_nth_note: int | None = None,
 ):
     # music_df = music_df.copy()
     if prediction_indices is None:
@@ -85,10 +89,14 @@ def show_score_and_predictions(  # type:ignore
 
     if feature_name not in music_df.columns:
         # Unlabeled data
-        if entropy is not None:
-            raise NotImplementedError
+        # if entropy is not None:
+        #     raise NotImplementedError
         return show_score(
-            music_df, feature_name=f"pred_{feature_name}", pdf_path=pdf_path
+            music_df,
+            feature_name=f"pred_{feature_name}",
+            pdf_path=pdf_path,
+            label_every_nth_note=label_every_nth_note,
+            **transparency_args,
         )
 
     music_df["correct"] = music_df[f"pred_{feature_name}"].astype(col_type) == music_df[
@@ -132,5 +140,7 @@ def show_score_and_predictions(  # type:ignore
         color_col="correct_by_feature",
         color_mask_col="color_mask",
         uncolored_val=uncolored_val,
+        keep_intermediate_files=keep_intermediate_files,
+        label_every_nth_note=label_every_nth_note,
         **transparency_args,
     )

@@ -79,6 +79,7 @@ def df2hum(
     color_transparency_col: t.Optional[str] = None,
     n_transparency_levels: t.Optional[int] = None,
     uncolored_val: t.Optional[str] = None,
+    label_every_nth_note: t.Optional[int] = None,
 ) -> str:
     """
     Args:
@@ -104,6 +105,13 @@ def df2hum(
             There can be at most 7 distinct colors.
     """
     df = spell_df(df)
+
+    if label_every_nth_note:
+        df["note_index"] = -1
+        df.loc[df.type == "note", "note_index"] = range((df.type == "note").sum())
+        df["nth_note_labels"] = df.note_index.astype(str)
+        df.loc[df["note_index"] % label_every_nth_note != 0, "nth_note_labels"] = ""
+
     if label_mask_col is not None:
         # (Malcolm 2023-10-20) I'm not sure why we constrain label_color_col to have at
         #   most one color. I think it is so that there is no risk of simultaneous
@@ -142,15 +150,19 @@ def df2hum(
         df = pd.concat([df, last_bar])
     dfs = split_df_by_pitch(df, split_point)
     staves = []
-    for df in dfs:
+    for split_df in dfs:
         if label_mask_col is not None:
             assert label_color_col is not None
-            assert len(df.loc[df[label_mask_col], label_color_col].unique()) == 1
+            assert (
+                len(split_df.loc[split_df[label_mask_col], label_color_col].unique())
+                == 1
+            )
         spines = df_to_spines(
-            df,
+            split_df,
             label_col=label_col,
             label_mask_col=label_mask_col,
             label_color_col=label_color_col,
+            nth_note_label_col="nth_note_labels" if label_every_nth_note else None,
         )
         if not spines:
             continue

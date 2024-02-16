@@ -74,6 +74,8 @@ class Config:
     # When predicting tokens we need to subtract the number of specials
     n_specials: int = 4
     data_has_start_and_stop_tokens: bool = False
+    keep_intermediate_files: bool = False
+    label_every_nth_note: int = 50
 
 
 def parse_args():
@@ -99,7 +101,8 @@ def sync_predictions(
     feature_vocab,
     write_csv=False,
     indices: None | list[int] = None,
-    entropy_to_transparency: bool = True,
+    entropy_to_transparency: bool = False,
+    keep_intermediate_files: bool = False,
 ):
     h5file = h5py.File(h5_path, mode="r")
 
@@ -186,6 +189,8 @@ def sync_predictions(
                 csv_path=csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
                 entropy=entropy,
+                keep_intermediate_files=keep_intermediate_files,
+                label_every_nth_note=config.label_every_nth_note,
             )
             if not return_code:
                 LOGGER.info(f"Wrote {pdf_path}")
@@ -211,6 +216,7 @@ def handle_predictions(
     feature_name=None,
     write_csv=False,
     indices: None | list[int] = None,
+    keep_intermediate_files: bool = False,
 ):
     with open(predictions_path) as inf:
         predictions_list = inf.readlines()
@@ -262,6 +268,8 @@ def handle_predictions(
                 pdf_path=pdf_path,
                 csv_path=csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
+                keep_intermediate_files=keep_intermediate_files,
+                label_every_nth_note=config.label_every_nth_note,
             )
             if not return_code:
                 LOGGER.info(f"Wrote {pdf_path}")
@@ -301,11 +309,11 @@ def main():
             raise ValueError(f"No scores match pattern {config.filter_scores}")
 
     if indices is None:
-        if config.random_examples:
+        if config.random_examples and config.n_examples < len(metadata_df):
             random.seed(config.seed)
             indices = random.sample(range(len(metadata_df)), k=config.n_examples)
         else:
-            indices = list(range(config.n_examples))
+            indices = list(range(min(config.n_examples, len(metadata_df))))
     else:
         if config.random_examples:
             random.seed(config.seed)
@@ -341,6 +349,7 @@ def main():
                     feature_vocab=vocabs[this_feature_name],
                     indices=indices,
                     write_csv=config.write_csv,
+                    keep_intermediate_files=config.keep_intermediate_files,
                 )
         else:
             for predictions_path in glob.glob(
@@ -363,9 +372,16 @@ def main():
                     feature_name=this_feature_name,
                     indices=indices,
                     write_csv=config.write_csv,
+                    keep_intermediate_files=config.keep_intermediate_files,
                 )
     else:
-        handle_predictions(config.predictions, metadata_df, config, indices=indices)
+        handle_predictions(
+            config.predictions,
+            metadata_df,
+            config,
+            indices=indices,
+            keep_intermediate_files=config.keep_intermediate_files,
+        )
 
 
 if __name__ == "__main__":

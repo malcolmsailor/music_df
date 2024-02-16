@@ -64,14 +64,6 @@ def main():
         y_true = ["_".join(str(x) for x in xs) for xs in zip(*y_trues)]
         y_pred = ["_".join(str(x) for x in xs) for xs in zip(*y_preds)]
 
-        # dfs = [
-        #     pd.read_csv(input_file).drop(["path", "indices"], axis=1)
-        #     for input_file in args.input_files
-        # ]
-        # y_true = []
-        # y_pred = []
-        # for rows in zip(*dfs):
-        #     breakpoint()
     if args.uniform_steps:
         if "uniform_steps" not in df.columns:
             raise ValueError(f"No 'uniform_steps' column in {df.columns=}")

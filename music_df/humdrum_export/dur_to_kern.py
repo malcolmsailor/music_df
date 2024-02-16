@@ -289,7 +289,6 @@ def dur_to_kern(
     #     d.startswith("q") for d in kern_durs
     # ):
     #     raise KernDurError(f"Unrecognized duration {inp} with {offset=} in {meter=}")
-    # breakpoint()
     return list(zip(output_durs, output_kern_durs))
 
 

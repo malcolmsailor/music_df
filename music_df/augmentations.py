@@ -29,8 +29,8 @@ def _n_random_keys(n: int, enh_unique_keys=True) -> list[int]:
 def aug_by_trans(
     orig_data: pd.DataFrame | Iterable[pd.DataFrame],
     n_keys: int,
-    hi: int | None = None,
-    low: int | None = None,
+    hi: int | None = MAX_PIANO_PITCH,
+    low: int | None = MIN_PIANO_PITCH,
 ) -> Iterator[pd.DataFrame]:
     if isinstance(orig_data, pd.DataFrame):
         orig_data = [orig_data]
@@ -75,12 +75,13 @@ def aug_within_range(
         trans = list(
             range(
                 max(low - actual_min, min_trans),
-                min(max_trans, low - actual_min + n_trans),
+                min(max_trans, low - actual_min + n_trans) + 1,
             )
         )
         if n_keys < n_trans:
             random.shuffle(trans)
             trans = trans[:n_keys]
+
         for t in trans:
             yield chromatic_transpose(df, t, inplace=False, label=True)
 

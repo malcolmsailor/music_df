@@ -90,8 +90,10 @@ def salami_slice(df: pd.DataFrame) -> pd.DataFrame:
         if note.type != "note":
             out.append(note.copy())
             continue
+        onset_i = 0
         while note.onset > moment:
             moment_i, moment = next(moment_iter)
+            onset_i += 1
         onset = note.onset
         release_i = moment_i + 1
         while release_i < len(moments) and moments[release_i] <= note.release:

@@ -1,6 +1,7 @@
 import argparse
 import glob
 import os
+import shutil
 from ast import literal_eval
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
@@ -48,6 +49,9 @@ class Config:
     # When predicting tokens we need to subtract the number of specials
     # TODO: (Malcolm 2024-01-08) implement or remove?
     # data_has_start_and_stop_tokens: bool = False
+    overwrite: bool = False
+    error_if_exists: bool = True
+    n_specials_to_ignore: int = 0
 
 
 def parse_args():
@@ -122,8 +126,11 @@ def merge_logits_and_indices(
     out_predictions = np.array([])
 
     for indxs, logits in zip(int_indices, logits_list, strict=True):
-        # If logits are ragged, we need to crop them
+        # If logits are padded, we need to crop them
         logits = logits[: len(indxs)]
+        # Remove specials
+        logits = logits[:, config.n_specials_to_ignore :]
+
         if out_indices:
             left_overlap_i = 0
             for left_overlap_i, indx in enumerate(out_indices):
@@ -221,8 +228,11 @@ def main():
         assert (metadata_df["scaled_by"] == 1.0).all()
 
     if os.path.exists(config.output_folder):
-        raise ValueError(f"Output folder {config.output_folder} already exists")
-    os.makedirs(config.output_folder)
+        if config.overwrite:
+            shutil.rmtree(config.output_folder)
+        elif config.error_if_exists:
+            raise ValueError(f"Output folder {config.output_folder} already exists")
+    os.makedirs(config.output_folder, exist_ok=True)
 
     unique_scores = metadata_df.score_id.unique()
     # The assumption is that the collated metadata file should be the same
@@ -234,6 +244,12 @@ def main():
         predictions_paths = glob.glob(os.path.join(config.predictions, "*.txt"))
 
         for predictions_path in predictions_paths:
+            out_preds_path = os.path.join(
+                config.output_folder, "predictions", os.path.basename(predictions_path)
+            )
+            if not config.overwrite and os.path.exists(out_preds_path):
+                print(f"{out_preds_path} exists, skipping...")
+                continue
             print(f"Handling {predictions_path}")
 
             metadata_rows = []
@@ -262,9 +278,6 @@ def main():
                 metadata_rows, reference_out_metadata_df, config
             )
 
-            out_preds_path = os.path.join(
-                config.output_folder, "predictions", os.path.basename(predictions_path)
-            )
             os.makedirs(os.path.dirname(out_preds_path), exist_ok=True)
             with open(out_preds_path, "w") as outf:
                 for tokens in out_predictions:
@@ -278,12 +291,23 @@ def main():
         predictions_paths = glob.glob(os.path.join(config.predictions, "*.h5"))
 
         for predictions_path in predictions_paths:
+            out_preds_path = os.path.join(
+                config.output_folder, "predictions", os.path.basename(predictions_path)
+            )
+            if not config.overwrite and os.path.exists(out_preds_path):
+                print(f"{out_preds_path} exists, skipping...")
+                continue
             print(f"Handling {predictions_path}")
 
             metadata_rows = []
             out_predictions = []
             h5file = h5py.File(predictions_path, mode="r")
-            for score in tqdm(unique_scores):
+            out_preds_path = os.path.join(
+                config.output_folder, "predictions", os.path.basename(predictions_path)
+            )
+            os.makedirs(os.path.dirname(out_preds_path), exist_ok=True)
+            h5outf = h5py.File(out_preds_path, "w")
+            for score_i, score in enumerate(tqdm(unique_scores)):
                 score_rows = metadata_df[metadata_df.score_id == score]
 
                 score_predictions: list[np.ndarray] = [
@@ -299,20 +323,15 @@ def main():
                 metadata_row = score_rows.iloc[0].copy()
                 metadata_row["df_indices"] = merged_indices
                 metadata_rows.append(metadata_row)
+                h5outf.create_dataset(f"logits_{score_i}", data=merged_predictions)
                 out_predictions.append(merged_predictions)
                 if config.debug:
                     break
+            h5outf.close()
             reference_out_metadata_df = handle_metadata(
                 metadata_rows, reference_out_metadata_df, config
             )
 
-            out_preds_path = os.path.join(
-                config.output_folder, "predictions", os.path.basename(predictions_path)
-            )
-            os.makedirs(os.path.dirname(out_preds_path), exist_ok=True)
-            h5outf = h5py.File(out_preds_path, "w")
-            for logit_i, example in enumerate(out_predictions):
-                h5outf.create_dataset(f"logits_{logit_i}", data=example)
             print(f"Wrote {out_preds_path}")
             if config.debug:
                 break

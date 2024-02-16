@@ -153,16 +153,17 @@ def df_to_pdf(
         LOGGER.warning(f"Can't plot {pdf_path} due to {exc}")
         return 37
 
-    has_colors = "color" in music_df.columns
+    has_colors = ("color" in music_df.columns) or ("color_mask" in music_df.columns)
 
     with tempfile.NamedTemporaryFile(suffix=".krn") as tempf:
         with open("/Users/malcolm/tmp/testme.krn", "w") as outf:
             outf.write(humdrum)
         with open(tempf.name, "w") as outf:
             outf.write(humdrum)
-            return run_hum2pdf(
-                tempf.name,
-                pdf_path,
-                has_colors=has_colors,
-                keep_intermediate_files=keep_intermediate_files,
-            )
+        return run_hum2pdf(
+            # "/Users/malcolm/tmp/testme.krn",
+            tempf.name,
+            pdf_path,
+            has_colors=has_colors,
+            keep_intermediate_files=keep_intermediate_files,
+        )

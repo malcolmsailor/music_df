@@ -159,6 +159,8 @@ def color_df(
                 val.startswith("na ") or val.startswith("nan ")
             ):
                 color_chars.append("")
+            elif val is None:
+                color_chars.append("")
             else:
                 color_chars.append(color_mapping.value_to_char[val, alpha])
         df["color_char"] = color_chars
