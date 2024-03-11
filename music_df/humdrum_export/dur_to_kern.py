@@ -180,10 +180,19 @@ def duration_float_to_recip(input: float, threshold=0.01) -> str:
     return "".join(output)
 
 
+def attempt_to_represent_as_tuple(inp: float):
+    """
+    >>> attempt_to_represent_as_tuple(0.14406779661015978)
+    """
+    # TODO: (Malcolm 2024-02-29)
+    pass
+
+
 def split_fives_hack(dur: _Dur) -> list[_Dur]:
     """
-    There is an issue where durations of 5, which cannot be represented in notation
-    without a tie, make it through when they start on a downbeat in certain meters,
+    There is an issue where durations of 5, (or of 5/16, etc.), which cannot be
+    represented in notation without a tie, make it through when they start on a
+    downbeat in certain meters,
     e.g.:
 
     >>> six_four = Meter("6/4")
@@ -199,10 +208,11 @@ def split_fives_hack(dur: _Dur) -> list[_Dur]:
     [_Dur(onset=0.0, release=0.75), _Dur(onset=0.75, release=1.25)]
     """
     # TODO: (Malcolm 2023-12-18) better solution than this hack
-    if math.log(dur.dur / 5, 2) % 1 == 0:
-        dur1 = _Dur(dur.onset, dur.onset + 3 / 5 * dur.dur)
-        dur2 = _Dur(dur1.release, dur.release)
-        return [dur1, dur2]
+    for divisor in [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96]:
+        if math.isclose(math.log(divisor * dur.dur / 5, 2) % 1, 0, abs_tol=1e-9):
+            dur1 = _Dur(dur.onset, dur.onset + 3 / 5 * dur.dur)
+            dur2 = _Dur(dur1.release, dur.release)
+            return [dur1, dur2]
     return [dur]
 
 
@@ -259,26 +269,55 @@ def dur_to_kern(
     for d in durs:
         kern_dur = duration_float_to_recip(d)
         if kern_dur.startswith("q"):
-            if d > 1:
-                whole, frac = divmod(d, 1.0)
+            remainder = d
+            temp_offset = offset
+            for divisor in [1, 2, 4, 8, 16, 24, 32, 48, 64, 96]:
+                whole, remainder = divmod(remainder, 1 / divisor)
+                whole /= divisor
+                if whole <= 0.0:
+                    continue
                 result1 = dur_to_kern(
-                    whole, offset, meter, raise_exception_on_unrecognized_duration
-                )
-                result2 = dur_to_kern(
-                    frac,
-                    offset + whole,
-                    meter,
-                    raise_exception_on_unrecognized_duration,
+                    whole, temp_offset, meter, raise_exception_on_unrecognized_duration
                 )
                 output_durs.extend([r[0] for r in result1])
-                output_durs.extend([r[0] for r in result2])
                 output_kern_durs.extend([r[1] for r in result1])
-                output_kern_durs.extend([r[1] for r in result2])
-
-            elif raise_exception_on_unrecognized_duration:
+                if remainder < 1e-6:
+                    break
+                temp_offset += whole
+            if remainder > 1e-6 and raise_exception_on_unrecognized_duration:
                 raise KernDurError(
                     f"Unrecognized duration {inp} with {offset=} in {meter=}"
                 )
+            # if d > 1:
+            #     whole, frac = divmod(d, 1.0)
+            #     if whole <= 0:
+            #         continue
+            #     result1 = dur_to_kern(
+            #         whole,
+            #         offset,
+            #         meter,
+            #         raise_exception_on_unrecognized_duration,
+            #     )
+            #     result2 = dur_to_kern(
+            #         frac,
+            #         offset + whole,
+            #         meter,
+            #         raise_exception_on_unrecognized_duration,
+            #     )
+            #     output_durs.extend([r[0] for r in result1])
+            #     output_durs.extend([r[0] for r in result2])
+            #     output_kern_durs.extend([r[1] for r in result1])
+            #     output_kern_durs.extend([r[1] for r in result2])
+
+            # TODO: (Malcolm 2024-02-29) restore
+            # elif raise_exception_on_unrecognized_duration:
+            #     raise KernDurError(
+            #         f"Unrecognized duration {inp} with {offset=} in {meter=}"
+            #     )
+            # else:
+            #     # TODO: (Malcolm 2024-02-28) remove?
+            #     output_durs.append(d)
+            #     output_kern_durs.append(kern_dur)
         else:
             output_durs.append(d)
             output_kern_durs.append(kern_dur)

@@ -1,0 +1,3 @@
+csv_prefix_to_add: /Users/malcolm/datasets
+csv_prefix_to_strip: /gpfs/gibbs/project/quinn/ms3682/raw_data
+feature_name: doubled

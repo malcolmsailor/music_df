@@ -87,6 +87,7 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
             _init_measure()
             continue
         for i, token in enumerate(line.split("\t")):
+            assert token != "="
             if _is_note_token(token):
                 not_rests[i] = True
             measure[i].append(token)

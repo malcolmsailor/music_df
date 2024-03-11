@@ -2,6 +2,7 @@ import logging
 from fractions import Fraction
 
 import pandas as pd
+
 from music_df.add_feature import infer_barlines
 from music_df.sort_df import sort_df
 
@@ -152,8 +153,14 @@ def _handle_times(df: pd.DataFrame, fractions: bool) -> None:
         df["onset"] = df["quarterbeats"].map(remap_time_column)
         df["release"] = df["onset"] + df["duration_qb"].map(remap_time_column)
     else:
-        df["onset"] = df["quarterbeats"].apply(_str_to_float)
-        df["release"] = df["onset"] + df["duration_qb"].apply(_str_to_float)
+        if pd.api.types.is_numeric_dtype(df["quarterbeats"]):
+            df["onset"] = df["quarterbeats"]
+        else:
+            df["onset"] = df["quarterbeats"].apply(_str_to_float)
+        if pd.api.types.is_numeric_dtype(df["duration_qb"]):
+            df["release"] = df["onset"] + df["duration_qb"]
+        else:
+            df["release"] = df["onset"] + df["duration_qb"].apply(_str_to_float)
 
 
 def ms3_to_df(

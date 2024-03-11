@@ -45,7 +45,7 @@ def show_score(  # type:ignore
 
 def show_score_and_predictions(  # type:ignore
     music_df: pd.DataFrame,
-    feature_name: str,
+    feature_name: str | None,
     predicted_feature: Sequence[Any],
     prediction_indices: Sequence[int] | None,
     pdf_path: str,
@@ -54,7 +54,9 @@ def show_score_and_predictions(  # type:ignore
     entropy: Sequence[float] | None = None,
     n_entropy_levels: int = 4,
     keep_intermediate_files: bool = False,
-    label_every_nth_note: int | None = None,
+    number_every_nth_note: int | None = None,
+    number_specified_notes: Sequence[int] | None = None,
+    number_notes_offset: int = 0,
 ):
     # music_df = music_df.copy()
     if prediction_indices is None:
@@ -87,7 +89,7 @@ def show_score_and_predictions(  # type:ignore
         music_df, start_i=min(prediction_indices), end_i=max(prediction_indices)
     )
 
-    if feature_name not in music_df.columns:
+    if feature_name is None or feature_name not in music_df.columns:
         # Unlabeled data
         # if entropy is not None:
         #     raise NotImplementedError
@@ -95,13 +97,21 @@ def show_score_and_predictions(  # type:ignore
             music_df,
             feature_name=f"pred_{feature_name}",
             pdf_path=pdf_path,
-            label_every_nth_note=label_every_nth_note,
+            number_every_nth_note=number_every_nth_note,
+            number_specified_notes=number_specified_notes,
+            number_notes_offset=number_notes_offset,
             **transparency_args,
         )
 
     music_df["correct"] = music_df[f"pred_{feature_name}"].astype(col_type) == music_df[
         feature_name
     ].astype(col_type)
+    # music_df["gui_labels"] = (
+    #     music_df[f"pred_{feature_name}"].astype(str)
+    #     + "("
+    #     + music_df[feature_name].astype(str)
+    #     + ")"
+    # )
     # Concatenate strings in "correct" and feature_name columns:
     music_df["correct_by_feature"] = music_df[feature_name].astype(str) + music_df[
         "correct"
@@ -135,12 +145,15 @@ def show_score_and_predictions(  # type:ignore
         music_df,
         pdf_path,
         label_col=f"pred_{feature_name}",
+        # label_col="gui_labels",
         label_mask_col="label_mask",
         label_color_col="label_color",
         color_col="correct_by_feature",
         color_mask_col="color_mask",
         uncolored_val=uncolored_val,
         keep_intermediate_files=keep_intermediate_files,
-        label_every_nth_note=label_every_nth_note,
+        number_every_nth_note=number_every_nth_note,
+        number_specified_notes=number_specified_notes,
+        number_notes_offset=number_notes_offset,
         **transparency_args,
     )

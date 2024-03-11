@@ -24,11 +24,15 @@ from PIL import Image, ImageDraw, ImageFont
 #     }
 # )
 
+# Removed the following yellows from the below HEX_CODES:
+# #FFFF00
+# #FFFF80
+# #FFFF40
+
 HEX_CODES = """
 #FF0000
 #00FF00
 #0000FF
-#FFFF00
 #FF00FF
 #00FFFF
 #800000
@@ -40,7 +44,6 @@ HEX_CODES = """
 #FF8080
 #80FF80
 #8080FF
-#FFFF80
 #FF80FF
 #80FFFF
 #c08080
@@ -52,7 +55,6 @@ HEX_CODES = """
 #FF4040
 #40FF40
 #4040FF
-#FFFF40
 #FF40FF
 #40FFFF
 #c00000

@@ -19,7 +19,8 @@ def get_unique_from_array_by_df(
     unique_col_name_or_names: str | list[str],
     sync_col_name_or_names: None | str | list[str] = None,
     transform: str | Callable = "mean",
-) -> np.ndarray:
+    return_indices: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     >>> df = pd.DataFrame(
     ...     {
@@ -29,16 +30,29 @@ def get_unique_from_array_by_df(
     ...     }
     ... )
     >>> a = np.array([[0.0, 1.0], [1.0, 0.0], [2.0, -1.0], [3.0, -2.0]])
+
+    Get the items of `a` corresponding to unique onsets in df:
     >>> get_unique_from_array_by_df(a, df, "onset")
     array([[ 0.,  1.],
            [ 3., -2.]])
+
+    Include the indices too:
+    >>> get_unique_from_array_by_df(a, df, "onset", return_indices=True)
+    (array([[ 0.,  1.],
+           [ 3., -2.]]), array([0, 3]))
+
+    Get the items of `a` corresponding to unique releases in df:
     >>> get_unique_from_array_by_df(a, df, "release")
     array([[ 0.,  1.],
            [ 2., -1.]])
+
+    Get the items of `a` corresponding to unique combinations of onset/release in df:
     >>> get_unique_from_array_by_df(a, df, ["onset", "release"])
     array([[ 0.,  1.],
            [ 2., -1.],
            [ 3., -2.]])
+
+
     >>> df_with_irregular_index = df.copy()
     >>> df_with_irregular_index.index = [3, 2, 7, 1]
     >>> get_unique_from_array_by_df(a, df_with_irregular_index, "onset")
@@ -51,6 +65,8 @@ def get_unique_from_array_by_df(
         music_df = music_df.reset_index(drop=True)
     grouped = music_df.groupby(unique_col_name_or_names)
     first_index = grouped.apply(lambda x: x.index[0])
+    if return_indices:
+        return a[first_index], first_index.values
     return a[first_index]
 
 

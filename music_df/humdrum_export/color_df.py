@@ -90,7 +90,7 @@ class ColorMapping:
                 if color_mapping is not None:
                     hex_color = color_mapping.get(val, HEX_CODES[i])
                 else:
-                    hex_color = HEX_CODES[i]
+                    hex_color = HEX_CODES[i % len(HEX_CODES)]
 
                 if n_alpha_levels is None:
                     char = color_chars[adjusted_i % len(color_chars)]

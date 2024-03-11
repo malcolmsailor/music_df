@@ -25,7 +25,11 @@ def parse_args():
     parser.add_argument(
         "--output-file", default=None, help="We will append a row to this csv file"
     )
-    parser.add_argument("--key", default=None, help="If present, first item in csv row")
+    parser.add_argument(
+        "--key",
+        default=None,
+        help="If present, first cell in output csv row (i.e., an index name)",
+    )
     args = parser.parse_args()
     return args
 
@@ -77,6 +81,8 @@ def main():
 
     assert len(y_true) == len(y_pred)
 
+    unique_labels = sorted(set(y_true) | set(y_pred))
+
     # precision, recall, f1, support = sklearn.metrics.precision_recall_fscore_support(
     #     y_true, y_pred, average="weighted"
     # )
@@ -84,6 +90,22 @@ def main():
     print(f"{accuracy=}")
     balanced_accuracy = sklearn.metrics.balanced_accuracy_score(y_true, y_pred)
     print(f"{balanced_accuracy=}")
+    # confusion_matrix = sklearn.metrics.confusion_matrix(y_true, y_pred)
+
+    precision, recall, fscore, support = (
+        sklearn.metrics.precision_recall_fscore_support(
+            y_true, y_pred, labels=unique_labels
+        )
+    )
+    print("|Class | Precision | Recall | F-score | Support |")
+    print("|------|-----------|--------|---------|---------|")
+    for i, (prec, rec, fsc, supp) in enumerate(
+        zip(precision, recall, fscore, support)  # type:ignore
+    ):
+        # print(
+        #     f"Class {unique_labels[i]}: Precision={prec:.2f}, Recall={rec:.2f}, F-score={fsc:.2f}, Support={supp}"
+        # )
+        print(f"| {unique_labels[i]}|{prec:.2f} | {rec:.2f} | {fsc:.2f} | {supp} |")
     if args.output_file is not None:
         with open(args.output_file, "a") as outf:
             if args.key is None:

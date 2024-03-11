@@ -5,8 +5,11 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 
 set -e # abort on error
 
-# IMG_CONVERTER=convert
-IMG_CONVERTER=svgexport
+# IMG_CONVERTER="inkscape" # inkscape does not show colors
+# IMG_CONVERTER="magick convert" # magick does not show colors
+# IMG_CONVERTER=svgexport # svgexport is slow and suffers bugs
+# IMG_CONVERTER=cairosvg # cairosvg doesn't show full noteheads
+IMG_CONVERTER=rsvg-convert # rsvg-convert seems to offer good performance
 
 if [[ -z $(which img2pdf) ]] || [[ -z $(which verovio) ]] || [[ -z $(which "$IMG_CONVERTER") ]]; then
     echo "ERROR: Missing a prerequisite: make sure img2pdf, verovio, and "
@@ -39,7 +42,19 @@ set -x
 verovio "${input_krn}" "-o" "${temp_dir}/tmp.svg" --footer none --header none --all-pages
 
 for f in $(ls "${temp_dir}"/*.svg); do
-    "${IMG_CONVERTER}" "$f" "${f/%svg/png}"
+    if [[ "$IMG_CONVERTER" = cairosvg ]]; then
+        "${IMG_CONVERTER}" "$f" -o "${f/%svg/png}"
+    else
+        if [[ "$IMG_CONVERTER" = inkscape ]]; then
+            eval "${IMG_CONVERTER}" "$f" --export-filename="${f/%svg/png}"
+        else
+            if [[ "$IMG_CONVERTER" = rsvg-convert ]]; then
+                eval "${IMG_CONVERTER}" -o "${f/%svg/png}" "$f"
+            else
+                eval "${IMG_CONVERTER}" "$f" "${f/%svg/png}"
+            fi
+        fi
+    fi
 done
 
 img2pdf $(ls "${temp_dir}"/*.png) -o "${output_pdf}" >/dev/null 2>&1

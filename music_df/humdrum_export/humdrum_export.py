@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import pandas as pd
 
+from music_df.add_feature import add_bar_durs
 from music_df.humdrum_export.collate_spines import collate_spines
 from music_df.humdrum_export.color_df import ColorMapping, color_df
 from music_df.humdrum_export.constants import DEFAULT_COLOR_MAPPING, USER_SIGNIFIERS
@@ -12,6 +13,8 @@ from music_df.humdrum_export.df_to_spines import df_to_spines
 from music_df.humdrum_export.df_utils.spell_df import spell_df
 from music_df.humdrum_export.df_utils.split_df_by_pitch import split_df_by_pitch
 from music_df.humdrum_export.merge_spines import merge_spines
+from music_df.quantize_df import quantize_df
+from music_df.split_notes_at_barlines import split_notes_at_barlines
 
 
 def _write_spine(spine: t.List[str], path: str) -> None:
@@ -79,7 +82,10 @@ def df2hum(
     color_transparency_col: t.Optional[str] = None,
     n_transparency_levels: t.Optional[int] = None,
     uncolored_val: t.Optional[str] = None,
-    label_every_nth_note: t.Optional[int] = None,
+    number_every_nth_note: t.Optional[int] = None,
+    number_specified_notes: t.Optional[t.List[int]] = None,
+    number_notes_offset: int = 0,
+    quantize: None | int = None,
 ) -> str:
     """
     Args:
@@ -105,12 +111,28 @@ def df2hum(
             There can be at most 7 distinct colors.
     """
     df = spell_df(df)
+    if quantize:
+        df = quantize_df(df, tpq=quantize)
+    df = add_bar_durs(df)
+    df = split_notes_at_barlines(
+        df, min_overhang_dur=(1 / 16) if quantize is None else (1 / quantize)
+    )
 
-    if label_every_nth_note:
+    if number_every_nth_note:
         df["note_index"] = -1
-        df.loc[df.type == "note", "note_index"] = range((df.type == "note").sum())
+        df.loc[df.type == "note", "note_index"] = range(  # type:ignore
+            number_notes_offset,
+            (df.type == "note").sum() + number_notes_offset,
+        )
         df["nth_note_labels"] = df.note_index.astype(str)
-        df.loc[df["note_index"] % label_every_nth_note != 0, "nth_note_labels"] = ""
+        df.loc[df["note_index"] % number_every_nth_note != 0, "nth_note_labels"] = ""
+
+    if number_specified_notes:
+        if "nth_note_labels" not in df.columns:
+            df["nth_note_labels"] = ""
+        offset_indices = [n + number_notes_offset for n in number_specified_notes]
+        mask = df.index.isin(df[df.type == "note"].index[offset_indices])
+        df.loc[mask, "nth_note_labels"] = [str(n) for n in number_specified_notes]
 
     if label_mask_col is not None:
         # (Malcolm 2023-10-20) I'm not sure why we constrain label_color_col to have at
@@ -162,7 +184,11 @@ def df2hum(
             label_col=label_col,
             label_mask_col=label_mask_col,
             label_color_col=label_color_col,
-            nth_note_label_col="nth_note_labels" if label_every_nth_note else None,
+            nth_note_label_col=(
+                "nth_note_labels"
+                if (number_every_nth_note or number_specified_notes)
+                else None
+            ),
         )
         if not spines:
             continue

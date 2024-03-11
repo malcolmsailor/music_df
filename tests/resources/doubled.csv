@@ -1,0 +1,6 @@
+,type,track,channel,pitch,onset,release,velocity,other
+0,time_signature,0,,,0.0,,,"{'numerator': 3, 'denominator': 4, 'clocks_per_click': 24, 'notated_32nd_notes_per_beat': 8}"
+1,bar,,,,0.0,3.0,,
+2,note,1,0.0,50.0,0.0,1.0,100.0,
+3,note,1,0.0,50.0,0.0,1.0,100.0,
+4,note,2,0.0,50.0,0.0,1.0,100.0,

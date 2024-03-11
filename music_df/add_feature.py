@@ -1,7 +1,9 @@
+import io  # Used by doctests
+import re
 from ast import literal_eval
 from itertools import chain
 from math import isnan
-from typing import Callable
+from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -601,3 +603,99 @@ def add_scale_degrees(music_df: pd.DataFrame):
     )
 
     return music_df
+
+
+def decompose_scale_degrees(music_df: pd.DataFrame, max_alteration: int = 2):
+    """
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         # we omit all other columns
+    ...         # (Malcolm 2023-12-22) Note that "bb" is not supported by music21 so
+    ...         #   we handle it separately.
+    ...         "type": ["bar"] + ["note"] * 9,
+    ...         "spelling": [
+    ...             float("nan"),
+    ...             "Db",
+    ...             "F",
+    ...             "Gb",
+    ...             "C",
+    ...             "C#",
+    ...             "C##",
+    ...             "Fb",
+    ...             "F--",
+    ...             "Fbb",
+    ...         ],
+    ...         "key": ["na"] + ["Gb"] * 9,
+    ...     }
+    ... )
+    >>> df = add_scale_degrees(df)
+    >>> decompose_scale_degrees(df)
+       type spelling key scale_degree scale_degree_step scale_degree_alteration
+    0   bar      NaN  na           na                na                      na
+    1  note       Db  Gb            5                 5                       _
+    2  note        F  Gb            7                 7                       _
+    3  note       Gb  Gb            1                 1                       _
+    4  note        C  Gb           #4                 4                       #
+    5  note       C#  Gb          ##4                 4                      ##
+    6  note      C##  Gb         ###4                 4                       x
+    7  note       Fb  Gb           b7                 7                       b
+    8  note      F--  Gb          bb7                 7                      bb
+    9  note      Fbb  Gb          bb7                 7                      bb
+    """
+    music_df["scale_degree_step"] = "na"
+    music_df["scale_degree_alteration"] = "na"
+
+    note_mask = music_df.type == "note"
+
+    music_df.loc[note_mask, "scale_degree_step"] = music_df.loc[
+        note_mask, "scale_degree"
+    ].apply(lambda s: re.search(r"\d+", s).group())
+    music_df.loc[note_mask, "scale_degree_alteration"] = music_df.loc[
+        note_mask, "scale_degree"
+    ].apply(lambda s: re.search(r"\D*", s).group())
+    music_df.loc[note_mask, "scale_degree_alteration"] = music_df.loc[
+        note_mask, "scale_degree_alteration"
+    ].apply(lambda s: s if len(s) <= max_alteration else "x")
+    music_df.loc[music_df.scale_degree_alteration == "", "scale_degree_alteration"] = (
+        "_"
+    )
+    return music_df
+
+
+def concatenate_features(df: pd.DataFrame, features: Iterable[str]) -> pd.DataFrame:
+    """
+    >>> csv_table = '''
+    ... type,pitch,onset,release,foo,bar
+    ... bar,,0.0,4.0,,
+    ... note,60,0.0,0.5,a,1.0
+    ... note,60,0.0,1.5,b,2.0
+    ... note,60,1.0,2.0,c,3.0
+    ... note,60,2.0,3.0,d,4.0
+    ... bar,,4.0,8.0,,
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> df
+       type  pitch  onset  release  foo  bar
+    0   bar    NaN    0.0      4.0  NaN  NaN
+    1  note   60.0    0.0      0.5    a  1.0
+    2  note   60.0    0.0      1.5    b  2.0
+    3  note   60.0    1.0      2.0    c  3.0
+    4  note   60.0    2.0      3.0    d  4.0
+    5   bar    NaN    4.0      8.0  NaN  NaN
+    >>> concatenate_features(df, ["foo", "bar"])
+       type  pitch  onset  release  foo  bar foo_bar
+    0   bar    NaN    0.0      4.0  NaN  NaN      na
+    1  note   60.0    0.0      0.5    a  1.0    a1.0
+    2  note   60.0    0.0      1.5    b  2.0    b2.0
+    3  note   60.0    1.0      2.0    c  3.0    c3.0
+    4  note   60.0    2.0      3.0    d  4.0    d4.0
+    5   bar    NaN    4.0      8.0  NaN  NaN      na
+    """
+    concat_feature_name = "_".join(features)
+    assert concat_feature_name not in df.columns
+    df[concat_feature_name] = df[features].astype(str).sum(axis=1)
+    df.loc[
+        ((df[features].isna()) | (df[features] == "na")).any(axis=1),
+        concat_feature_name,
+    ] = "na"
+    return df

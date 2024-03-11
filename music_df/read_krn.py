@@ -102,11 +102,17 @@ def read_krn(
     sort: bool = False,
     infer_tempo: bool = False,
     default_tempo: float | None = None,
+    label_identifiers: str | None = None,
 ) -> pd.DataFrame:
     assert TOTABLE is not None, "TOTABLE environment variable undefined"
+    totable_cmd = [TOTABLE, krn_path]
+    if label_identifiers is not None:
+        totable_cmd.append(label_identifiers)
+
     result = subprocess.run(
-        [TOTABLE, krn_path], check=True, capture_output=True
+        totable_cmd, check=True, capture_output=True
     ).stdout.decode()
+
     df = pd.read_csv(io.StringIO(result), sep="\t")
     df.attrs["score_name"] = krn_path
     if remove_graces:

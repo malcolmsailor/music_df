@@ -4,6 +4,7 @@ import os
 import pdb
 import sys
 import traceback
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,9 @@ import yaml
 from matplotlib import pyplot as plt
 from omegaconf import OmegaConf
 
+from music_df.add_feature import concatenate_features
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
+from music_df.quantize_df import quantize_df
 from music_df.read_csv import read_csv
 from music_df.show_scores.show_score import show_score_and_predictions
 from music_df.sync_df import sync_array_by_df
@@ -70,36 +73,125 @@ def get_csv_title(raw_path, config) -> str:
     return out
 
 
+def get_single_itos(dictionary_path: str) -> list[str]:
+    feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
+    with open(dictionary_path) as inf:
+        data = inf.readlines()
+    return [
+        line.split(" ", maxsplit=1)[0]
+        for line in data
+        if line and not line.startswith("madeupword")
+    ]
+
+
 def get_itos(dictionary_paths: list[str] | str) -> dict[str, list[str]]:
     if isinstance(dictionary_paths, str):
         dictionary_paths = [dictionary_paths]
     out = {}
     for dictionary_path in dictionary_paths:
         feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
-        with open(dictionary_path) as inf:
-            data = inf.readlines()
-        contents = [
-            line.split(" ", maxsplit=1)[0]
-            for line in data
-            if line and not line.startswith("madeupword")
-        ]
-        out[feature_name] = contents
+        out[feature_name] = get_single_itos(dictionary_path)
     return out
 
 
-def get_stoi(dictionary_paths: list[str]) -> dict[str, list[str]]:
+def get_single_stoi(dictionary_path: str) -> dict[str, int]:
+    feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
+    with open(dictionary_path) as inf:
+        data = inf.readlines()
+    contents = [
+        line.split(" ", maxsplit=1)[0]
+        for line in data
+        if line and not line.startswith("madeupword")
+    ]
+    return {token: i for i, token in enumerate(contents)}
+
+
+def get_stoi(dictionary_paths: list[str]) -> dict[str, dict[str, int]]:
     out = {}
     for dictionary_path in dictionary_paths:
         feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
-        with open(dictionary_path) as inf:
-            data = inf.readlines()
-        contents = [
-            line.split(" ", maxsplit=1)[0]
-            for line in data
-            if line and not line.startswith("madeupword")
-        ]
-        out[feature_name] = {token: i for i, token in enumerate(contents)}
+        out[feature_name] = get_single_stoi(dictionary_path)
     return out
+
+
+def plot_item_from_tokens(
+    metadata_row,
+    tokens,
+    config,
+    pdf_path: str | None = None,
+    csv_path: str | None = None,
+    music_df: pd.DataFrame | None = None,
+    title: str | None = None,
+    feature_name: str | None = None,
+    write_csv=False,
+    keep_intermediate_files: bool = False,
+    start_i: int | None = None,
+    end_i: int | None = None,
+    quantize: int | None = None,
+    concat_df_columns: tuple[tuple[str, ...], ...] = (),
+    number_specified_notes: Sequence[int] | None = None,
+):
+    if music_df is None:
+        music_df = read_csv(metadata_row.csv_path)
+        assert music_df is not None
+
+    for concat_columns in concat_df_columns:
+        music_df = concatenate_features(music_df, concat_columns)
+
+    # if title is None:
+    #     title = get_csv_title(metadata_row.csv_path, config)
+
+    df_indices = metadata_row.df_indices
+    if isinstance(df_indices, str):
+        df_indices = ast.literal_eval(df_indices)
+
+    # if "start_offset" in metadata_row.index:
+    #     title += f" {metadata_row.start_offset}"
+    # else:
+    #     title += f" {metadata_row.name}"
+
+    # subfolder = title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+
+    if quantize:
+        music_df = quantize_df(music_df, tpq=quantize)
+    if end_i is not None:
+        raise NotImplementedError
+    if start_i is not None:
+        raise NotImplementedError
+
+    if config.make_score_pdfs:
+        # feature_name = feature_name if feature_name is not None else config.feature_name
+        # pdf_basename = f"{feature_name}.pdf"
+        # pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
+        # csv_path = pdf_path[:-4] + ".csv"
+        assert pdf_path is not None
+        return_code = show_score_and_predictions(
+            music_df=music_df,
+            feature_name=feature_name,
+            predicted_feature=tokens,
+            prediction_indices=df_indices,
+            pdf_path=pdf_path,
+            csv_path=csv_path if write_csv else None,
+            col_type=config.column_types.get(feature_name, str),
+            keep_intermediate_files=keep_intermediate_files,
+            number_every_nth_note=config.number_every_nth_note,
+            number_specified_notes=number_specified_notes,
+            number_notes_offset=(start_i if start_i is not None else 0),
+        )
+        if not return_code:
+            LOGGER.info(f"Wrote {pdf_path}")
+    if config.make_piano_rolls:
+        fig, ax = plt.subplots()
+        # TODO: (Malcolm 2023-09-29) save to a png rather than displaying
+        plot_predictions(
+            music_df,
+            feature_name if feature_name is not None else config.feature_name,
+            tokens,
+            df_indices,
+            ax=ax,
+            title=title,
+        )
+        plt.show()
 
 
 def plot_item_from_logits(
@@ -107,6 +199,8 @@ def plot_item_from_logits(
     logits,
     config,
     feature_vocab,
+    pdf_path: str | None = None,
+    csv_path: str | None = None,
     music_df: pd.DataFrame | None = None,
     title: str | None = None,
     entropy_to_transparency: bool = False,
@@ -114,38 +208,60 @@ def plot_item_from_logits(
     write_csv: bool = False,
     feature_name: str | None = None,
     sync: bool = False,
-    label_every_nth_note: int | None = None,
+    number_every_nth_note: int | None = None,
+    number_specified_notes: Sequence[int] | None = None,
+    start_i: int | None = None,
+    end_i: int | None = None,
+    quantize: int | None = None,
+    concat_df_columns: tuple[tuple[str, ...], ...] = (),
 ):
     if getattr(config, "data_has_start_and_stop_tokens", False):
         logits = logits[1:-1]
     if music_df is None:
-        music_df = read_csv(get_csv_path(metadata_row.csv_path, config))
+        music_df = read_csv(metadata_row.csv_path)
         assert music_df is not None
-    if title is None:
-        title = get_csv_title(metadata_row.csv_path, config)
+
+    for concat_columns in concat_df_columns:
+        music_df = concatenate_features(music_df, concat_columns)
+
+    # if title is None:
+    #     title = get_csv_title(metadata_row.csv_path, config)
 
     df_indices = metadata_row.df_indices
     if isinstance(df_indices, str):
         df_indices = ast.literal_eval(df_indices)
 
-    if "start_offset" in metadata_row.index:
-        title += f" {metadata_row.start_offset}"
-    else:
-        title += f" {metadata_row.name}"
+    # if "start_offset" in metadata_row.index:
+    #     title += f" {metadata_row.start_offset}"
+    # else:
+    #     title += f" {metadata_row.name}"
 
-    subfolder = (
-        title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_") + "_synced"
-    )
+    # subfolder = title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
+    # if sync:
+    #     subfolder += "_synced"
 
     # This former strategy for cropping led to incorrect results sometimes:
     # cropped_df = crop_df(music_df, start_i=min(df_indices), end_i=max(df_indices))
     cropped_df = music_df.loc[df_indices]
     assert cropped_df.type.unique().tolist() == ["note"]
+    # somewhat confusingly, we crop music_df separately in show_score_and_predictions
+    #   below (there, we also need to retrieve the preceding time signature, etc.)
+    #   which is why we keep it around here
 
     notes_df = cropped_df.reset_index(drop=True)
 
     # In case logits were ragged, only take the logits corresponding to notes
     logits = logits[: len(notes_df)]
+
+    if end_i is not None:
+        notes_df = notes_df.iloc[:end_i]
+        logits = logits[:end_i]
+        df_indices = [i for i in df_indices if i <= end_i]
+
+    if start_i is not None:
+        notes_df = notes_df.iloc[start_i:]
+        logits = logits[start_i:]
+        df_indices = [i for i in df_indices if i >= start_i]
 
     # if feature_name in ONSET_LEVEL_FEATURES:
     if sync:
@@ -168,11 +284,16 @@ def plot_item_from_logits(
         predicted_indices[predicted_indices < 0] = 0
 
     predictions = [feature_vocab[i] for i in predicted_indices]
+
+    if quantize:
+        music_df = quantize_df(music_df, tpq=quantize)
+
     if config.make_score_pdfs:
-        feature_name = feature_name if feature_name is not None else config.feature_name
-        pdf_basename = f"{feature_name}.pdf"
-        pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
-        csv_path = pdf_path[:-4] + ".csv"
+        # feature_name = feature_name if feature_name is not None else config.feature_name
+        # pdf_basename = f"{feature_name}.pdf"
+        # pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
+        # csv_path = pdf_path[:-4] + ".csv"
+        assert pdf_path is not None
         return_code = show_score_and_predictions(
             music_df=music_df,
             feature_name=feature_name,
@@ -183,7 +304,9 @@ def plot_item_from_logits(
             col_type=config.column_types.get(feature_name, str),
             entropy=entropy,
             keep_intermediate_files=keep_intermediate_files,
-            label_every_nth_note=label_every_nth_note,
+            number_every_nth_note=number_every_nth_note,
+            number_specified_notes=number_specified_notes,
+            number_notes_offset=(start_i if start_i is not None else 0),
         )
         if not return_code:
             LOGGER.info(f"Wrote {pdf_path}")

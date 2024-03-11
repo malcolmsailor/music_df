@@ -13,7 +13,7 @@ from metricker import Meter
 from mspell import Speller
 
 from music_df.humdrum_export.df_to_homo_df import df_to_homo_df
-from music_df.humdrum_export.dur_to_kern import dur_to_kern
+from music_df.humdrum_export.dur_to_kern import KernDurError, dur_to_kern
 
 TOKEN_ORDER = {
     "bar": 0,
@@ -58,6 +58,44 @@ def get_kern_rest(rest_dur: float | int, measure_offset: float | int, meter: Met
     ([0, 0.5, 4.5], ['8r', '1r', '4.r'])
     """
     return _get_kern_notes_sub("r", rest_dur, measure_offset, meter)
+
+
+def kern_to_float_dur(kern: str) -> float:
+    """
+    >>> kern_to_float_dur("4")
+    1.0
+    >>> kern_to_float_dur("4.")
+    1.5
+    >>> kern_to_float_dur("4..")
+    1.75
+    >>> kern_to_float_dur("96")  # doctest: +ELLIPSIS
+    0.0416666666666...
+    >>> kern_to_float_dur("24...")
+    0.3125
+
+    For grace notes, we return 0
+    >>> kern_to_float_dur("q0.104166")
+    0.0
+
+    """
+    if kern.startswith("q"):
+        return 0.0
+    # Some special cases:
+    if kern.startswith("3%2"):
+        return 4 * 2 / 3  # Triplet whole note
+    if kern.startswith("3%4"):
+        return 4 * 4 / 3  # Triplet breve
+    if kern.startswith("8%9"):
+        return 4 * 9 / 8  # 9/8 full rest
+    if kern.startswith("2%9"):
+        return 18.0  # 9/2 full rest
+
+    m = re.match(r"^\[?(?P<recip>\d+)(?P<dots>\.*).*", kern)
+    assert m is not None
+    out = 4 / int(m.group("recip"))
+    dot_factor = sum(2**-i for i in range(len(m.group("dots")) + 1))
+    out *= dot_factor
+    return out
 
 
 def get_kern_notes(
@@ -141,6 +179,26 @@ def get_kern_notes(
 #     """
 #     beat = denom**-1 * 4
 #     return numer * beat
+
+
+def handle_rest(
+    start_time,
+    end_time,
+    measure_start_time,
+    meter,
+    tokens_list,
+    labels_list=None,
+):
+    offsets, rests = get_kern_rest(
+        end_time - start_time, start_time - measure_start_time, meter
+    )
+    for offset, rest in zip(offsets, rests):
+        tokens_list.append((start_time + offset, TOKEN_ORDER["note"], rest))
+        if labels_list is not None:
+            # We need to append a dummy value so we can zip tokens and labels
+            #   together later
+            labels_list.append("REMOVE")
+            assert len(tokens_list) == len(labels_list)
 
 
 def get_kern_spine(
@@ -251,31 +309,87 @@ def get_kern_spine(
 
     meter = Meter("4/4")  # Set default meter
 
+    this_measure_tokens = []
+    this_measure_labels = []
+
+    skip_measure = False
+
+    # TODO: (Malcolm 2024-02-29) remove obsolete code?
+    # actual_bar_dur = 0
+    # expected_bar_dur = None
     for i, row in voice_part.iterrows():
-        if row.onset > prev_release:
-            offsets, rests = get_kern_rest(
-                row.onset - prev_release, row.onset - measure_start, meter
+        if skip_measure:
+            if row.type != "bar":
+                continue
+            this_measure_tokens = []
+            this_measure_labels = []
+            handle_rest(
+                measure_start,
+                row.onset,
+                0.0,
+                meter,
+                this_measure_tokens,
+                (
+                    this_measure_labels
+                    if (label_col is not None or nth_note_label_col is not None)
+                    else None
+                ),
             )
-            for offset, rest in zip(offsets, rests):
-                tokens.append(
-                    (prev_release + offset, TOKEN_ORDER["note"], rest)  # type:ignore
+            prev_release: float = row.onset
+
+        if row.onset > prev_release:
+            try:
+                handle_rest(
+                    prev_release,
+                    row.onset,
+                    measure_start,
+                    meter,
+                    this_measure_tokens,
+                    (
+                        this_measure_labels
+                        if (label_col is not None or nth_note_label_col is not None)
+                        else None
+                    ),
                 )
-                if label_col is not None or nth_note_label_col is not None:
-                    # We need to append a dummy value so we can zip tokens and labels
-                    #   together below
-                    labels.append("REMOVE")
-                    assert len(labels) == len(tokens)
+            except KernDurError as exc:
+                skip_measure = True
+                LOGGER.warning(f"Replacing measure contents with rest due to {exc}")
+                continue
+
+            # TODO: (Malcolm 2024-03-01) remove dead code
+            # offsets, rests = get_kern_rest(
+            #     row.onset - prev_release,
+            #     prev_release - measure_start,
+            #     meter,
+            #     # row.onset - prev_release, row.onset - measure_start, meter
+            # )
+            # for offset, rest in zip(offsets, rests):
+            #     this_measure_tokens.append(
+            #         (prev_release + offset, TOKEN_ORDER["note"], rest)  # type:ignore
+            #     )
+            #     if label_col is not None or nth_note_label_col is not None:
+            #         # We need to append a dummy value so we can zip tokens and labels
+            #         #   together below
+            #         this_measure_labels.append("REMOVE")
+            #         assert len(this_measure_labels) == len(this_measure_tokens)
+            # actual_bar_dur += kern_to_float_dur(rest)
             prev_release: float = row.onset
         if row.type == "bar":
             measure_start = row.onset
-            tokens.append((row.onset, TOKEN_ORDER["bar"], kern_barline()))
+            this_measure_tokens.append((row.onset, TOKEN_ORDER["bar"], kern_barline()))
             if label_col is not None or nth_note_label_col is not None:
                 # We need to append a dummy value so we can zip tokens and labels
                 #   together below
-                labels.append("REMOVE")
-                assert len(labels) == len(tokens)
+                this_measure_labels.append("REMOVE")
+                assert len(this_measure_labels) == len(this_measure_tokens)
+            tokens.extend(this_measure_tokens)
+            labels.extend(this_measure_labels)
+            this_measure_tokens = []
+            this_measure_labels = []
+            skip_measure = False
+
         elif row.type == "time_signature":
-            tokens.append(
+            this_measure_tokens.append(
                 (
                     row.onset,
                     TOKEN_ORDER["time_signature"],
@@ -289,23 +403,29 @@ def get_kern_spine(
             if label_col is not None or nth_note_label_col is not None:
                 # We need to append a dummy value so we can zip tokens and labels
                 #   together below
-                labels.append("REMOVE")
-                assert len(labels) == len(tokens)
+                this_measure_labels.append("REMOVE")
+                assert len(this_measure_labels) == len(this_measure_tokens)
         elif row.type in {"tempo", "text"}:
             # (Malcolm 2023-12-18) For now, we do nothing about tempi or text
             continue
         else:
             assert row.type == "note"
-            offsets, kern_notes, note_labels = get_kern_notes(
-                row,
-                row.onset - measure_start,
-                meter,
-                speller,
-                row.color_char if "color_char" in row.index else None,
-                label_name=label_col,
-                label_mask_col=label_mask_col,
-                nth_note_label_col=nth_note_label_col,
-            )
+            try:
+                offsets, kern_notes, note_labels = get_kern_notes(
+                    row,
+                    row.onset - measure_start,
+                    meter,
+                    speller,
+                    row.color_char if "color_char" in row.index else None,
+                    label_name=label_col,
+                    label_mask_col=label_mask_col,
+                    nth_note_label_col=nth_note_label_col,
+                )
+            except KernDurError as exc:
+                skip_measure = True
+                LOGGER.warning(f"Replacing measure contents with rest due to {exc}")
+                continue
+
             if note_labels is None:
                 note_labels = [None] * len(kern_notes)
 
@@ -314,41 +434,46 @@ def get_kern_spine(
             ):
                 if prev_onset == row.onset and prev_release == row.release:
                     j = -(len(offsets) - i)
-                    tokens[j][2] += f" {kern_note}"
+                    this_measure_tokens[j][2] += f" {kern_note}"
                     if label_col is not None or nth_note_label_col is not None:
                         if label == "":
                             pass
-                        elif not labels[j]:
+                        elif not this_measure_labels[j]:
                             if label_color_col is not None:
                                 label_color = row[label_color_col]
                                 text_token = f"!LO:TX:b:color={label_color}:t={label}"
                             else:
                                 text_token = f"!LO:TX:b:t={label}"
-                            labels[j] = text_token
+                            this_measure_labels[j] = text_token
                         elif label is not None:
                             if label_color_col is not None:
                                 # assert row[label_color_col] == "#FF0000"
-                                m = re.search(r"color=(?P<color>[^:]+):", labels[j])
+                                m = re.search(
+                                    r"color=(?P<color>[^:]+):", this_measure_labels[j]
+                                )
                                 assert m is not None
                                 existing_color = m.group("color")
                                 if not row[label_color_col] == existing_color:
                                     LOGGER.warning(
                                         f"{row[label_color_col]=} does not match existing label color {existing_color}, ignoring"
                                     )
-                            labels[j] += rf"\n{label}"
+                            this_measure_labels[j] += rf"\n{label}"
                 else:
-                    tokens.append([row.onset + offset, TOKEN_ORDER["note"], kern_note])
+                    this_measure_tokens.append(
+                        [row.onset + offset, TOKEN_ORDER["note"], kern_note]
+                    )
+                    # actual_bar_dur += kern_to_float_dur(kern_note)
                     if label_col is not None or nth_note_label_col is not None:
                         if label == "":
-                            labels.append("")
+                            this_measure_labels.append("")
                         elif label is not None:
                             if label_color_col is not None:
                                 label_color = row[label_color_col]
                                 text_token = f"!LO:TX:b:color={label_color}:t={label}"
                             else:
                                 text_token = f"!LO:TX:b:t={label}"
-                            labels.append(text_token)
-                        assert len(labels) == len(tokens)
+                            this_measure_labels.append(text_token)
+                        assert len(this_measure_labels) == len(this_measure_tokens)
 
         prev_onset = row.onset
         if row.type == "note":

@@ -21,6 +21,7 @@ from music_df.script_helpers import (
     get_csv_path,
     get_csv_title,
     get_itos,
+    plot_item_from_logits,
     read_config_oc,
 )
 from music_df.show_scores.show_score import show_score_and_predictions
@@ -31,7 +32,6 @@ logging.basicConfig(level=logging.INFO)
 
 
 DEFAULT_OUTPUT = os.path.expanduser(os.path.join("~", "output", "plot_predictions"))
-
 # features are either note-level (like "chord_tone") or onset-level (like "primary_degree")
 ONSET_LEVEL_FEATURES = {
     "harmony_onset",
@@ -75,7 +75,6 @@ class Config:
     n_specials: int = 4
     data_has_start_and_stop_tokens: bool = False
     keep_intermediate_files: bool = False
-    number_every_nth_note: int = 50
 
 
 def parse_args():
@@ -116,10 +115,6 @@ def sync_predictions(
     for i in indices:
         metadata_row = metadata_df.iloc[i]
         logits: np.ndarray = (h5file[f"logits_{i}"])[:]  # type:ignore
-
-        if config.data_has_start_and_stop_tokens:
-            logits = logits[1:-1]
-
         if prev_csv_path is None or metadata_row.csv_path != prev_csv_path:
             prev_csv_path = metadata_row.csv_path
             assert isinstance(prev_csv_path, str)
@@ -128,84 +123,22 @@ def sync_predictions(
 
         assert music_df is not None
 
-        df_indices = metadata_row.df_indices
-        if isinstance(df_indices, str):
-            df_indices = ast.literal_eval(df_indices)
-
         title = get_csv_title(prev_csv_path, config)
-        if "start_offset" in metadata_row.index:
-            title += f" {metadata_row.start_offset}"
-        else:
-            title += f" {metadata_row.name}"
 
-        subfolder = (
-            title.strip(os.path.sep).replace(os.path.sep, "+").replace(" ", "_")
-            + "_synced"
+        plot_item_from_logits(
+            metadata_row,
+            logits,
+            config=config,
+            music_df=music_df,
+            title=title,
+            entropy_to_transparency=entropy_to_transparency,
+            keep_intermediate_files=keep_intermediate_files,
+            write_csv=write_csv,
+            feature_name=feature_name,
+            feature_vocab=feature_vocab,
+            sync=feature_name in ONSET_LEVEL_FEATURES,
         )
 
-        # This former strategy for cropping led to incorrect results sometimes:
-        # cropped_df = crop_df(music_df, start_i=min(df_indices), end_i=max(df_indices))
-        cropped_df = music_df.loc[df_indices]
-        assert cropped_df.type.unique().tolist() == ["note"]
-
-        notes_df = cropped_df.reset_index(drop=True)
-
-        # In case logits were ragged, only take the logits corresponding to notes
-        logits = logits[: len(notes_df)]
-
-        if feature_name in ONSET_LEVEL_FEATURES:
-            logits = sync_array_by_df(logits, notes_df, sync_col_name_or_names="onset")
-
-        if entropy_to_transparency:
-            probs = softmax(logits)
-            entropy = -np.sum(probs * np.log2(probs), axis=1)
-        else:
-            entropy = None
-
-        predicted_indices = logits.argmax(axis=-1)
-
-        predicted_indices -= config.n_specials
-        if predicted_indices.min() < 0:
-            LOGGER.warning(
-                f"Predicted at least one special token in {metadata_row.csv_path}; "
-                "replacing with 0"
-            )
-            predicted_indices[predicted_indices < 0] = 0
-
-        predictions = [feature_vocab[i] for i in predicted_indices]
-        if config.make_score_pdfs:
-            feature_name = (
-                feature_name if feature_name is not None else config.feature_name
-            )
-            pdf_basename = f"{feature_name}.pdf"
-            pdf_path = os.path.join(config.output_folder, subfolder, pdf_basename)
-            csv_path = pdf_path[:-4] + ".csv"
-            return_code = show_score_and_predictions(
-                music_df=music_df,
-                feature_name=feature_name,
-                predicted_feature=predictions,
-                prediction_indices=df_indices,
-                pdf_path=pdf_path,
-                csv_path=csv_path if write_csv else None,
-                col_type=config.column_types.get(feature_name, str),
-                entropy=entropy,
-                keep_intermediate_files=keep_intermediate_files,
-                number_every_nth_note=config.number_every_nth_note,
-            )
-            if not return_code:
-                LOGGER.info(f"Wrote {pdf_path}")
-        if config.make_piano_rolls:
-            fig, ax = plt.subplots()
-            # TODO: (Malcolm 2023-09-29) save to a png rather than displaying
-            plot_predictions(
-                music_df,
-                feature_name if feature_name is not None else config.feature_name,
-                predictions,
-                df_indices,
-                ax=ax,
-                title=title,
-            )
-            plt.show()
     h5file.close()
 
 
@@ -269,7 +202,6 @@ def handle_predictions(
                 csv_path=csv_path if write_csv else None,
                 col_type=config.column_types.get(feature_name, str),
                 keep_intermediate_files=keep_intermediate_files,
-                number_every_nth_note=config.number_every_nth_note,
             )
             if not return_code:
                 LOGGER.info(f"Wrote {pdf_path}")
