@@ -86,8 +86,8 @@ def quantize_df(
     """
     assert zero_dur_action in get_args(ZeroDurAction)
 
-    onsets = np.rint(df.onset.to_numpy() * tpq)
-    releases = np.rint(df.release.to_numpy() * tpq)
+    onsets = np.rint(df.onset.apply(float).to_numpy() * tpq)
+    releases = np.rint(df.release.apply(float).to_numpy() * tpq)
     if zero_dur_action == "min_dur":
         releases[releases == onsets] += 1
     if ticks_out:

@@ -1,3 +1,4 @@
+from functools import partial
 import io  # Used by doctests
 import re
 from ast import literal_eval
@@ -649,10 +650,14 @@ def decompose_scale_degrees(music_df: pd.DataFrame, max_alteration: int = 2):
 
     music_df.loc[note_mask, "scale_degree_step"] = music_df.loc[
         note_mask, "scale_degree"
-    ].apply(lambda s: re.search(r"\d+", s).group())
+    ].apply(
+        lambda s: re.search(r"\d+", s).group()  # type:ignore
+    )
     music_df.loc[note_mask, "scale_degree_alteration"] = music_df.loc[
         note_mask, "scale_degree"
-    ].apply(lambda s: re.search(r"\D*", s).group())
+    ].apply(
+        lambda s: re.search(r"\D*", s).group()  # type:ignore
+    )
     music_df.loc[note_mask, "scale_degree_alteration"] = music_df.loc[
         note_mask, "scale_degree_alteration"
     ].apply(lambda s: s if len(s) <= max_alteration else "x")
@@ -699,3 +704,197 @@ def concatenate_features(df: pd.DataFrame, features: Iterable[str]) -> pd.DataFr
         concat_feature_name,
     ] = "na"
     return df
+
+
+def _key_signature_from_key(key: str) -> int:
+    """
+    >>> _key_signature_from_key("C")
+    0
+    >>> _key_signature_from_key("F")
+    -1
+    >>> _key_signature_from_key("F#")
+    6
+    >>> _key_signature_from_key("f#")
+    3
+    >>> _key_signature_from_key("f##")
+    10
+    >>> _key_signature_from_key("Cb")
+    -7
+    >>> _key_signature_from_key("cb")
+    -10
+    """
+    major_mode = key[0].isupper()
+    pitch = key[0].upper()
+    alteration_str = key[1:]
+    alteration = 0
+    if alteration_str:
+        flats = alteration_str.count("b")
+        sharps = alteration_str.count("#")
+        assert not (flats and sharps)
+        alteration = (sharps - flats) * 7
+    raw_key_sig = {"C": 0, "G": 1, "D": 2, "A": 3, "E": 4, "B": 5, "F": -1}[pitch]
+    if not major_mode:
+        raw_key_sig -= 3
+    return raw_key_sig + alteration
+
+
+def add_key_signature_from_key(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    >>> csv_table = '''
+    ... type,pitch,key
+    ... bar,,
+    ... note,60,C
+    ... note,69,a
+    ... note,68,ab
+    ... note,68,Ab
+    ... note,70,Cbb
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> add_key_signature_from_key(df)
+       type  pitch  key  key_signature
+    0   bar    NaN  NaN            NaN
+    1  note   60.0    C            0.0
+    2  note   69.0    a            0.0
+    3  note   68.0   ab           -7.0
+    4  note   68.0   Ab           -4.0
+    5  note   70.0  Cbb          -14.0
+    """
+    key_row_mask = ~music_df["key"].isna()
+    music_df["key_signature"] = float("nan")
+    music_df.loc[key_row_mask, "key_signature"] = music_df.loc[
+        key_row_mask, "key"
+    ].apply(_key_signature_from_key)
+    return music_df
+
+
+def add_enharmonic_key_signature_from_key(music_df: pd.DataFrame) -> pd.DataFrame:
+    """An "enharmonic" key signature is between -5 (5 flats) and 6 (6 sharps).
+    >>> csv_table = '''
+    ... type,pitch,key
+    ... bar,,
+    ... note,60,B#
+    ... note,69,b-
+    ... note,68,F#
+    ... note,68,Gb
+    ... note,70,Cbb
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> add_enharmonic_key_signature_from_key(df)
+       type  pitch  key  key_signature  enh_key_signature
+    0   bar    NaN  NaN            NaN                NaN
+    1  note   60.0   B#           12.0                0.0
+    2  note   69.0   b-            2.0                2.0
+    3  note   68.0   F#            6.0                6.0
+    4  note   68.0   Gb           -6.0                6.0
+    5  note   70.0  Cbb          -14.0               -2.0
+    """
+    if "key_signature" not in music_df.columns:
+        music_df = add_key_signature_from_key(music_df)
+    music_df["enh_key_signature"] = music_df["key_signature"] % 12
+    music_df.loc[(music_df["enh_key_signature"] > 6), "enh_key_signature"] -= 12
+    return music_df
+
+
+PC_TO_KEY_SIG = (0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5)
+
+
+def _key_signature_from_pc_and_mode(
+    row, pc_col_name: str = "key_pc", mode_col_name: str = "mode"
+) -> float:
+    if isnan(row[pc_col_name]) or (
+        isinstance(row[mode_col_name], float) and isnan(row[mode_col_name])
+    ):
+        return float("nan")
+    out = (
+        PC_TO_KEY_SIG[int(row[pc_col_name])]
+        + (-3 if row[mode_col_name] == "m" else 0) % 12
+    )
+    if out > 6:
+        out -= 12
+    return out
+
+
+def add_key_signature_from_pc_and_mode(
+    music_df: pd.DataFrame,
+    added_col_name: str = "key_signature",
+    pc_col_name: str = "key_pc",
+    mode_col_name: str = "mode",
+) -> pd.DataFrame:
+    """
+    Key signatures are between -5 and 6.
+    >>> csv_table = '''
+    ... type,pitch,key_pc,mode
+    ... bar,,
+    ... note,60,0,M
+    ... note,69,9,m
+    ... note,68,9,M
+    ... note,68,8,m
+    ... note,70,3,m
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> add_key_signature_from_pc_and_mode(df)
+       type  pitch  key_pc mode  key_signature
+    0   bar    NaN     NaN  NaN            NaN
+    1  note   60.0     0.0    M            0.0
+    2  note   69.0     9.0    m            0.0
+    3  note   68.0     9.0    M            3.0
+    4  note   68.0     8.0    m            5.0
+    5  note   70.0     3.0    m            6.0
+    """
+    music_df[added_col_name] = music_df.apply(
+        partial(
+            _key_signature_from_pc_and_mode,
+            pc_col_name=pc_col_name,
+            mode_col_name=mode_col_name,
+        ),
+        axis=1,
+    )
+    return music_df
+
+
+def add_key_signature(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    >>> csv_table = '''
+    ... type,pitch,key_pc,mode
+    ... bar,,
+    ... note,60,0,M
+    ... note,69,9,m
+    ... note,68,9,M
+    ... note,68,8,m
+    ... note,70,3,m
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> add_key_signature(df)
+       type  pitch  key_pc mode  key_signature
+    0   bar    NaN     NaN  NaN            NaN
+    1  note   60.0     0.0    M            0.0
+    2  note   69.0     9.0    m            0.0
+    3  note   68.0     9.0    M            3.0
+    4  note   68.0     8.0    m            5.0
+    5  note   70.0     3.0    m            6.0
+
+    >>> csv_table = '''
+    ... type,pitch,key
+    ... bar,,
+    ... note,60,C
+    ... note,69,a
+    ... note,68,ab
+    ... note,68,Ab
+    ... note,70,Cbb
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> add_key_signature(df)
+       type  pitch  key  key_signature
+    0   bar    NaN  NaN            NaN
+    1  note   60.0    C            0.0
+    2  note   69.0    a            0.0
+    3  note   68.0   ab           -7.0
+    4  note   68.0   Ab           -4.0
+    5  note   70.0  Cbb          -14.0
+    """
+    if "mode" in music_df.columns and "key_pc" in music_df.columns:
+        return add_key_signature_from_pc_and_mode(music_df)
+    elif "key" in music_df.columns:
+        return add_key_signature_from_key(music_df)
+    else:
+        raise ValueError
