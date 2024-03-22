@@ -208,6 +208,12 @@ def transpose_to_key(
         out_df[column] = df[column].apply(
             functools.partial(MIDI_NUM_TRANSPOSER, interval=interval, pc=True)
         )
+    for column in df.attrs.get("key_sig_columns", ()):
+        df[column] = df[column] + interval
+    for column in df.attrs.get("key_sig_class_columns", ()):
+        df[column] = (df[column] + interval) % 12
+        df.loc[df[column] > 6, column] -= 12
+
     out_df.attrs.pop("global_key", None)  # global_key will no longer be accurate
     out_df.attrs["global_key_sig"] = new_key_sig
     out_df.attrs["transposed_by_n_sharps"] = transposed_by + interval
