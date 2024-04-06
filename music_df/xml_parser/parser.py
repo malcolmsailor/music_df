@@ -161,9 +161,9 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         )
         self._char_accumulator: t.List[str] = []
         self._repeats: t.List[t.DefaultDict[int, t.Dict[str, t.Dict[str, t.Any]]]] = []
-        self._special_repeat_symbols: t.DefaultDict[
-            int, t.Dict[str, t.Any]
-        ] = defaultdict(dict)
+        self._special_repeat_symbols: t.DefaultDict[int, t.Dict[str, t.Any]] = (
+            defaultdict(dict)
+        )
         self._current_part_repeats: t.Optional[
             t.DefaultDict[int, t.Dict[str, t.Dict[str, t.Any]]]
         ] = None

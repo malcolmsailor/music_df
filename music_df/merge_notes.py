@@ -53,8 +53,13 @@ def merge_notes(
     1  note     64    2.0      3.0                4
     2  note     64    3.5      4.0              5,6
     3  note     60    4.0      4.4              7,8
-    >>> merged_df.attrs["merged_notes"]
-    True
+
+    We store the following attributes in .attrs:
+    - merged_notes (bool)
+    - n_merged_notes (int)
+    - n_unmerged_notes (int)
+    >>> merged_df.attrs
+    {'n_unmerged_notes': 9, 'n_merged_notes': 4, 'merged_notes': True}
     >>> merge_notes(df, store_unmerged_indices=False)
        type  pitch  onset  release
     0  note     60    0.0      3.0
@@ -64,6 +69,8 @@ def merge_notes(
     """
     working_area = defaultdict(MergeGroup)
     groups = []
+
+    n_unmerged_notes = (df.type == "note").sum()
 
     # assumes df is sorted by onset
     for _, row in df.iterrows():
@@ -91,6 +98,8 @@ def merge_notes(
     new_df = pd.DataFrame(row_accumulator)
 
     new_df.attrs = df.attrs.copy()
+    new_df.attrs["n_unmerged_notes"] = n_unmerged_notes
+    new_df.attrs["n_merged_notes"] = (new_df.type == "note").sum()
     new_df.attrs["merged_notes"] = True
     new_df = sort_df(new_df)
     return new_df

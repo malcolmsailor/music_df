@@ -149,14 +149,19 @@ remap_time_column = lambda x: Fraction(x).limit_denominator(DENOM_LIMIT)
 def _handle_times(df: pd.DataFrame, fractions: bool) -> None:
     # (Malcolm 2023-10-12) Note: the "duration" column is in whole notes,
     #   not quarter notes, which is why we need "duration_qb"
+    qb_col_name = (
+        "quarterbeats_playthrough"
+        if "quarterbeats_playthrough" in df.columns
+        else "quarterbeats"
+    )
     if fractions:
-        df["onset"] = df["quarterbeats"].map(remap_time_column)
+        df["onset"] = df[qb_col_name].map(remap_time_column)
         df["release"] = df["onset"] + df["duration_qb"].map(remap_time_column)
     else:
-        if pd.api.types.is_numeric_dtype(df["quarterbeats"]):
-            df["onset"] = df["quarterbeats"]
+        if pd.api.types.is_numeric_dtype(df[qb_col_name]):
+            df["onset"] = df[qb_col_name]
         else:
-            df["onset"] = df["quarterbeats"].apply(_str_to_float)
+            df["onset"] = df[qb_col_name].apply(_str_to_float)
         if pd.api.types.is_numeric_dtype(df["duration_qb"]):
             df["release"] = df["onset"] + df["duration_qb"]
         else:
@@ -174,7 +179,10 @@ def ms3_to_df(
     """ """
     out_df = ms3_df.copy()
 
-    if drop_first_endings:
+    if "quarterbeats_playthrough" in out_df.columns:
+        # This means the repeats are expanded
+        pass
+    elif drop_first_endings:
         out_df = out_df[~out_df["quarterbeats"].isna()].reset_index(drop=True)
         if measures_df is not None:
             if "quarterbeats" in measures_df.columns:
@@ -214,7 +222,10 @@ def ms3_to_df(
     `measures.tsv` files provided in the ABC corpora if possible."""
         )
         out_df = _infer_bars(out_df)
-    elif "quarterbeats" not in measures_df.columns:
+    elif (
+        "quarterbeats" not in measures_df.columns
+        and "quarterbeats_playthrough" not in measures_df.columns
+    ):
         LOGGER.warning(
             """`measures_df` is missing "quarterbeats" column and can't be used."""
         )

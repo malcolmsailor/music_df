@@ -14,6 +14,7 @@ def main():
     args = parser.parse_args()
 
     music_df = read_csv(args.input_csv)
+
     if args.start_i is not None or args.end_i is not None:
         music_df = crop_df(music_df, start_i=args.start_i, end_i=args.end_i)
 

@@ -40,6 +40,10 @@ def dedouble(
     ...         ],
     ...     }
     ... )
+    >>> pd.set_option(
+    ...     "display.width", 100
+    ... )  # To avoid issues when the terminal is a different size
+
     >>> df  # doctest: +NORMALIZE_WHITESPACE
                  type  track  channel  pitch  onset  release  velocity                                              other
     0  time_signature    0.0      NaN    NaN    0.0      NaN       NaN  {'numerator': 3, 'denominator': 4, 'clocks_per...
@@ -56,6 +60,14 @@ def dedouble(
     1               1
     2               2              2,3,4
     3               5
+
+    We store the following attributes in .attrs:
+    - dedoubled (bool)
+    - n_dedoubled_notes (int)
+    - n_undedoubled_notes (int)
+    >>> dedouble(df).attrs
+    {'n_undedoubled_notes': 3, 'n_dedoubled_notes': 1, 'dedoubled': True}
+
     >>> dedouble(df, quantize=False)[
     ...     ["original_index", "duplicated_indices"]
     ... ]  # doctest: +NORMALIZE_WHITESPACE
@@ -74,8 +86,10 @@ def dedouble(
     2               2                2,3
     3               4
     4               5
+
     """
     df = df.copy()
+    df.attrs["n_undedoubled_notes"] = int((df.type == "note").sum())
     if not match_releases:
         raise NotImplementedError
     if quantize:
@@ -108,5 +122,8 @@ def dedouble(
         deduplicated = deduplicated.reset_index(names="original_index")
     else:
         deduplicated = deduplicated.reset_index(drop=True)
+
+    deduplicated.attrs["n_dedoubled_notes"] = int((deduplicated.type == "note").sum())
+    deduplicated.attrs["dedoubled"] = True
 
     return deduplicated

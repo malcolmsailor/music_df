@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 
+from music_df.add_feature import infer_barlines
 from music_df.humdrum_export.pdf import df_to_pdf, read_csv
 
 SCRIPT_DIR = os.path.dirname((os.path.realpath(__file__)))
@@ -17,11 +18,14 @@ if not os.path.exists(OUTPUT_DIR):
 
 
 def test_df_to_pdf_no_color():
-    df_to_pdf(read_csv(CSV_PATH), os.path.join(OUTPUT_DIR, "no_color.pdf"))
+    df = read_csv(CSV_PATH)
+    df = infer_barlines(df)
+    df_to_pdf(df, os.path.join(OUTPUT_DIR, "no_color.pdf"))
 
 
 def test_df_to_pdf_color():
     df = read_csv(CSV_PATH)
+    df = infer_barlines(df)
     # Choose a random range of numbers to test interpolation
     df["transparency"] = np.random.random() * 5.0 - 2.3
     return_code = df_to_pdf(
@@ -38,4 +42,4 @@ def test_df_to_pdf_color():
 def test_df_to_pdf_with_grace_duration():
     df = read_csv(CSV_PATH_WITH_GRACE)
     return_code = df_to_pdf(df, os.path.join(OUTPUT_DIR, "q.pdf"))
-    breakpoint()
+    assert not return_code

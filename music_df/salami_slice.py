@@ -79,7 +79,12 @@ def salami_slice(df: pd.DataFrame) -> pd.DataFrame:
     #   than storing each one individually, but then we would have to rewrite
     #   repr functions for the output.
     if len(df) == 0:
-        return df.copy()
+        out = df.copy()
+        out.attrs["salami_sliced"] = True
+        out.attrs["n_salami_sliced_notes"] = 0
+        out.attrs["n_unsalami_sliced_notes"] = 0
+        return out
+
     moments = sorted(
         set(df[df.type == "note"].onset) | set(df[df.type == "note"].release)
     )
@@ -103,7 +108,12 @@ def salami_slice(df: pd.DataFrame) -> pd.DataFrame:
             out.append(new_note)
             release_i += 1
     new_df = pd.DataFrame(out)
+    new_df.attrs = df.attrs.copy()
     sort_df(new_df, inplace=True)
+
+    new_df.attrs["salami_sliced"] = True
+    new_df.attrs["n_salami_sliced_notes"] = int((new_df.type == "note").sum())
+    new_df.attrs["n_unsalami_sliced_notes"] = int((df.type == "note").sum())
     return new_df
 
 

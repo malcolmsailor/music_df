@@ -207,7 +207,7 @@ def get_kern_spine(
     label_col: t.Optional[str] = None,
     label_mask_col: t.Optional[str] = None,
     label_color_col: t.Optional[str] = None,
-    nth_note_label_col: t.Optional[str] = "nth_note_labels",
+    nth_note_label_col: t.Optional[str] = None,
 ) -> t.List[str]:
     """
     >>> speller = Speller(pitches=True, letter_format="kern")
@@ -317,6 +317,7 @@ def get_kern_spine(
     # TODO: (Malcolm 2024-02-29) remove obsolete code?
     # actual_bar_dur = 0
     # expected_bar_dur = None
+
     for i, row in voice_part.iterrows():
         if skip_measure:
             if row.type != "bar":
@@ -478,6 +479,12 @@ def get_kern_spine(
         prev_onset = row.onset
         if row.type == "note":
             prev_release: float = row.release
+
+    if this_measure_tokens:
+        # In case the score doesn't have a final barline we need to
+        #   collect the last measure contents
+        tokens.extend(this_measure_tokens)
+        labels.extend(this_measure_labels)
 
     if labels:
         assert len(labels) == len(tokens)

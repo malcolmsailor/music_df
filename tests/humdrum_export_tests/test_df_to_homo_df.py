@@ -1,10 +1,17 @@
+import os
+
 from music_df.humdrum_export.df_to_homo_df import df_to_homo_df
 from music_df.xml_parser import xml_parse
 
 
 def test_df_to_homo_df():
     df = xml_parse(
-        "/Users/malcolm/datasets/OpenScore/Lieder/scores/Elgar,_Edward/_/Is_She_Not_Passing_Fair/lc6546527.mscx"
+        os.path.join(
+            os.path.dirname((os.path.realpath(__file__))),
+            "..",
+            "resources",
+            "example.mscx",
+        )
     )
     homo_dfs = df_to_homo_df(df)
     for homo_df in homo_dfs:
