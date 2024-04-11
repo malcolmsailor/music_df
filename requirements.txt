@@ -5,4 +5,8 @@ matplotlib
 pyyaml
 music21
 omegaconf
--e ../spell # mspell
+mspell # mspell
+sh
+/Users/malcolm/google_drive/python/malmus/metricker
+h5py
+tqdm
