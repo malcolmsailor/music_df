@@ -9,7 +9,7 @@ setup(
     long_description="TODO",
     long_description_content_type="text/markdown",
     install_requires=["pandas", "mido", "pyyaml", "music21", "omegaconf", "mspell"],
-    extras_require={"plotting": ["matplotlib"]},
+    extras_require={"plotting": ["matplotlib"], "humdrum_export": ["metricker"]},
     url="TODO",
     project_urls={
         "Bug Tracker": "TODO",
