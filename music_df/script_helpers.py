@@ -16,7 +16,13 @@ from music_df.add_feature import concatenate_features
 from music_df.plot_piano_rolls.plot_helper import plot_predictions
 from music_df.quantize_df import quantize_df
 from music_df.read_csv import read_csv
-from music_df.show_scores.show_score import show_score_and_predictions
+
+try:
+    from music_df.show_scores.show_score import show_score_and_predictions
+
+    HUMDRUM_UNAVAILABLE = False
+except ImportError:
+    HUMDRUM_UNAVAILABLE = True
 from music_df.sync_df import sync_array_by_df
 
 LOGGER = logging.getLogger(__name__)
@@ -131,6 +137,8 @@ def plot_item_from_tokens(
     concat_df_columns: tuple[tuple[str, ...], ...] = (),
     number_specified_notes: Sequence[int] | None = None,
 ):
+    if HUMDRUM_UNAVAILABLE:
+        raise ValueError("Install music_df humdrum_export requirements")
     if music_df is None:
         music_df = read_csv(metadata_row.csv_path)
         assert music_df is not None
@@ -215,6 +223,8 @@ def plot_item_from_logits(
     quantize: int | None = None,
     concat_df_columns: tuple[tuple[str, ...], ...] = (),
 ):
+    if HUMDRUM_UNAVAILABLE:
+        raise ValueError("Install music_df humdrum_export requirements")
     if getattr(config, "data_has_start_and_stop_tokens", False):
         logits = logits[1:-1]
     if music_df is None:
