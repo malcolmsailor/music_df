@@ -20,6 +20,8 @@ from functools import partial
 from multiprocessing import Manager, Pool
 from typing import Iterable
 
+from tqdm import tqdm
+
 from music_df.quantize_df import quantize_df
 from music_df.read_xml import read_xml
 from music_df.salami_slice import salami_slice
@@ -54,8 +56,12 @@ def get_xml_files(folder_path):
     )
 
 
-def do_xml_file(xml_file, config, output_list, error_file_list):
-    try:
+def get_file_pairs(config):
+    xml_files = get_xml_files(config.input_folder)
+    if config.regex is not None:
+        xml_files = [f for f in xml_files if re.search(config.regex, f)]
+    output_paths = []
+    for xml_file in xml_files:
         output_basename = (
             xml_file.replace(config.input_folder, "")
             .lstrip(os.path.sep)
@@ -66,6 +72,23 @@ def do_xml_file(xml_file, config, output_list, error_file_list):
             .replace(".mscx", ".csv")
         )
         output_path = os.path.join(config.output_folder, output_basename)
+        output_paths.append(output_path)
+    return list(zip(xml_files, output_paths))
+
+
+def do_file_pair(file_pair, config, output_list, error_file_list):
+    xml_file, output_path = file_pair
+    try:
+        # output_basename = (
+        #     xml_file.replace(config.input_folder, "")
+        #     .lstrip(os.path.sep)
+        #     .replace(" ", "_")
+        #     .replace(os.path.sep, "+")
+        #     .replace(".xml", ".csv")
+        #     .replace(".mxl", ".csv")
+        #     .replace(".mscx", ".csv")
+        # )
+        # output_path = os.path.join(config.output_folder, output_basename)
 
         if os.path.exists(output_path) and not config.overwrite:
             return
@@ -77,10 +100,22 @@ def do_xml_file(xml_file, config, output_list, error_file_list):
         music_df = music_df.drop("spelling", axis=1)
         music_df.to_csv(output_path)
 
-        print(f"Wrote {output_path}")
+        # print(f"Wrote {output_path}")
         output_list.append(xml_file)
     except Exception as exc:
         error_file_list.append((xml_file, repr(exc)))
+
+
+def filter_newer_outputs(file_pairs):
+    filtered_pairs = []
+    for input_file, output_file in file_pairs:
+        if not os.path.exists(output_file):
+            # output file does not exist, include this pair
+            filtered_pairs.append((input_file, output_file))
+        elif os.path.getmtime(input_file) > os.path.getmtime(output_file):
+            # input file is newer than output file, include this pair
+            filtered_pairs.append((input_file, output_file))
+    return filtered_pairs
 
 
 def write_json(config, output_files):
@@ -109,14 +144,17 @@ def main():
 
         sys.excepthook = custom_excepthook
 
-    xml_files = get_xml_files(config.input_folder)
-    if config.regex is not None:
-        xml_files = [f for f in xml_files if re.search(config.regex, f)]
+    # xml_files = get_xml_files(config.input_folder)
+    # if config.regex is not None:
+    #     xml_files = [f for f in xml_files if re.search(config.regex, f)]
+    file_pairs = get_file_pairs(config)
+    file_pairs = filter_newer_outputs(file_pairs)
+
     random.seed(config.seed)
     if config.random_files:
-        random.shuffle(xml_files)
+        random.shuffle(file_pairs)
 
-    xml_files = xml_files[: config.max_files]
+    file_pairs = file_pairs[: config.max_files]
     os.makedirs(config.output_folder, exist_ok=True)
     if config.num_workers > 1:
         manager = Manager()
@@ -124,21 +162,24 @@ def main():
         error_files = manager.list()
         with Pool(config.num_workers) as pool:
             list(
-                pool.imap_unordered(
-                    partial(
-                        do_xml_file,
-                        config=config,
-                        output_list=output_files,
-                        error_file_list=error_files,
+                tqdm(
+                    pool.imap_unordered(
+                        partial(
+                            do_file_pair,
+                            config=config,
+                            output_list=output_files,
+                            error_file_list=error_files,
+                        ),
+                        file_pairs,
                     ),
-                    xml_files,
+                    total=len(file_pairs),
                 )
             )
     else:
         output_files = []
         error_files = []
-        for xml_file in xml_files:
-            do_xml_file(xml_file, config, output_files, error_files)
+        for file_pair in file_pairs:
+            do_file_pair(file_pair, config, output_files, error_files)
 
     write_json(config, output_files)
 

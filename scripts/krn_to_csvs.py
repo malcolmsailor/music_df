@@ -15,18 +15,19 @@ from functools import partial
 from multiprocessing import Manager, Pool
 from typing import Iterable
 
+from tqdm import tqdm
+
 from music_df.quantize_df import quantize_df
 from music_df.read_krn import read_krn
 from music_df.salami_slice import salami_slice
 from music_df.script_helpers import read_config_oc
 
-# TODO: (Malcolm 2023-10-14) remove doublings in orchestral scores somehow
-
 
 @dataclass
 class KRNToCSVConfig:
-    input_folder: str
     output_folder: str
+    input_folder: str | None = None
+    input_files: list[str] | None = None
     max_files: int | None = None
     random_files: bool = False
     salami_slice: bool = True
@@ -38,6 +39,7 @@ class KRNToCSVConfig:
     num_workers: int = 8
     regex: str | None = None
     debug: bool = False
+    verbose: bool = False
 
 
 def get_krn_files(folder_path):
@@ -45,11 +47,14 @@ def get_krn_files(folder_path):
     return glob.glob(os.path.join(folder_path, "**", "*.krn"), recursive=True)
 
 
-def do_krn_file(krn_file, config, output_list, error_file_list):
+def do_krn_file(krn_file, config, output_list, error_file_list, debug):
     try:
+        if config.input_folder is not None:
+            output_item = krn_file.replace(config.input_folder, "")
+        else:
+            output_item = os.path.basename(krn_file)
         output_basename = (
-            krn_file.replace(config.input_folder, "")
-            .lstrip(os.path.sep)
+            output_item.lstrip(os.path.sep)
             .replace(" ", "_")
             .replace(os.path.sep, "+")
             .replace(".krn", ".csv")
@@ -66,9 +71,12 @@ def do_krn_file(krn_file, config, output_list, error_file_list):
         music_df = music_df.drop("spelling", axis=1)
         music_df.to_csv(output_path)
 
-        print(f"Wrote {output_path}")
+        if config.verbose:
+            print(f"Wrote {output_path}")
         output_list.append(krn_file)
     except Exception as exc:
+        if config.debug:
+            raise
         error_file_list.append((krn_file, repr(exc)))
 
 
@@ -98,10 +106,18 @@ def main():
 
         sys.excepthook = custom_excepthook
 
-    krn_files = get_krn_files(config.input_folder)
+    assert (config.input_folder is not None) != (config.input_files is not None)
+
+    if config.input_folder is not None:
+        krn_files = get_krn_files(config.input_folder)
+    else:
+        krn_files = config.input_files
+    assert krn_files is not None
+
     if config.regex is not None:
         krn_files = [f for f in krn_files if re.search(config.regex, f)]
     random.seed(config.seed)
+
     if config.random_files:
         random.shuffle(krn_files)
 
@@ -113,21 +129,25 @@ def main():
         error_files = manager.list()
         with Pool(config.num_workers) as pool:
             list(
-                pool.imap_unordered(
-                    partial(
-                        do_krn_file,
-                        config=config,
-                        output_list=output_files,
-                        error_file_list=error_files,
+                tqdm(
+                    pool.imap_unordered(
+                        partial(
+                            do_krn_file,
+                            config=config,
+                            output_list=output_files,
+                            error_file_list=error_files,
+                            debug=config.debug,
+                        ),
+                        krn_files,
                     ),
-                    krn_files,
+                    total=len(krn_files),
                 )
             )
     else:
         output_files = []
         error_files = []
         for krn_file in krn_files:
-            do_krn_file(krn_file, config, output_files, error_files)
+            do_krn_file(krn_file, config, output_files, error_files, debug=config.debug)
 
     write_json(config, output_files)
 

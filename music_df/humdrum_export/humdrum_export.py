@@ -69,6 +69,86 @@ def _check_colors(
     return postscript
 
 
+def number_measures(humdrum_contents: str):
+    """Note: this function assumes that the input has no measure numbers.
+
+    >>> humdrum_contents = '''*C:\\t*C:\\t*C:\\t*C:
+    ... *M2/2\\t*M2/2\\t*M2/2\\t*M2/2
+    ... *met(c|)\\t*met(c|)\\t*met(c|)\\t*met(c|)
+    ... =\\t=\\t=\\t=
+    ... 1C\\t1c\\t1G\\t1e
+    ... =\\t=\\t=\\t=
+    ... 2.B\\t2.d\\t2.e\\t2.g#
+    ... 4E\\t4B\\t4d\\t4g
+    ... =\\t=\\t=\\t=
+    ... 2F\\t2A\\t2c\\t2f
+    ... 2F#\\t2B\\t2A\\t2d#
+    ... =\\t=\\t=\\t=
+    ... 2G\\t2c\\t2G\\t2e
+    ... 4C\\t4c\\t4G\\t4e
+    ... 4C\\t4c\\t4G\\t4e
+    ... =\\t=\\t=\\t=
+    ... 4D\\t4c\\t4A\\t4f#
+    ... 4D\\t4c\\t4A\\t4f#
+    ... 4D\\t4c\\t4A\\t4f#
+    ... 4D\\t4c\\t4A\\t4f#
+    ... ==\\t==\\t==\\t==
+    ... *-\\t*-\\t*-\\t*-
+    ... '''
+
+    Visually this doctest appears to be working but I haven't figured out the whitespace
+    normalization to get it to pass yet.
+    >>> number_measures(humdrum_contents)  # doctest: +SKIP
+    '''*C:      *C:     *C:     *C:
+    *M2/2        *M2/2   *M2/2   *M2/2
+    *met(c|)     *met(c|)        *met(c|)        *met(c|)
+    =1   =1      =1      =1
+    1C   1c      1G      1e
+    =2   =2      =2      =2
+    2.B  2.d     2.e     2.g#
+    4E   4B      4d      4g
+    =3   =3      =3      =3
+    2F   2A      2c      2f
+    2F#  2B      2A      2d#
+    =4   =4      =4      =4
+    2G   2c      2G      2e
+    4C   4c      4G      4e
+    4C   4c      4G      4e
+    =5   =5      =5      =5
+    4D   4c      4A      4f#
+    4D   4c      4A      4f#
+    4D   4c      4A      4f#
+    4D   4c      4A      4f#
+    ==   ==      ==      ==
+    *-   *-      *-      *-
+    '''
+    """
+    output_lines = []
+    bar_n = 1
+    for line in humdrum_contents.split("\n"):
+        if not line.startswith("="):
+            output_lines.append(line)
+            continue
+        else:
+            bar_tokens = line.split("\t")
+        if bar_tokens == ["=="] * len(bar_tokens):
+            # Not sure if there should ever be numbered double bars
+            output_lines.append(line)
+            continue
+
+        try:
+            assert bar_tokens == ["="] * len(
+                bar_tokens
+            ), "bar numbers etc. are not implemented"
+        except:
+            breakpoint()
+
+        numbered_bars = "\t".join([f"={bar_n}"] * len(bar_tokens))
+        output_lines.append(numbered_bars)
+        bar_n += 1
+    return "\n".join(output_lines)
+
+
 def df2hum(
     df: pd.DataFrame,
     # n_clefs: int = 2, # TODO
@@ -204,6 +284,7 @@ def df2hum(
             with open(path, "w") as outf:
                 outf.write("\n".join(stave))
         collated = collate_spines(paths)
+    collated = number_measures(collated)
     return collated.strip() + "\n" + "\n".join(postscript)
 
 

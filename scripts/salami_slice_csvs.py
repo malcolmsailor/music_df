@@ -13,6 +13,7 @@ from multiprocessing.managers import ListProxy
 
 from tqdm import tqdm
 
+from music_df.quantize_df import quantize_df
 from music_df.midi_parser.parser import df_to_midi
 from music_df.read_csv import read_csv
 from music_df.salami_slice import salami_slice
@@ -27,9 +28,6 @@ def custom_excepthook(exc_type, exc_value, exc_traceback):
         pdb.post_mortem(exc_traceback)
 
 
-sys.excepthook = custom_excepthook
-
-
 @dataclass
 class Config:
     input_folder: str
@@ -37,6 +35,8 @@ class Config:
     debug: bool = False
     num_workers: int = 16
     max_files: None | int = None
+    # 16 is the resolution of musicbert
+    quantize: None | int = None
     overwrite: bool = False
 
 
@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument("input_folder")
     parser.add_argument("output_folder")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--quantize", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=16)
     args = parser.parse_args()
     return args
@@ -59,18 +60,30 @@ def do_csv_file(
     output_path = os.path.join(config.output_folder, os.path.basename(inputf))
     if os.path.exists(output_path) and not config.overwrite:
         return
-    music_df = read_csv(inputf)
-    assert music_df is not None
-    salami_sliced = salami_slice(music_df)
-    salami_sliced.to_csv(output_path)
-    # print(f"Wrote {output_path}")
+    try:
+        music_df = read_csv(inputf)
+        assert music_df is not None
 
-    output_list.append(output_path)
+        if config.quantize:
+            music_df = quantize_df(music_df, tpq=config.quantize)
+
+        salami_sliced = salami_slice(music_df)
+        salami_sliced.to_csv(output_path)
+        # print(f"Wrote {output_path}")
+
+        output_list.append(output_path)
+    except Exception as exc:
+        if config.debug:
+            raise
+        error_file_list.append((inputf, repr(exc)))
 
 
 def main():
     args = parse_args()
     config = Config(**vars(args))
+
+    if config.debug:
+        sys.excepthook = custom_excepthook
 
     input_files = glob.glob(f"{config.input_folder}/*.csv")
     if config.max_files is not None:

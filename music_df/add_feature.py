@@ -163,7 +163,9 @@ def make_time_signatures_explicit(
 
 
 def add_default_time_sig(
-    music_df: pd.DataFrame, default_time_signature: dict[str, int] | None = None
+    music_df: pd.DataFrame,
+    default_time_signature: dict[str, int] | None = None,
+    keep_old_index: bool = False,
 ) -> pd.DataFrame:
     """
     >>> nan = float("nan")  # Alias to simplify below assignments
@@ -253,6 +255,7 @@ def add_default_time_sig(
     >>> df.equals(add_default_time_sig(df))
     True
     """
+
     time_sig_mask = music_df.type == "time_signature"
     if time_sig_mask.any() and (
         music_df[time_sig_mask].index[0]
@@ -262,20 +265,25 @@ def add_default_time_sig(
     if default_time_signature is None:
         default_time_signature = {"numerator": 4, "denominator": 4}
 
-    out_df = pd.concat(
-        [
-            pd.DataFrame(
-                {
-                    "onset": [0],
-                    "type": ["time_signature"],
-                    "other": [default_time_signature],
-                }
-            ),
-            music_df,
-        ],
-        axis=0,
-        ignore_index=True,
-    )[music_df.columns]
+    time_sig_df = pd.DataFrame(
+        {
+            "onset": [0],
+            "type": ["time_signature"],
+            "other": [default_time_signature],
+        }
+    )
+
+    if "ts_numerator" in music_df.columns:
+        time_sig_df["ts_numerator"] = [default_time_signature["numerator"]]
+    if "ts_denominator" in music_df.columns:
+        time_sig_df["ts_denominator"] = [default_time_signature["denominator"]]
+
+    # ensure indices are unique
+    time_sig_df.index += max(music_df.index) + 1
+    out_df = pd.concat([time_sig_df, music_df], axis=0)
+
+    out_df = out_df.reset_index(drop=not keep_old_index)
+
     return out_df
 
 
@@ -303,6 +311,7 @@ def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.Dat
     ]
     music_df["tempo"] = music_df.tempo.ffill()
     music_df["tempo"] = music_df.tempo.fillna(value=default_tempo)
+
     return music_df
 
 
@@ -395,6 +404,10 @@ def number_bars(music_df: pd.DataFrame, initial_bar_number: int = 1) -> pd.DataF
 def make_bar_explicit(
     music_df: pd.DataFrame, default_bar_number: int = -1, initial_bar_number: int = 1
 ) -> pd.DataFrame:
+    """Adds a "bar number" column to the dataframe.
+
+    There must be at least one row with type == "bar".
+    """
     bar_mask = music_df.type == "bar"
     # TODO: (Malcolm 2023-12-25) maybe I should use appears_to_have_pickup_measure to
     #   determine initial_bar_number?

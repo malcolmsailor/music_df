@@ -222,6 +222,7 @@ def plot_item_from_logits(
     end_i: int | None = None,
     quantize: int | None = None,
     concat_df_columns: tuple[tuple[str, ...], ...] = (),
+    binary_decision_threshold: float | None = None,
 ):
     if HUMDRUM_UNAVAILABLE:
         raise ValueError("Install music_df humdrum_export requirements")
@@ -277,13 +278,22 @@ def plot_item_from_logits(
     if sync:
         logits = sync_array_by_df(logits, notes_df, sync_col_name_or_names="onset")
 
-    if entropy_to_transparency:
+    if entropy_to_transparency or (binary_decision_threshold is not None):
         probs = softmax(logits)
+
+    if entropy_to_transparency:
         entropy = -np.sum(probs * np.log2(probs), axis=1)
     else:
         entropy = None
 
-    predicted_indices = logits.argmax(axis=-1)
+    if binary_decision_threshold:
+        assert logits.shape[-1] == 2, "binary_decision_threshold requires binary logits"
+        assert (
+            config.n_specials == 0
+        ), "binary_decision_threshold not implemented where config.n_specials != 0"
+        predicted_indices = np.where(probs[:, 1] > binary_decision_threshold, 1, 0)
+    else:
+        predicted_indices = logits.argmax(axis=-1)
 
     predicted_indices -= config.n_specials
     if predicted_indices.min() < 0:

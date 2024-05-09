@@ -311,6 +311,11 @@ else:
 
         skip_measure = False
 
+        if label_col is not None:
+            # If we are reading from a csv file, empty strings will have
+            #   been replaced by nans, which we want to undo
+            voice_part[label_col] = voice_part[label_col].fillna("")
+
         # TODO: (Malcolm 2024-02-29) remove obsolete code?
         # actual_bar_dur = 0
         # expected_bar_dur = None

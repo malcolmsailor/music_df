@@ -30,11 +30,14 @@ def spell_df(df: pd.DataFrame, speller: t.Optional[GroupSpeller] = None, chunk_l
         df["humdrum_spelling"] = df.apply(humdrum_spelling_from_row, axis=1)
     else:
         for i in range(0, len(df), chunk_len):
-            df.iloc[i : i + chunk_len].loc[
-                df.type == "note", "humdrum_spelling"
-            ] = speller(
-                df.iloc[i : i + chunk_len]
-                .loc[df.type == "note", "pitch"]
-                .astype(int)  # type:ignore
+            # To avoid chained indexing as follows we use `row_mask`
+            # df.iloc[i : i + chunk_len].loc[df.type == "note", "humdrum_spelling"] = (
+            row_mask = (
+                (df.index >= i) & (df.index < (i + chunk_len)) & (df.type == "note")
+            )
+            df.loc[row_mask, "humdrum_spelling"] = speller(
+                # df.iloc[i : i + chunk_len]
+                # .loc[df.type == "note", "pitch"]
+                df.loc[row_mask, "pitch"].astype(int)  # type:ignore
             )
     return df

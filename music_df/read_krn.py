@@ -114,6 +114,10 @@ def read_krn(
     ).stdout.decode()
 
     df = pd.read_csv(io.StringIO(result), sep="\t")
+    assert df[
+        "onset"
+    ].is_monotonic_increasing, f"{krn_path}: onsets are not monotonicaly increasing"
+
     df.attrs["score_name"] = krn_path
     if remove_graces:
         df = df[(df.type != "note") | (df.release > df.onset)].reset_index(drop=True)
