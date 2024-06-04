@@ -216,7 +216,7 @@ else:
         ...         "type": ["note"] * 3,
         ...     }
         ... )
-        >>> df
+        >>> df  # doctest: +NORMALIZE_WHITESPACE
         pitch  onset  release  type
         0     60      0        1  note
         1     64      0        1  note
@@ -231,7 +231,7 @@ else:
         ...         "type": ["bar"] + ["note"] * 5,
         ...     }
         ... )
-        >>> df
+        >>> df  # doctest: +NORMALIZE_WHITESPACE
         pitch  onset  release  type
         0      0    0.0      NaN   bar
         1     60    0.0      1.0  note
@@ -251,7 +251,7 @@ else:
         ...         "type": ["bar"] * 4,
         ...     }
         ... )
-        >>> df
+        >>> df  # doctest: +NORMALIZE_WHITESPACE
         pitch  onset  release type
         0    NaN      0        4  bar
         1    NaN      4        8  bar
@@ -268,7 +268,7 @@ else:
         ...         "type": ["bar", "note", "bar", "note"],
         ...     }
         ... )
-        >>> df
+        >>> df  # doctest: +NORMALIZE_WHITESPACE
         pitch  onset  release  type
         0      0      0        4   bar
         1     60      0        5  note
@@ -289,7 +289,7 @@ else:
         ...         "label": ["hi", "bye", "hello"],
         ...     }
         ... )
-        >>> df
+        >>> df  # doctest: +NORMALIZE_WHITESPACE
         pitch  onset  release  type  label
         0     60      0        1  note     hi
         1     64      0        1  note    bye

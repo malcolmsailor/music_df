@@ -41,8 +41,9 @@ def dedouble(
     ...     }
     ... )
     >>> pd.set_option(
-    ...     "display.width", 100
+    ...     "display.width", 200
     ... )  # To avoid issues when the terminal is a different size
+    >>> pd.set_option("display.max_columns", None)
 
     >>> df  # doctest: +NORMALIZE_WHITESPACE
                  type  track  channel  pitch  onset  release  velocity                                              other

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from io import StringIO
 
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
@@ -66,11 +67,11 @@ def get_unique_salami_slices(df: pd.DataFrame) -> pd.DataFrame:
     """
     assert appears_salami_sliced(df)
     grouped = df.groupby("onset")
-    first_index = grouped.apply(lambda x: x.index[0])
+    first_index = grouped.apply(lambda x: x.index[0], include_groups=False)
     return df.loc[first_index]
 
 
-def salami_slice(df: pd.DataFrame) -> pd.DataFrame:
+def salami_slice(df: pd.DataFrame, include_slice_ids: bool = True) -> pd.DataFrame:
     # TODO implement a "minimum tolerance" so that onsets/releases don't
     #   have to be *exactly* simultaneous
     # any zero-length notes will be omitted.
@@ -114,6 +115,9 @@ def salami_slice(df: pd.DataFrame) -> pd.DataFrame:
     new_df.attrs["salami_sliced"] = True
     new_df.attrs["n_salami_sliced_notes"] = int((new_df.type == "note").sum())
     new_df.attrs["n_unsalami_sliced_notes"] = int((df.type == "note").sum())
+    if include_slice_ids:
+        new_df = add_slice_ids(new_df, check_salami_sliced=False)
+        new_df = add_distinct_slice_ids(new_df, check_salami_sliced=False)
     return new_df
 
 
@@ -180,3 +184,75 @@ def slice_into_uniform_steps(
             row["release"] = onset + step_dur
             rows.append(row_copy)
     return pd.DataFrame(rows)
+
+
+def add_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
+    """
+    >>> table = '''
+    ...    type  pitch  onset  release
+    ... 0   bar    NaN    0.0      4.0
+    ... 1  note   60.0    0.0      1.0
+    ... 2  note   64.0    0.0      1.0
+    ... 3  note   61.0    1.0      2.0
+    ... 4  note   65.0    1.0      2.0
+    ... 5   bar    NaN    4.0      8.0
+    ... '''
+    >>> df = pd.read_csv(StringIO(table), sep="\\\\s+")
+    >>> add_slice_ids(df)
+       type  pitch  onset  release  slice_id
+    0   bar    NaN    0.0      4.0        -1
+    1  note   60.0    0.0      1.0         0
+    2  note   64.0    0.0      1.0         0
+    3  note   61.0    1.0      2.0         1
+    4  note   65.0    1.0      2.0         1
+    5   bar    NaN    4.0      8.0        -1
+
+    """
+    if check_salami_sliced:
+        assert appears_salami_sliced(df)
+    note_mask = df["type"] == "note"
+    df["slice_id"] = -1
+    df.loc[note_mask, "slice_id"] = pd.factorize(df.loc[note_mask, "onset"])[0]
+    return df
+
+
+def add_distinct_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
+    """
+    >>> table = '''
+    ...    type  pitch  onset  release
+    ... 0   bar    NaN    0.0      2.0
+    ... 1  note   60.0    0.0      1.0
+    ... 2  note   64.0    0.0      1.0
+    ... 3  note   60.0    1.0      2.0
+    ... 4  note   64.0    1.0      2.0
+    ... 5   bar    NaN    2.0      4.0
+    ... 6  note   60.0    2.0      3.0
+    ... 7  note   65.0    2.0      3.0
+    ... '''
+    >>> df = pd.read_csv(StringIO(table), sep="\\\\s+")
+    >>> add_distinct_slice_ids(df)
+       type  pitch  onset  release  distinct_slice_id
+    0   bar    NaN    0.0      2.0                 -1
+    1  note   60.0    0.0      1.0                  0
+    2  note   64.0    0.0      1.0                  0
+    3  note   60.0    1.0      2.0                  0
+    4  note   64.0    1.0      2.0                  0
+    5   bar    NaN    2.0      4.0                 -1
+    6  note   60.0    2.0      3.0                  1
+    7  note   65.0    2.0      3.0                  1
+    """
+    if check_salami_sliced:
+        assert appears_salami_sliced(df)
+
+    prev_pitches = None
+    slice_id = -1
+
+    df["distinct_slice_id"] = -1
+
+    for name, group in df[df["type"] == "note"].groupby("onset"):
+        if (these_pitches := set(group["pitch"])) != prev_pitches:
+            slice_id += 1
+            prev_pitches = these_pitches
+        df.loc[group.index, "distinct_slice_id"] = slice_id
+
+    return df

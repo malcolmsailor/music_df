@@ -8,8 +8,8 @@ from tests.helpers_for_tests import get_input_kern_paths
 
 def _join_consecutive_notes(df: pd.DataFrame):
     # assumes df is sorted
-    dont_compare = ["onset", "release", "other"]
-    compare = df.drop(dont_compare, axis=1)
+    dont_compare = ["onset", "release", "other", "slice_id", "distinct_slice_id"]
+    compare = df.drop([col for col in dont_compare if col in df.columns], axis=1)
     unique = compare.drop_duplicates()
     out = []
     for _, event in unique.iterrows():
@@ -47,17 +47,11 @@ def test_midi_like(n_kern_files):
         # All note onsets should be associated with only one release
         new_notes_df = new_df[new_df.type == "note"]
         for onset in new_notes_df.onset.unique():
-            assert (
-                len(new_notes_df[new_notes_df.onset == onset].release.unique())
-                == 1
-            )
+            assert len(new_notes_df[new_notes_df.onset == onset].release.unique()) == 1
         # All releases should be associated with only one onset
         for release in new_notes_df.release.unique():
             assert (
-                len(
-                    new_notes_df[new_notes_df.release == release].onset.unique()
-                )
-                == 1
+                len(new_notes_df[new_notes_df.release == release].onset.unique()) == 1
             )
         # Make sure output is correctly sorted
         # We don't guarantee that columns outside of sorted_columns are the same
@@ -71,9 +65,7 @@ def test_midi_like(n_kern_files):
         #   That said, I don't seem to be getting such an error anymore
         #   (I guess I changed the parsing to always gives float types now).
         try:
-            assert joined_new_df[sorted_columns].equals(
-                joined_orig_df[sorted_columns]
-            )
+            assert joined_new_df[sorted_columns].equals(joined_orig_df[sorted_columns])
         except AssertionError:
             # This test fails because joining doesn't work correctly for
             #   unisons. Not worth the time to implement correctly, I think. An

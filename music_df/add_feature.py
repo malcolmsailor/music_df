@@ -262,6 +262,7 @@ def add_default_time_sig(
         <= music_df[music_df.type.isin({"note", "bar"})].index[0]
     ):
         return music_df
+    column_order = music_df.columns
     if default_time_signature is None:
         default_time_signature = {"numerator": 4, "denominator": 4}
 
@@ -281,9 +282,9 @@ def add_default_time_sig(
     # ensure indices are unique
     time_sig_df.index += max(music_df.index) + 1
     out_df = pd.concat([time_sig_df, music_df], axis=0)
+    out_df = out_df[column_order]
 
     out_df = out_df.reset_index(drop=not keep_old_index)
-
     return out_df
 
 
@@ -580,6 +581,40 @@ def add_scale_degrees(music_df: pd.DataFrame):
     1           1  note        C   C            1
     2           2  note        F   C            4
 
+    Checking minor key behavior
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         # we omit all other columns
+    ...         "type": ["bar"] + ["note"] * 10,
+    ...         "spelling": [
+    ...             float("nan"),
+    ...             "E",
+    ...             "Fb",
+    ...             "F",
+    ...             "F#",
+    ...             "Gb",
+    ...             "G",
+    ...             "G#",
+    ...             "Ab",
+    ...             "G##",
+    ...             "A",
+    ...         ],
+    ...         "key": ["na"] + ["a"] * 10,
+    ...     }
+    ... )
+    >>> add_scale_degrees(df)
+        type spelling key scale_degree
+    0    bar      NaN  na           na
+    1   note        E   a            5
+    2   note       Fb   a           b6
+    3   note        F   a            6
+    4   note       F#   a           #6
+    5   note       Gb   a           b7
+    6   note        G   a            7
+    7   note       G#   a           #7
+    8   note       Ab   a           b1
+    9   note      G##   a          ##7
+    10  note        A   a            1
     """
     from music21.key import Key
     from music21.pitch import Pitch
