@@ -68,6 +68,7 @@ else:
         make_dirs=True,
         has_colors: bool = False,
         keep_intermediate_files: bool = False,
+        capture_output: bool = False,
     ):
         return_code = 1
         assert os.path.exists(HUM2PDF)
@@ -91,7 +92,9 @@ else:
                         "I need to add a flag to the underlying shell script"
                     )
                 subprocess.run(
-                    ["bash", HUM2PDF_NO_COLOR, humdrum_path, pdf_path], check=True
+                    ["bash", HUM2PDF_NO_COLOR, humdrum_path, pdf_path],
+                    check=True,
+                    capture_output=capture_output,
                 )
             return_code = 0
         except subprocess.CalledProcessError:
@@ -120,14 +123,16 @@ else:
                     if keep_intermediate_files:
                         cmd.append("y")
                     print("+ " + " ".join(cmd))
-                    subprocess.run(cmd, check=True)
+                    subprocess.run(cmd, check=True, capture_output=capture_output)
                 else:
                     if keep_intermediate_files:
                         raise NotImplementedError(
                             "I need to add a flag to the underlying shell script"
                         )
                     subprocess.run(
-                        ["bash", HUM2PDF_NO_COLOR, tmp_krn_path, pdf_path], check=True
+                        ["bash", HUM2PDF_NO_COLOR, tmp_krn_path, pdf_path],
+                        check=True,
+                        capture_output=capture_output,
                     )
                 return_code = 0
             except subprocess.CalledProcessError:
@@ -146,6 +151,7 @@ else:
         music_df: pd.DataFrame,
         pdf_path: str,
         keep_intermediate_files: bool = False,
+        capture_output: bool = False,
         **df2hum_args,
     ):
         try:
@@ -167,4 +173,5 @@ else:
                 pdf_path,
                 has_colors=has_colors,
                 keep_intermediate_files=keep_intermediate_files,
+                capture_output=capture_output,
             )

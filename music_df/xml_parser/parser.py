@@ -87,6 +87,7 @@ class State(Enum):
     TRANSPOSE = auto()
     DIATONIC = auto()
     CHROMATIC = auto()
+    UNPITCHED = auto()
 
 
 WHITE_KEYS = MappingProxyType({"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11})
@@ -123,6 +124,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         "movement_title",
         "transpose",
         "chromatic",
+        "unpitched",
         "diatonic",
     }
     _process = {
@@ -136,7 +138,11 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         "sound",
     }
 
-    def __init__(self, expand_repeats: RepeatOptions = "yes"):
+    def __init__(
+        self,
+        expand_repeats: RepeatOptions = "yes",
+        max_measure_overhang_to_trim: float | Fraction = Fraction(1, 4),
+    ):
         super().__init__()
         self._expand_repeats_flag = expand_repeats
         self._parts = []
@@ -174,9 +180,13 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._ts_denom: t.Optional[int] = None
         self._time_sigs: t.Optional[t.List[TimeSignature]] = None
         self._time_sig_i: t.Optional[int] = None
+        self._current_time_sig_dur: t.Optional[Fraction] = None
         self._tempi: t.Optional[t.List[Tempo]] = None
         self._tempo_i: t.Optional[int] = None
         self._words: t.List[Text] = []
+        self._max_measure_overhang_to_trim: Fraction = Fraction(
+            max_measure_overhang_to_trim
+        ).limit_denominator(LIMIT_DENOMINATOR)
 
     def _advance(self):
         assert self._now is not None and self._time_shift is not None
@@ -197,6 +207,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             self._tempi = []
         self._measure_i = 0
         self._time_sig_i = 0
+        self._current_time_sig_dur = None
         self._tempo_i = 0
         self._measure_num = 0
         self._part_measure_ends = self._measure_ends[self._current_part_number]
@@ -231,7 +242,6 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             self._measures.append(Measure(onset=self._now))
         else:
             assert self._measures[self._measure_i].onset == self._now
-            self._measure_i += 1
 
     def _end_measure(self):
         assert self._state_stack[-1] is State.MEASURE
@@ -241,6 +251,42 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             and self._current_part_repeats is not None
         )
         self._state_stack.pop()
+
+        # It can occur that, due to rounding errors with complex tuplets, a measure
+        #   might be somewhat too long, causing misalignment with the other parts and
+        #   leading to a parsing failure. We simply check if the measure is within a
+        #   certain distance of the expected length (according to the time signature)
+        #   and, if so, set it to the expected length.
+
+        expected_release = (
+            self._measures[self._measure_i].onset + self._current_time_sig_dur
+        )
+
+        actual_release = self._measure_ends[self._current_part_number][
+            self._measure_num
+        ]
+
+        if (
+            self._max_measure_overhang_to_trim
+            >= abs(actual_release - expected_release)
+            > 0
+        ):
+            most_recent_note = self._current_part[-1]
+
+            # In case the final note or notes lie entirely outside of the measure
+            while most_recent_note.onset > expected_release:
+                self._current_part.pop()
+                most_recent_note = self._current_part[-1]
+
+            # If the note is too long, trim it
+            if most_recent_note.release > expected_release:
+                most_recent_note.release = expected_release
+
+            # Update the measure end
+            self._measure_ends[self._current_part_number][
+                self._measure_num
+            ] = expected_release
+
         try:
             # ensure that the measure has the same length in all parts
             assert (
@@ -289,6 +335,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
                 == repeats[self._measure_num]
                 for repeats in self._repeats
             )
+        self._measure_i += 1
 
     def _init_barline(self, attrs):
         assert self._state_stack[-1] is State.MEASURE
@@ -368,13 +415,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         else:
             assert self._state_stack[-1] in {State.NOTE}
 
-    def _init_pitch(self, attrs):
-        assert self._state_stack[-1] is State.NOTE
-        self._state_stack.append(State.PITCH)
-        self._current_pitch = {}
-        # <chord/> elements (indicating that we should not advance)
-        #   come before <pitch> elements; thus if self._chord is False
-        #   we advance. Either way, we can now initialize the note onset.
+    def _init_pitch_onset_handler(self):
         if not self._chord and not self._current_note.grace:
             if self._at_measure_start:
                 self._at_measure_start = False
@@ -382,11 +423,34 @@ class MusicXmlHandler(xml.sax.ContentHandler):
                 self._advance()
         self._current_note.onset = self._now
 
+    def _init_pitch(self, attrs):
+        assert self._state_stack[-1] is State.NOTE
+        self._state_stack.append(State.PITCH)
+        self._current_pitch = {}
+        # <chord/> elements (indicating that we should not advance)
+        #   come before <pitch> elements; thus if self._chord is False
+        #   we advance. Either way, we can now initialize the note onset.
+
+        self._init_pitch_onset_handler()
+
     def _end_pitch(self):
         assert self._state_stack[-1] is State.PITCH
         self._state_stack.pop()
         self._handle_pitch()
         self._current_pitch = None
+
+    def _init_unpitched(self, attrs):
+        # Because we initialize note onsets in `_init_pitch`, we need
+        #   to do likewise for unpitched notes here. However, for my purposes
+        #   we probably want to omit unpitched notes.
+        assert self._state_stack[-1] is State.NOTE
+        self._state_stack.append(State.UNPITCHED)
+        self._current_note.unpitched = True
+        self._init_pitch_onset_handler()
+
+    def _end_unpitched(self):
+        assert self._state_stack[-1] is State.UNPITCHED
+        self._state_stack.pop()
 
     def _init_step(self, attrs):
         assert self._state_stack[-1] is State.PITCH
@@ -444,17 +508,17 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         assert self._state_stack[-1] is State.TIME
         self._state_stack.pop()
         if not self._current_part_number:
-            self._time_sigs.append(
-                TimeSignature(
-                    onset=self._now, numer=self._ts_numer, denom=self._ts_denom
-                )
+            time_sig = TimeSignature(
+                onset=self._now, numer=self._ts_numer, denom=self._ts_denom
             )
+            self._time_sigs.append(time_sig)
         else:
             time_sig = self._time_sigs[self._time_sig_i]
             assert time_sig.onset == self._now
             assert time_sig.numer == self._ts_numer
             assert time_sig.denom == self._ts_denom
             self._time_sig_i += 1
+        self._current_time_sig_dur = time_sig.quarter_duration
 
     def _init_beats(self, attrs):
         assert self._state_stack[-1] is State.TIME
@@ -877,6 +941,12 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         df = pd.DataFrame([item.asdict() for item in all_parts])
         if not len(df):
             return df
+        if "unpitched" in df.columns:
+            # this note attribute is used only for internal validation of
+            #   notes (because otherwise we expect the note's pitch attr to
+            #   be non-null). For external use, the user can just check
+            #   if the pitch attribute of a note is nan.
+            df = df.drop("unpitched", axis=1)
         if "pitch" not in df.columns:
             # this occurs if there are no notes in the score
             df["pitch"] = float("nan")

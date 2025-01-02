@@ -79,16 +79,6 @@ def get_file_pairs(config):
 def do_file_pair(file_pair, config, output_list, error_file_list):
     xml_file, output_path = file_pair
     try:
-        # output_basename = (
-        #     xml_file.replace(config.input_folder, "")
-        #     .lstrip(os.path.sep)
-        #     .replace(" ", "_")
-        #     .replace(os.path.sep, "+")
-        #     .replace(".xml", ".csv")
-        #     .replace(".mxl", ".csv")
-        #     .replace(".mscx", ".csv")
-        # )
-        # output_path = os.path.join(config.output_folder, output_basename)
 
         if os.path.exists(output_path) and not config.overwrite:
             return
@@ -144,9 +134,6 @@ def main():
 
         sys.excepthook = custom_excepthook
 
-    # xml_files = get_xml_files(config.input_folder)
-    # if config.regex is not None:
-    #     xml_files = [f for f in xml_files if re.search(config.regex, f)]
     file_pairs = get_file_pairs(config)
     file_pairs = filter_newer_outputs(file_pairs)
 

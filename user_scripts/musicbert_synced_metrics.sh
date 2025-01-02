@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# The way this script interfaces with the calculate_metrics_from_csvs.py script
+# The way this script interfaces with the metrics/calculate_metrics_from_csvs.py script
 #   to produce a csv file is a big mess
 
 set -e
@@ -36,13 +36,13 @@ for ((i = 0; i < ${#xx[@]}; i++)); do
         new_array+=("${this_csv}")
         if [ ${#inner_array[@]} -gt 1 ]; then
             echo "${element}"
-            python "${PARENT_DIR}"/scripts/calculate_metrics_from_csvs.py \
+            python "${PARENT_DIR}"/scripts/metrics/calculate_metrics_from_csvs.py \
                 "${this_csv}" --key "${element}" --output-file "${output_csv}" "${@}"
             echo
         fi
     done
     echo "${x^^}"
-    python "${PARENT_DIR}"/scripts/calculate_metrics_from_csvs.py \
+    python "${PARENT_DIR}"/scripts/metrics/calculate_metrics_from_csvs.py \
         "${new_array[@]}" --key "${x^^}" --output-file "${output_csv}" "${@}"
     echo
 

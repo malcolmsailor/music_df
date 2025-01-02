@@ -35,13 +35,14 @@ class Note(DFItem):
     spelling: t.Optional[str] = None
     instrument: t.Optional[str] = None
     midi_instrument: t.Optional[str] = None
+    unpitched: bool = False
 
     _type = "note"
 
     def is_valid(self) -> bool:
         if self.onset is None:
             return False
-        if self.pitch is None:
+        if (self.pitch is None) and not (self.unpitched):
             return False
         return self.release is not None or self.grace
 
@@ -95,6 +96,13 @@ class Measure(DFItem):
     _type = "bar"
     onset: t.Optional[Fraction] = None
     release: t.Optional[Fraction] = None
+    # TODO: (Malcolm 2024-08-10) remove
+    # expected_duration: t.Optional[Fraction] = None
+
+    # @property
+    # def expected_release(self):
+    #     assert self.onset is not None and self.expected_duration is not None
+    #     return self.onset + self.expected_duration
 
 
 @dataclass
@@ -135,6 +143,13 @@ class TimeSignature(DFItem):
     @property
     def release(self):
         return None
+
+    @property
+    def quarter_duration(self):
+        # 4/4: 4 * 4 / 4 = 4
+        # 2/4: 2 * 4 / 4 = 2
+        # 6/8: 6 * 4 / 8 = 3
+        return Fraction(self.numer * 4, self.denom)
 
 
 @dataclass

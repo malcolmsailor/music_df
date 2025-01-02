@@ -405,7 +405,7 @@ def number_bars(music_df: pd.DataFrame, initial_bar_number: int = 1) -> pd.DataF
 def make_bar_explicit(
     music_df: pd.DataFrame, default_bar_number: int = -1, initial_bar_number: int = 1
 ) -> pd.DataFrame:
-    """Adds a "bar number" column to the dataframe.
+    """Adds a "bar_number" column to the dataframe.
 
     There must be at least one row with type == "bar".
     """

@@ -1,4 +1,4 @@
-import sys
+import math
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 import matplotlib.axes
@@ -7,6 +7,7 @@ import matplotlib.figure
 import matplotlib.lines
 import matplotlib.patches
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 
@@ -46,6 +47,7 @@ def add_piano_roll_background(
     # consecutive_white_keys should contain the *higher* of any two consecutive
     # white keys
     consecutive_white_keys: Iterable[int] = (0, 5),
+    beats: None | float = None,
 ):
     colors = ("white", "gainsboro")
     low, hi = map(int, ax.get_ylim())
@@ -75,6 +77,20 @@ def add_piano_roll_background(
                 zorder=z["line"],
             )
             ax.add_line(line)
+    if beats:
+        start_beat = math.ceil(begin / beats) * beats
+        if start_beat == begin:
+            start_beat += 1
+        end_beat = math.ceil(end / beats) * beats
+        if end_beat == end:
+            end_beat -= 1
+        if start_beat < end_beat:
+            beat_positions = np.arange(start_beat, end_beat + beats, beats)
+            for beat in beat_positions:
+                line = matplotlib.lines.Line2D(
+                    [beat, beat], [low, hi], color="#bbbbbb", zorder=z["line"]
+                )
+                ax.add_line(line)
 
 
 def add_note(
@@ -84,10 +100,11 @@ def add_note(
     label=None,
     label_color=None,
     number=None,
+    release_delta=0.0,
 ):
     pitch = note.pitch
     begin = note.onset
-    end = note.release
+    end = note.release - release_delta
     z = 3
     rect = matplotlib.patches.Polygon(
         xy=[
@@ -125,6 +142,8 @@ def plot_piano_roll(
     show=False,
     title=None,
     legend: Optional[Dict[str, Any]] = None,
+    beats: None | float = None,
+    release_delta: float = 0.0,
 ):
     if "type" in df.columns and (df.type != "note").any():
         raise ValueError("df should only have 'note' events")
@@ -143,8 +162,8 @@ def plot_piano_roll(
         ax.set_xticks([])
         ax.set_xticks([], minor=True)
     if not show_axes:
-        plt.axis("off")
-    add_piano_roll_background(ax)
+        ax.axis("off")
+    add_piano_roll_background(ax, beats=beats)
     for i, (row_i, note) in enumerate(df.iterrows()):
         add_note(
             ax,
@@ -153,6 +172,7 @@ def plot_piano_roll(
             (labels[i] if labels is not None else None),
             (label_colors[i] if label_colors is not None else None),
             number=row_i if number_notes else None,
+            release_delta=release_delta,
         )
     if title is not None:
         ax.set_title(format_title(title))
@@ -176,6 +196,7 @@ def plot_piano_roll(
 
     if show:
         plt.show()
+    return ax
 
 
 def get_colormapping(

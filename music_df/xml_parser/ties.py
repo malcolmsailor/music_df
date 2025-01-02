@@ -7,9 +7,21 @@ from collections import defaultdict, deque
 from music_df.xml_parser.objects import Note
 
 
-def merge_ties(notes: t.Iterable[Note]) -> t.List[Note]:
+def merge_ties(
+    notes: t.Iterable[Note],
+    max_overlap: float = 1 / 16,
+    min_gap_for_warn: float = 1 / 16,
+) -> t.List[Note]:
     """
     Assumes that notes are in sorted order by onset.
+
+    Args:
+        max_overlap: sometimes, due to e.g., complex tuplets, the end of the
+            tied-from note may slightly exceed the start of the tied-to note.
+            We set a parameter to allow for this and only raise an exception
+            if the overlap is greater than this.
+        min_gap_for_warn: if the gap between a tied-from and tied-to note is
+            greater than this value, we emit a warning.
 
     >>> len(merge_ties([Note(60, 0.0, 1.0), Note(60, 1.0, 1.0)]))
     2
@@ -260,20 +272,23 @@ def merge_ties(notes: t.Iterable[Note]) -> t.List[Note]:
         # if not math.isclose(note1.release, note2.onset):
         if note1.release < note2.onset:
             if allow_gap[note1.pitch]:
-                warnings.warn(
-                    f"Release of note at {note1.release} < "
-                    f"onset of note at {note2.onset}"
-                )
+                if note2.onset - note1.release >= min_gap_for_warn:
+                    warnings.warn(
+                        f"Release of note at {note1.release} < "
+                        f"onset of note at {note2.onset}"
+                    )
             else:
                 raise ValueError(
                     f"Release of note at {note1.release} < "
                     f"onset of note at {note2.onset} and intervening note(s)."
                 )
         elif note1.release > note2.onset:
-            raise ValueError(
-                f"Release of note at {note1.release} > "
-                f"onset of note at {note2.onset}"
-            )
+            max_overlap = 1 / 16  # TODO: (Malcolm 2024-08-10) make function parameter
+            if note1.release - note2.onset > max_overlap:
+                raise ValueError(
+                    f"Release of note at {note1.release} > "
+                    f"onset of note at {note2.onset}"
+                )
 
     def _clear_queue(queue):
         if queue[-1].tie_to_next:

@@ -1,5 +1,6 @@
 import io  # for doctest
 
+import numpy as np
 import pandas as pd
 
 from music_df.add_feature import add_bar_durs
@@ -115,3 +116,82 @@ def split_notes_at_barlines(
     out_df = pd.DataFrame(row_accumulator)
     out_df = sort_df(out_df)
     return out_df
+
+
+def subdivide_notes(
+    df: pd.DataFrame, grid_size, onset_col="onset", release_col="release"
+):
+    """
+    Subdivides rows into smaller intervals of size grid_size.
+
+    Parameters:
+        df: pandas DataFrame with onset and release times
+        grid_size: size of subdivisions
+        onset_col: name of onset column
+        release_col: name of release column
+
+    Returns:
+        DataFrame with subdivided intervals
+
+
+    >>> csv_table = '''
+    ... type,pitch,onset,release,tie_to_next,tie_to_prev
+    ... bar,,0.0,4.0,,
+    ... note,60,0.0,4.0,,
+    ... note,64,0.0,4.001,,
+    ... note,67,0.0,12.0,,
+    ... bar,,4.0,8.0,,
+    ... note,72,7.999,12.0,,
+    ... bar,,8.0,12.0,,
+    ... note,76,9.0,9.001,,
+    ... bar,,12.0,16.0,,
+    ... '''
+    >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
+    >>> subdivide_notes(df, 0.25)
+    """
+    new_rows = []
+
+    for _, row in df.iterrows():
+        if row["type"] != "note":
+            new_rows.append(row)
+            continue
+
+        # Get start and end times
+        start = row[onset_col]
+        end = row[release_col]
+
+        # Find the first interval boundary after start
+        first_boundary = np.ceil(start / grid_size) * grid_size
+
+        # Generate all interval boundaries
+        boundaries = np.arange(first_boundary, end, grid_size)
+
+        # Create subdivided intervals
+        if len(boundaries) == 0:
+            # Case where interval is smaller than grid_size
+            new_rows.append(pd.Series({**row, onset_col: start, release_col: end}))
+        else:
+            # First interval (from start to first boundary)
+            if start < boundaries[0]:
+                new_rows.append(
+                    pd.Series(
+                        {**row, onset_col: start, release_col: min(boundaries[0], end)}
+                    )
+                )
+
+            # Middle intervals
+            for i in range(len(boundaries)):
+                if boundaries[i] >= end:
+                    break
+
+                new_rows.append(
+                    pd.Series(
+                        {
+                            **row,
+                            onset_col: boundaries[i],
+                            release_col: min(boundaries[i] + grid_size, end),
+                        }
+                    )
+                )
+
+    return pd.DataFrame(new_rows)

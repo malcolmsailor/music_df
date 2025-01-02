@@ -79,11 +79,14 @@ def get_csv_title(raw_path, config) -> str:
     return out
 
 
-def get_single_itos(dictionary_path: str) -> list[str]:
-    feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
+def get_single_itos(
+    dictionary_path: str, specials_to_prepend: list[str] | None = None
+) -> list[str]:
+    if not specials_to_prepend:
+        specials_to_prepend = []
     with open(dictionary_path) as inf:
         data = inf.readlines()
-    return [
+    return specials_to_prepend + [
         line.split(" ", maxsplit=1)[0]
         for line in data
         if line and not line.startswith("madeupword")
@@ -101,7 +104,6 @@ def get_itos(dictionary_paths: list[str] | str) -> dict[str, list[str]]:
 
 
 def get_single_stoi(dictionary_path: str) -> dict[str, int]:
-    feature_name = os.path.basename(dictionary_path).rsplit("_", maxsplit=1)[0]
     with open(dictionary_path) as inf:
         data = inf.readlines()
     contents = [

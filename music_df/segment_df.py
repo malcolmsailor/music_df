@@ -1,3 +1,4 @@
+import math
 import typing as t
 from types import MappingProxyType
 
@@ -192,6 +193,10 @@ def get_df_segment_indices(
 
 
 def segment_df(df: pd.DataFrame, target_len):
+    """
+    This function segments dataframes such that they contain a certain target
+    number of notes (or rows? not sure).
+    """
     eligible_onsets = get_eligible_onsets(df)
     eligible_releases = get_eligible_releases(df).index.to_numpy()
     for start_i, end_i in get_df_segment_indices(
@@ -207,3 +212,49 @@ def get_notes_sounding_during(
     df = df[df.onset < release]
     df = df[df.release > onset]
     return df
+
+
+def segment_df_by_onset(df: pd.DataFrame, segment_dur: float):
+    """
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
+    ...         "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
+    ...         "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
+    ...         "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
+    ...     }
+    ... )
+    >>> df
+        pitch  onset  release  type
+    0       0    0.0      0.0   bar
+    1      60    0.0      1.0  note
+    2      64    0.0      1.0  note
+    3      60    1.0      1.5  note
+    4      64    1.0      2.0  note
+    5       0    1.5      0.0   bar
+    6      60    1.5      3.0  note
+    7      64    2.0      3.0  note
+    8      60    3.0      4.0  note
+    9      64    3.0      4.5  note
+    10      0    5.0      0.0   bar
+
+    >>> for (name, group) in segment_df_by_onset(df, 2.0):
+    ...     print(group)
+    ...
+       pitch  onset  release  type  group
+    0      0    0.0      0.0   bar    0.0
+    1     60    0.0      1.0  note    0.0
+    2     64    0.0      1.0  note    0.0
+    3     60    1.0      1.5  note    0.0
+    4     64    1.0      2.0  note    0.0
+    5      0    1.5      0.0   bar    0.0
+    6     60    1.5      3.0  note    0.0
+       pitch  onset  release  type  group
+    7     64    2.0      3.0  note    1.0
+    8     60    3.0      4.0  note    1.0
+    9     64    3.0      4.5  note    1.0
+        pitch  onset  release type  group
+    10      0    5.0      0.0  bar    2.0
+    """
+    df["group"] = np.floor(df["onset"] / segment_dur)
+    return df.groupby("group")

@@ -31,7 +31,9 @@ def get_pitch_classes_as_str(pcs: Sequence[PitchClass]) -> str:
 
 
 @lru_cache(maxsize=512)
-def get_prime_form(pc_str: str, inversional_equivalence: bool = False) -> str:
+def get_prime_form(
+    pc_str: str, inversional_equivalence: bool = False, tet: int = 12
+) -> str:
     """
     We put pitches in "reverse lexicographic" order.
 
@@ -50,11 +52,24 @@ def get_prime_form(pc_str: str, inversional_equivalence: bool = False) -> str:
     '02478'
     >>> get_prime_form("0348a")
     '02478'
+
+    We can also use this function on scale degrees by setting `tet` to 7:
+    >>> get_prime_form("024", tet=7)
+    '024'
+    >>> get_prime_form("025", tet=7)
+    '024'
+    >>> get_prime_form("035", tet=7)
+    '024'
+
+    Note that we shouldn't have to worry about scale degrees being numbered from 1 to 7
+    rather than 0 to 6:
+    >>> get_prime_form("247", tet=7)
+    '024'
     """
     if inversional_equivalence:
         raise NotImplementedError
     input_form = [int("0x" + x, 16) for x in pc_str]
     all_forms = [input_form[i:] + input_form[:i] for i in range(len(input_form))]
-    all_forms = [[(x - form[0]) % 12 for x in form][::-1] for form in all_forms]
+    all_forms = [[(x - form[0]) % tet for x in form][::-1] for form in all_forms]
     sorted_forms = sorted(all_forms)
     return get_pitch_classes_as_str(sorted_forms[0][::-1])
