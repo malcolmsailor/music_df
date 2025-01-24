@@ -1,6 +1,7 @@
+from io import StringIO
+
 import numpy as np
 import pandas as pd
-from io import StringIO
 
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
@@ -71,7 +72,11 @@ def get_unique_salami_slices(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[first_index]
 
 
-def salami_slice(df: pd.DataFrame, include_slice_ids: bool = True) -> pd.DataFrame:
+def salami_slice(
+    df: pd.DataFrame,
+    include_slice_ids: bool = True,
+    label_original_note_ids: bool = False,
+) -> pd.DataFrame:
     # TODO implement a "minimum tolerance" so that onsets/releases don't
     #   have to be *exactly* simultaneous
     # any zero-length notes will be omitted.
@@ -92,10 +97,14 @@ def salami_slice(df: pd.DataFrame, include_slice_ids: bool = True) -> pd.DataFra
     moment_iter = enumerate(moments)
     moment_i, moment = next(moment_iter)
     out = []
-    for _, note in df.iterrows():
+    for row_id, note in df.iterrows():
         if note.type != "note":
             out.append(note.copy())
             continue
+
+        if label_original_note_ids:
+            note["original_note_id"] = row_id
+
         onset_i = 0
         while note.onset > moment:
             moment_i, moment = next(moment_iter)
@@ -256,3 +265,27 @@ def add_distinct_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
         df.loc[group.index, "distinct_slice_id"] = slice_id
 
     return df
+
+
+def undo_salami_slice(df: pd.DataFrame) -> pd.DataFrame:
+    if "original_note_id" not in df.columns:
+        raise ValueError(
+            "We require the 'original_note_id' column to undo salami slicing"
+        )
+    note_mask = df["type"] == "note"
+    non_notes = df[~note_mask]
+    notes = df[note_mask]
+    merged_notes = []
+    for note_id, notes in notes.groupby("original_note_id"):
+        # TODO remove these assertions when I'm confident it works as expected
+        assert notes.iloc[0].onset == notes.onset.min()
+        assert notes.iloc[-1].release == notes.release.max()
+        merged_note = notes.iloc[0].copy()
+        merged_note.release = notes.iloc[-1].release
+        merged_notes.append(merged_note)
+    out = pd.concat([non_notes, pd.DataFrame(merged_notes)])
+    out = sort_df(out, inplace=True)
+    out.attrs = df.attrs.copy()
+    out.drop(columns=["original_note_id"], inplace=True)
+
+    return out
