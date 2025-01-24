@@ -51,6 +51,7 @@ def midi_to_table(
     display_name: str | None = None,
     notes_only: bool = False,
     warn_for_orphan_note_offs: bool = True,
+    warn_for_orphan_note_ons: bool = True,
 ) -> pd.DataFrame:
     """Read a midi file and return a pandas DataFrame.
 
@@ -290,9 +291,7 @@ def midi_to_table(
                 assert not channel
             except AssertionError:
                 for pitch, note_ons in channel.items():
-                    try:
-                        assert not note_ons
-                    except AssertionError:
+                    if (note_ons) and warn_for_orphan_note_ons:
                         warnings.warn(
                             f"Pitch {pitch} is still on (no note-off event on "
                             f"track {track_i}, channel {channel_i} before end)"
@@ -420,7 +419,13 @@ def df_to_midi(
         event_type = event.type
         if event_type == "text":
             mid.tracks[0].append(
-                mido.MetaMessage("text", text=event.text, time=event.onset)
+                mido.MetaMessage(
+                    "text",
+                    text=getattr(
+                        event, "text", _to_dict_if_necessary(event.other)["text"]
+                    ),
+                    time=event.onset,
+                )
             )
         elif event_type == "time_signature":
             attrs = _to_dict_if_necessary(event.other)
@@ -458,6 +463,20 @@ def df_to_midi(
                 channel = 0
             mid.tracks[track_i].append(
                 mido.Message("pitchwheel", channel=channel, pitch=event.other["pitch"])
+            )
+        elif event_type == "program_change":
+            try:
+                channel = int(event.channel)
+            except AttributeError:
+                channel = 0
+            attrs = _to_dict_if_necessary(event.other)
+            mid.tracks[track_i].append(
+                mido.Message(
+                    "program_change",
+                    channel=channel,
+                    program=int(attrs["program"]),
+                    time=event.onset,
+                )
             )
         elif event_type == "note":
             try:
