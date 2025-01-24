@@ -1,7 +1,7 @@
-from functools import partial
 import io  # Used by doctests
 import re
 from ast import literal_eval
+from functools import partial
 from itertools import chain
 from math import isnan
 from typing import Callable, Iterable
@@ -73,9 +73,11 @@ def infer_barlines(
     time_sig_mask = music_df.type == "time_signature"
     time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
 
-    assert (
+    assert time_sigs and (
         time_sigs[0].onset <= music_df[music_df.type == "note"].iloc[0].onset
-    ), "There is no time signature before the first note; default time signature not yet implemented"
+    ), (
+        "There is no time signature before the first note; default time signature not yet implemented"
+    )
 
     assert len(time_sigs)
 
@@ -479,7 +481,7 @@ def make_instruments_explicit(
         for _, d in music_df.other[program_change_mask].items()
     ]
 
-    grouped_by_track = music_df.groupby("track")
+    grouped_by_track = music_df.groupby("track", dropna=False)
     accumulator = []
     for track, group_df in grouped_by_track:
         group_df["midi_instrument"] = group_df.midi_instrument.ffill()
@@ -490,6 +492,35 @@ def make_instruments_explicit(
 
     out_df = add_default_midi_instrument(out_df, default_instrument=default_instrument)
     out_df["midi_instrument"] = out_df.midi_instrument.astype(int)
+    return out_df
+
+
+def explicit_instruments_to_program_changes(music_df: pd.DataFrame) -> pd.DataFrame:
+    """This is a sort of inverse of make_instruments_explicit."""
+    if "midi_instrument" not in music_df.columns:
+        raise ValueError("midi_instrument column not found")
+    program_changes = []
+    for (track, channel), contents in music_df.groupby(["track", "channel"]):
+        # We rely on the order of the dataframe being preserved by groupby, see
+        #  https://stackoverflow.com/a/26465555/10155119
+        instrument_changes = contents.midi_instrument != contents.midi_instrument.shift(
+            1
+        )
+        reference_rows = contents[instrument_changes]
+        for i, row in reference_rows.iterrows():
+            program_change = pd.Series(
+                {
+                    "type": "program_change",
+                    "track": track,
+                    "channel": channel,
+                    "onset": row.onset,
+                    "other": {"program": row.midi_instrument},
+                }
+            )
+            program_changes.append(program_change)
+
+    out_df = pd.concat([music_df, pd.DataFrame(program_changes)])
+    out_df = sort_df(out_df)
     return out_df
 
 
