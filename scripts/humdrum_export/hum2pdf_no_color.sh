@@ -13,7 +13,7 @@ IMG_CONVERTER=rsvg-convert # rsvg-convert seems to offer good performance
 
 if [[ -z $(which img2pdf) ]] || [[ -z $(which verovio) ]] || [[ -z $(which "$IMG_CONVERTER") ]]; then
     echo "ERROR: Missing a prerequisite: make sure img2pdf, verovio, and "
-    echo "  convert are in your path"
+    echo "  $IMG_CONVERTER are in your path"
     exit 1
 fi
 

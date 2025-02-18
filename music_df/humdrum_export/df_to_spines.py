@@ -15,7 +15,6 @@ try:
 except ImportError:
     pass
 else:
-
     from mspell import Speller
 
     from music_df.humdrum_export.df_to_homo_df import df_to_homo_df
@@ -130,7 +129,10 @@ else:
         labels = None
         dur = note.release - note.onset
         offsets, notes = _get_kern_notes_sub(
-            spelled, dur, measure_offset, meter  # type:ignore
+            spelled,
+            dur,
+            measure_offset,
+            meter,  # type:ignore
         )
         if len(notes) > 1:
             notes[0] = "[" + notes[0]
@@ -410,7 +412,14 @@ else:
                     #   together below
                     this_measure_labels.append("REMOVE")
                     assert len(this_measure_labels) == len(this_measure_tokens)
-            elif row.type in {"tempo", "text"}:
+            elif row.type in {
+                "tempo",
+                "text",
+                "control_change",
+                "midi_port",
+                "program_change",
+                "end_of_track",
+            }:
                 # (Malcolm 2023-12-18) For now, we do nothing about tempi or text
                 continue
             else:
