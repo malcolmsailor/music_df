@@ -19,6 +19,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    # I think including the scripts directory is a bit of a hack
-    packages=find_packages() + ["scripts"],
+    packages=find_packages(),
+    package_data={"music_df.scripts.humdrum_export": ["*.sh"]},
 )

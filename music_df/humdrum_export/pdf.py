@@ -20,14 +20,12 @@ else:
     HUM2PDF = os.path.join(
         os.path.dirname((os.path.realpath(__file__))),
         "..",
-        "..",
         "scripts",
         "humdrum_export",
         "hum2pdf.sh",
     )
     HUM2PDF_NO_COLOR = os.path.join(
         os.path.dirname((os.path.realpath(__file__))),
-        "..",
         "..",
         "scripts",
         "humdrum_export",
