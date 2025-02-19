@@ -19,5 +19,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    packages=find_packages(),
+    # I think including the scripts directory is a bit of a hack
+    packages=find_packages() + ["scripts"],
 )
