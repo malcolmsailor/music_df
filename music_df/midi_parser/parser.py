@@ -418,11 +418,14 @@ def df_to_midi(
         )
         event_type = event.type
         if event_type == "text":
+
             mid.tracks[0].append(
                 mido.MetaMessage(
                     "text",
                     text=getattr(
-                        event, "text", _to_dict_if_necessary(event.other)["text"]
+                        event,
+                        "text",
+                        lambda: _to_dict_if_necessary(event.other)["text"],
                     ),
                     time=event.onset,
                 )
