@@ -3,7 +3,7 @@ This module contains diverse functions for adding features to music dataframes.
 
 """
 
-import io  # Used by doctests
+import io  # Used by doctests # noqa: F401
 import re
 from ast import literal_eval
 from functools import partial

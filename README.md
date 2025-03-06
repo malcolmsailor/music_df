@@ -1,4 +1,6 @@
-This package features various functions for working with Pandas dataframes representing music scores. I developed it for my personal use during my dissertation. Therefore it is fairly underdocumented. Documentation is currently a work in progress.
+This package features various functions for working with Pandas dataframes representing music scores. [I](https://malcolmsailor.com) developed it for my personal use during my dissertation.
+
+Documentation (a work-in-progress) can be found [here](https://music-df.readthedocs.io/en/latest/index.html).
 
 
 

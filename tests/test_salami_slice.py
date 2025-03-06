@@ -1,8 +1,7 @@
 import pandas as pd
 
-
-from music_df import sort_df, salami_slice, read_krn
-
+from music_df import read_krn, sort_df
+from music_df.salami_slice import salami_slice
 from tests.helpers_for_tests import get_input_kern_paths
 
 

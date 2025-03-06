@@ -27,4 +27,4 @@ packages = ["music_df"]
 "music_df.scripts.humdrum_export" = ["*.sh"]
 
 [project.optional-dependencies]
-dev = ["pytest", "black"]
+dev = ["pytest", "pdoc3"]
