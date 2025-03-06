@@ -1,4 +1,4 @@
-import io  # for doctest
+import io  # for doctest # noqa: F401
 
 import numpy as np
 import pandas as pd
@@ -135,19 +135,18 @@ def subdivide_notes(
 
 
     >>> csv_table = '''
-    ... type,pitch,onset,release,tie_to_next,tie_to_prev
-    ... bar,,0.0,4.0,,
-    ... note,60,0.0,4.0,,
-    ... note,64,0.0,4.001,,
-    ... note,67,0.0,12.0,,
-    ... bar,,4.0,8.0,,
-    ... note,72,7.999,12.0,,
-    ... bar,,8.0,12.0,,
-    ... note,76,9.0,9.001,,
-    ... bar,,12.0,16.0,,
+    ... type,pitch,onset,release
+    ... bar,,0.0,4.0
+    ... note,60,0.0,4.0
     ... '''
     >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
-    >>> subdivide_notes(df, 0.25)
+    >>> subdivide_notes(df, 1.0)
+       type  pitch  onset  release
+    0   bar    NaN    0.0      4.0
+    1  note   60.0    0.0      1.0
+    2  note   60.0    1.0      2.0
+    3  note   60.0    2.0      3.0
+    4  note   60.0    3.0      4.0
     """
     new_rows = []
 
@@ -190,8 +189,8 @@ def subdivide_notes(
                             **row,
                             onset_col: boundaries[i],
                             release_col: min(boundaries[i] + grid_size, end),
-                        }
+                        },
                     )
                 )
 
-    return pd.DataFrame(new_rows)
+    return pd.DataFrame(new_rows).reset_index(drop=True)
