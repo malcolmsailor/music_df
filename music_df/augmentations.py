@@ -1,10 +1,10 @@
+import io  # used by doctests # noqa: F401
 import math
 import random
 from ast import literal_eval
 from copy import deepcopy
 from typing import Iterable, Iterator
-import io
-import numpy as np
+
 import pandas as pd
 
 from music_df import chromatic_transpose
@@ -36,6 +36,25 @@ def aug_by_trans(
     hi: int | None = MAX_PIANO_PITCH,
     low: int | None = MIN_PIANO_PITCH,
 ) -> Iterator[pd.DataFrame]:
+    """
+    Augment a music_df by transposing its content to random keys.
+
+    Calls music_df.transpose.transpose_to_key to perform the transpositions. See the
+    docstring of that function for more details.
+
+    Args:
+        orig_data: a music_df or an iterable of music_dfs. All input dataframes must
+            have a "global_key_sig" int attribute in df.attrs, which is used to
+            determine the transpositions.
+        n_keys: the number of keys to transpose to
+        hi: the maximum pitch to allow
+        low: the minimum pitch to allow
+
+    Returns:
+        An iterator of music_dfs with the pitches transposed to random keys. The
+        original key may or may not be included among the yielded keys.
+
+    """
     if isinstance(orig_data, pd.DataFrame):
         orig_data = [orig_data]
 
@@ -65,6 +84,24 @@ def aug_within_range(
     min_trans: int = -5,
     max_trans: int = 6,
 ):
+    """
+    Augment a music_df by transposing its content to random keys within a range.
+
+    Calls music_df.transpose.chromatic_transpose to perform the transpositions. See the
+    docstring of that function for more details.
+
+    Args:
+        df_iter: an iterable of music_dfs
+        n_keys: the number of keys to transpose to. If None, all keys within the range
+            will be used.
+        hi: the maximum pitch to allow
+        low: the minimum pitch to allow
+        min_trans: the minimum transposition to allow
+        max_trans: the maximum transposition to allow
+
+    Returns:
+        An iterator of music_dfs with the pitches transposed to random keys within a range.
+    """
     # if n_keys is None, we transpose to every step within range
     avail_range = hi - low
     for df in df_iter:
@@ -98,6 +135,18 @@ def _to_dict_if_necessary(d):
 
 def scale_time_sigs(music_df: pd.DataFrame, factor: int | float) -> pd.DataFrame:
     """
+    Scale a time signature up or down by a power of 2.
+
+    Typically, this simply means multiplying or dividing the denominator. For example,
+    if the time signature is 4/4, then
+        - scaling by 2 gives 4/2
+        - scaling by 0.5 gives 4/8
+
+    However, if the denominator is too small, we may scale up the numerator instead. For
+    example, scaling 4/1 by 2.0 gives 8/1. Note that this can change the metric
+    implications of the time signature, since 3/1 implies three whole note beats per
+    bar, while 6/1 implies two dotted breve beats per bar.
+
     >>> df = pd.DataFrame(
     ...     {
     ...         "pitch": [float("nan"), float("nan")],
@@ -165,6 +214,20 @@ def scale_time_sigs(music_df: pd.DataFrame, factor: int | float) -> pd.DataFrame
 
 def scale_df(df: pd.DataFrame, factor: float, metadata: bool = True) -> pd.DataFrame:
     """
+    Scale all rhythmic values up/down by a power of 2.
+
+    Besides altering all onsets/releases, this also scales the time signature
+    appropriately.
+
+    Args:
+        df: a music_df
+        factor: must be a power of 2
+        metadata: if True, a `rhythms_scaled_by` attribute will be added/updated
+            to df.attrs
+
+    Returns:
+        A new music_df with the rhythmic values scaled.
+
     >>> nan = float("nan")  # Alias to simplify below assignments
     >>> df = pd.DataFrame(
     ...     {
@@ -210,7 +273,7 @@ def scale_df(df: pd.DataFrame, factor: float, metadata: bool = True) -> pd.DataF
     AssertionError: factor=0.2 must be a power of 2
 
     """
-    assert not math.log2(factor) % 1, f"factor must be a power of 2"
+    assert not math.log2(factor) % 1, "factor must be a power of 2"
     aug_df = df.copy()
     aug_df["onset"] *= factor
     aug_df["release"] *= factor
@@ -229,20 +292,31 @@ def aug_rhythms(
     orig_data: pd.DataFrame | Iterable[pd.DataFrame],
     n_augs: int,
     n_possibilities: int = 2,
-    threshold: float = 0.6547667782160375,
+    threshold: float = 0.6547,
     metadata: bool = True,
 ) -> Iterator[pd.DataFrame]:
     """
+    Augment one or more music_dfs rhythmically by scaling rhythms up or down.
+
     Example: if n_augs is 1 and n_possibilities is 2, then the returned values will
     be scaled by one of (1, 2) or (depending on the threshold) (0.5, 1), but only
     one of these values will be chosen.
 
-    default threshold was empirically calculated from a sample of 177 scores
-
     Args:
-        n_augs: specifies the actual number of augmentations. Can be 1.
+        orig_data: a music_df or an iterable of music_dfs
+        n_augs: specifies the actual number of augmentations performed for each
+            dataframe. Can be 1.
         n_possibilities: specifies the number of "scalings" from which the actual
-            augmentations are chosen. Must be >= n_augs.
+            augmentations are (uniformly randomly) chosen. Must be >= n_augs.
+        threshold: the threshold for the mean duration of a note to determine
+            whether to scale up or down. The default value of 0.6547 was empirically
+            calculated from a sample of 177 scores of Classical music.
+        metadata: if True, a `rhythms_scaled_by` attribute will be added/updated
+            to df.attrs
+
+    Returns:
+        An iterator of music_dfs with rhythmic values scaled. The original unscaled
+        dataframe may be among the yielded values.
     """
 
     if isinstance(orig_data, pd.DataFrame):
@@ -270,6 +344,10 @@ def aug_rhythms(
 
 def shuffle_pitches(df: pd.DataFrame, inplace=False):
     """
+    Shuffle the pitches of the notes of a music_df.
+
+    This can be used to get a random baseline for some tasks.
+
     >>> csv_table = '''
     ... type,pitch,onset,release
     ... bar,,0.0,4.0
@@ -305,6 +383,19 @@ def shuffle_pitches(df: pd.DataFrame, inplace=False):
 
 def shuffle_slices(df: pd.DataFrame, check: bool = False, include_rests: bool = True):
     """
+    Shuffle the slices of a salami-sliced music_df.
+
+    This can be used to get a random baseline for some tasks.
+
+    Args:
+        df: a music_df
+        check: if True, will raise an AssertionError if the music_df is not
+            salami-sliced.
+        include_rests: if True, will include the rests in the shuffling.
+
+    Returns:
+        A new music_df with the slices shuffled.
+
     >>> csv_table = '''
     ... type,pitch,onset,release
     ... bar,,0.0,4.0

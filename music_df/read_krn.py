@@ -1,3 +1,11 @@
+"""
+Provides functions for reading a humdrum .krn file into a music_df.
+
+Requires the `totable` command-line tool, which is a small executable I wrote based
+using `humlib` and which isn't yet distributed with this package. If you'd like to
+use it, please contact me.
+"""
+
 import io
 import logging
 import os
@@ -114,9 +122,9 @@ def read_krn(
     ).stdout.decode()
 
     df = pd.read_csv(io.StringIO(result), sep="\t")
-    assert df[
-        "onset"
-    ].is_monotonic_increasing, f"{krn_path}: onsets are not monotonicaly increasing"
+    assert df["onset"].is_monotonic_increasing, (
+        f"{krn_path}: onsets are not monotonicaly increasing"
+    )
 
     df.attrs["score_name"] = krn_path
     if remove_graces:

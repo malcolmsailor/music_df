@@ -28,6 +28,22 @@ def chromatic_transpose(
     label: bool = False,
     metadata=True,
 ):
+    """
+    Transpose the pitches of a music_df by a given chromatic interval.
+
+    Note that this will change the "pitch" column but not any other columns that may
+    be pitch-related such as those that may indicate the spelling or key signature.
+
+    Args:
+        df: a music_df
+        interval: the interval to transpose by
+        inplace: if True, will modify the music_df in place
+        label: if True, will add a "transposed_by_n_semitones" column to the music_df
+        metadata: if True, will add a "chromatic_transpose" attribute to the music_df
+
+    Returns:
+        A new music_df with the pitches transposed by the given interval.
+    """
     out_df = df if inplace else df.copy()
     out_df.pitch += interval
     if metadata:
@@ -42,6 +58,10 @@ def chromatic_transpose(
 
 class SpellingAlongLineOfFifthsTransposer:
     """
+    A simple class for transposing spellings along the line of fifths.
+
+    Caches results to avoid recalculating them.
+
     >>> transposer = SpellingAlongLineOfFifthsTransposer()
     >>> transposer("C", 2)
     'D'
@@ -50,7 +70,7 @@ class SpellingAlongLineOfFifthsTransposer:
     >>> transposer("C", -9)
     'Bbb'
 
-    We preserve case so that this can also be used to transpose minor keys:
+    We preserve case so that this class can also be used to transpose minor keys:
     >>> transposer("c", 3)
     'a'
     >>> transposer("c", -3)
@@ -90,6 +110,10 @@ class SpellingAlongLineOfFifthsTransposer:
 
 class MidiNumAlongLineOfFifthsTransposer:
     """
+    A simple class for transposing MIDI numbers along the line of fifths.
+
+    Caches results to avoid recalculating them.
+
     >>> transposer = MidiNumAlongLineOfFifthsTransposer()
     >>> transposer(60, 2)
     62
@@ -149,8 +173,33 @@ def transpose_to_key(
     inplace: bool = True,
 ):
     """
-    Dataframe must have a "global_key_sig" int attribute in df.attrs.
-    This attribute indicates the number of sharps/flats in the key signature.
+    Transpose a music_df to a new key signature.
+
+    The dataframe must have a "global_key_sig" int attribute in df.attrs which is used
+    to determine the transposition. This attribute indicates the number of sharps/flats
+    in the key signature. E.g., 4 indicates 4 sharps, -4 indicates 4 flats.
+
+    Different metadata values in df.attrs are used to determine which columns to
+    transpose in which way:
+
+    - "pitch_columns" tuple of str: columns containing midi pitches to transpose. By
+        default, only the "pitch" column is used.
+    - "spelled_columns" tuple of str: columns containing spelled pitches (e.g., D, Cb,
+        F##) to transpose. By default, no spelled columns are used.
+    - "pc_columns" tuple of str: columns containing pitch classes (e.g., 0, 8, 11) to
+        transpose. By default, no pitch class columns are used.
+    - "key_sig_columns" tuple of str: columns containing key signatures to transpose.
+        By default, no key signature columns are used.
+    - "key_sig_class_columns" tuple of str: columns containing key signature classes.
+        By default, no key signature class columns are used.
+
+    Args:
+        df: a music_df
+        new_key_sig: the new key signature to transpose to
+        inplace: if True, will modify the music_df in place
+
+    Returns:
+        A new music_df with the pitches transposed to the new key signature.
 
     >>> df = pd.DataFrame(
     ...     {

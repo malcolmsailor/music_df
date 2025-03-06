@@ -53,7 +53,7 @@ def align_onsets_between_dataframes(*dfs) -> list[pd.DataFrame]:
             assert (df.onset.sort_values().values == df.onset.values).all()
             assert (df.release.sort_values().values == df.release.values).all()
     except AssertionError:
-        print(f"Onsets/releases of all dataframes must be sorted")
+        print("Onsets/releases of all dataframes must be sorted")
 
     try:
         for df in dfs:

@@ -1,3 +1,8 @@
+"""
+This module contains diverse functions for adding features to music dataframes.
+
+"""
+
 import io  # Used by doctests
 import re
 from ast import literal_eval
@@ -101,21 +106,6 @@ def infer_barlines(
     barlines.index += max(music_df.index) + 1
 
     out_df = pd.concat([music_df, barlines])
-    # (Malcolm 2023-10-16) why are we sorting by onset and type here? Can we
-    #       remove this?
-    # out_df = out_df.sort_values(
-    #     by="onset",
-    #     axis=0,
-    #     kind="mergesort",  # default sort is not stable
-    #     ignore_index=False,
-    # )
-    # out_df = out_df.sort_values(
-    #     by="type",
-    #     axis=0,
-    #     key=lambda col: col.where(col != "bar", "zzz"),
-    #     kind="mergesort",  # default sort is not stable
-    #     ignore_index=False,
-    # )
     out_df = sort_df(out_df, ignore_index=False)
 
     out_df = out_df.reset_index(drop=not keep_old_index)
@@ -126,6 +116,19 @@ def infer_barlines(
 def make_time_signatures_explicit(
     music_df: pd.DataFrame, default_time_signature: dict[str, int] | None = None
 ) -> pd.DataFrame:
+    """
+    Add "ts_numerator" and "ts_denominator" columns to the dataframe.
+
+    Thus every row in the dataframe will have an explicit time signature.
+
+    If the dataframe already has "ts_numerator" and "ts_denominator" columns, it is
+    returned unchanged.
+
+    Args:
+        music_df: The dataframe to add the time signature columns to.
+        default_time_signature: The time signature to use if no time signature is
+            present in the dataframe. If not provided, 4/4 is assumed.
+    """
     if "ts_numerator" in music_df.columns and "ts_denominator" in music_df.columns:
         # There appears to be nothing to be done
         return music_df
@@ -170,6 +173,8 @@ def add_default_time_sig(
     keep_old_index: bool = False,
 ) -> pd.DataFrame:
     """
+    Add default time signature to dataframes that lack them (or lack an initial one).
+
     >>> nan = float("nan")  # Alias to simplify below assignments
 
     No time signature at all:
@@ -291,6 +296,18 @@ def add_default_time_sig(
 
 
 def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.DataFrame:
+    """
+    Add "tempo" column to the dataframe.
+
+    Thus every row in the dataframe will have an explicit tempo.
+
+    If there are no tempo events in the dataframe, the tempo is set to the default
+    tempo. The default tempo is also used for any rows that precede the first tempo.
+
+    Args:
+        music_df: The dataframe to add the tempo column to.
+        default_tempo: The tempo to use if no tempo events are present.
+    """
     # If there already *is* a tempo column, we just want to make sure it doesn't
     #   have any nans in it
     if "tempo" in music_df.columns:
@@ -319,6 +336,9 @@ def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.Dat
 
 
 def add_time_sig_dur(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add "time_sig_dur" column specifying the quarter duration of each time signature.
+    """
     music_df["time_sig_dur"] = float("nan")
     music_df.loc[music_df.type == "time_signature", "time_sig_dur"] = music_df[
         music_df.type == "time_signature"
@@ -328,9 +348,19 @@ def add_time_sig_dur(music_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add "bar_dur" column specifying the duration of each bar.
+
+    The "bar_dur" column will be NaN for non-bar rows. We also set the "release" column
+    to the sum of the "onset" and "bar_dur" columns for bar rows.
+
+    Args:
+        music_df: The dataframe to add the bar duration column to. Must have at least
+            one bar (i.e., one row with type == "bar").
+    """
     bar_mask = music_df.type == "bar"
     if not bar_mask.any():
-        raise ValueError(f"Score must have at least one bar")
+        raise ValueError("Score must have at least one bar")
     bars = music_df[bar_mask]
     bar_durs = bars.iloc[1:].onset.reset_index(drop=True) - bars.iloc[
         :-1
@@ -348,6 +378,8 @@ def add_bar_durs(music_df: pd.DataFrame) -> pd.DataFrame:
 
 def split_long_bars(music_df: pd.DataFrame) -> pd.DataFrame:
     """
+    Split "long" bars (bars whose actual duration exceeds the time signature duration).
+
     Note: sorts result before returning it.
     """
     assert (
@@ -391,6 +423,17 @@ def split_long_bars(music_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def number_bars(music_df: pd.DataFrame, initial_bar_number: int = 1) -> pd.DataFrame:
+    """
+    Add "bar_number" column specifying the number of each bar.
+
+    Args:
+        music_df: The dataframe to add the bar number column to. The dataframe must have
+            at least one bar (i.e., one row with type == "bar").
+        initial_bar_number: The number of the first bar. The convention in music is that
+            the first full bar should be numbered 1. Note that this function isn't smart
+            enough to distinguish pickup measures (normally numbered 0 in music
+            notation).
+    """
     bar_mask = music_df.type == "bar"
     if not bar_mask.sum():
         raise ValueError("No bars found")
@@ -407,9 +450,21 @@ def number_bars(music_df: pd.DataFrame, initial_bar_number: int = 1) -> pd.DataF
 def make_bar_explicit(
     music_df: pd.DataFrame, default_bar_number: int = -1, initial_bar_number: int = 1
 ) -> pd.DataFrame:
-    """Adds a "bar_number" column to the dataframe.
+    """
+    Add "bar_number" column specifying the bar number of each row.
 
-    There must be at least one row with type == "bar".
+    Thus every row in the dataframe will have an explicit bar number.
+
+    The actual bar numbering is performed by the number_bars function.
+
+    Args:
+        music_df: The dataframe to add the bar number column to. The dataframe must have
+            at least one bar (i.e., one row with type == "bar").
+        default_bar_number: The number to use for rows that precede the first bar.
+        initial_bar_number: The number of the first bar. The convention in music is that
+            the first full bar should be numbered 1. Note that this function isn't smart
+            enough to distinguish pickup measures (normally numbered 0 in music
+            notation).
     """
     bar_mask = music_df.type == "bar"
     # TODO: (Malcolm 2023-12-25) maybe I should use appears_to_have_pickup_measure to
@@ -427,6 +482,16 @@ def make_bar_explicit(
 
 
 def get_bar_relative_onset(music_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add "bar_relative_onset" column specifying the offset of each row from the onset
+    of the bar.
+
+    For example, if a note has onset 4.5 and the preceding bar has onset 3, then the
+    bar relative onset is 1.5.
+
+    Args:
+        music_df: The dataframe to add the bar relative onset column to.
+    """
     bar_mask = music_df.type == "bar"
     if not len(bar_mask):
         raise ValueError("No bars found")
@@ -449,6 +514,9 @@ def get_bar_relative_onset(music_df: pd.DataFrame) -> pd.DataFrame:
 def add_default_velocity(
     music_df: pd.DataFrame, default_velocity: int = 96
 ) -> pd.DataFrame:
+    """
+    Add default velocity where it is missing.
+    """
     if "velocity" not in music_df.columns:
         music_df["velocity"] = default_velocity
     else:
@@ -460,6 +528,9 @@ def add_default_midi_instrument(
     music_df: pd.DataFrame,
     default_instrument: int = 0,
 ) -> pd.DataFrame:
+    """
+    Add default MIDI instrument where it is missing.
+    """
     if "midi_instrument" not in music_df.columns:
         music_df["midi_instrument"] = default_instrument
     else:
@@ -472,6 +543,14 @@ def add_default_midi_instrument(
 def make_instruments_explicit(
     music_df: pd.DataFrame, default_instrument: int = 0
 ) -> pd.DataFrame:
+    """
+    Add "midi_instrument" column specifying the MIDI instrument of each row.
+
+    Args:
+        music_df: The dataframe to add the MIDI instrument column to.
+        default_instrument: The MIDI instrument to use if no program changes are
+            present.
+    """
     if "track" not in music_df.columns:
         return add_default_midi_instrument(music_df, default_instrument)
     program_change_mask = music_df.type == "program_change"
@@ -550,6 +629,11 @@ def instruments_to_midi_instruments(
 
 def add_scale_degrees(music_df: pd.DataFrame):
     """
+    Add "scale_degree" column specifying the scale degree of each note.
+
+    The scale degree is inferred from the note's spelling and key. See examples
+    below.
+
     >>> df = pd.DataFrame(
     ...     {
     ...         # we omit all other columns
@@ -687,6 +771,18 @@ def add_scale_degrees(music_df: pd.DataFrame):
 
 def decompose_scale_degrees(music_df: pd.DataFrame, max_alteration: int = 2):
     """
+    Decompose "scale_degree" into "scale_degree_step" and "scale_degree_alteration".
+
+    For example,
+       - the scale degree 5 has step 5 and alteration "_"
+       - the scale degree #4 has step 4 and alteration "#"
+       - the scale degree bb7 has step 7 and alteration "bb"
+
+    Args:
+        music_df: The dataframe to decompose the scale degree column of.
+        max_alteration: The maximum number of accidentals to allow. If the alteration
+            is greater than this, it is set to "x".
+
     >>> df = pd.DataFrame(
     ...     {
     ...         # we omit all other columns
@@ -748,6 +844,7 @@ def decompose_scale_degrees(music_df: pd.DataFrame, max_alteration: int = 2):
 
 def concatenate_features(df: pd.DataFrame, features: Iterable[str]) -> pd.DataFrame:
     """
+    Create a new feature by concatenating the values of the given features.
     >>> csv_table = '''
     ... type,pitch,onset,release,foo,bar
     ... bar,,0.0,4.0,,
@@ -819,6 +916,9 @@ def _key_signature_from_key(key: str) -> int:
 
 def add_key_signature_from_key(music_df: pd.DataFrame) -> pd.DataFrame:
     """
+    Add "key_signature" column specifying the key signature of each row.
+
+    Sharps are positive, flats are negative.
     >>> csv_table = '''
     ... type,pitch,key
     ... bar,,
@@ -848,6 +948,10 @@ def add_key_signature_from_key(music_df: pd.DataFrame) -> pd.DataFrame:
 
 def add_enharmonic_key_signature_from_key(music_df: pd.DataFrame) -> pd.DataFrame:
     """An "enharmonic" key signature is between -5 (5 flats) and 6 (6 sharps).
+
+    For example, F# and Gb have different key signatures (6 and -6 respectively), but
+    the same enharmonic key signature (6).
+
     >>> csv_table = '''
     ... type,pitch,key
     ... bar,,
@@ -900,7 +1004,12 @@ def add_key_signature_from_pc_and_mode(
     mode_col_name: str = "mode",
 ) -> pd.DataFrame:
     """
-    Key signatures are between -5 and 6.
+    Add a key signature column inferred from the key pitch-class and mode.
+
+    Because pitch-classes are enharmonic, key signatures are enharmonic as well
+    (between -5 and 6). In other words, both F# and Gb will be indicated by key_pc=6
+    and mode="M", so they can't be distinguished from each other.
+
     >>> csv_table = '''
     ... type,pitch,key_pc,mode
     ... bar,,
@@ -933,6 +1042,13 @@ def add_key_signature_from_pc_and_mode(
 
 def add_key_signature(music_df: pd.DataFrame) -> pd.DataFrame:
     """
+    Add "key_signature" column specifying the key signature of each row.
+
+    The dataframe must have either:
+        - a "key_pc" column specifying the pitch-class of the key, and a "mode" column
+          specifying the mode (M or m), or
+        - a "key" column specifying the key.
+
     >>> csv_table = '''
     ... type,pitch,key_pc,mode
     ... bar,,

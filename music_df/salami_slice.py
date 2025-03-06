@@ -1,17 +1,28 @@
-from io import StringIO
+"""
+This module contains functions for salami-slicing music dataframes.
+
+A salami-sliced score is a score where, at each timestep with one or more onsets or
+releases, we split any ongoing notes into two, in order to obtain a purely homophonic
+rhythmic texture in which all onsets and releases are synchronized across all parts.
+"""
+
+from io import StringIO  # Used by doctests
 
 import numpy as np
 import pandas as pd
 
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
-from music_df.sync_df import get_unique_from_array_by_df
 
 
 def appears_salami_sliced(df: pd.DataFrame) -> bool:
     """
+    Evaluates heuristically whether a dataframe has been salami sliced.
+
     Returns True if every unique onset has a unique release associated with it, and vice
     versa.
+
+    This doesn't actually check for overlapping notes, however.
 
     >>> df = pd.DataFrame(
     ...     {"pitch": [60, 61], "onset": [0.0, 0.0], "release": [0.5, 1.0]}
@@ -34,7 +45,8 @@ def appears_salami_sliced(df: pd.DataFrame) -> bool:
     >>> appears_salami_sliced(df)
     True
 
-    This doesn't actually check for overlapping notes, however.
+    Overlapping notes are not detected:
+
     >>> df = pd.DataFrame(
     ...     {"pitch": [60, 61], "onset": [0.0, 1.0], "release": [4.0, 2.0]}
     ... )
@@ -54,6 +66,8 @@ def appears_salami_sliced(df: pd.DataFrame) -> bool:
 
 def get_unique_salami_slices(df: pd.DataFrame) -> pd.DataFrame:
     """
+    Returns a dataframe with only the first row in each slice.
+
     >>> df = pd.DataFrame(
     ...     {
     ...         "pitch": [60, 61, 62],
@@ -77,9 +91,19 @@ def salami_slice(
     include_slice_ids: bool = True,
     label_original_note_ids: bool = False,
 ) -> pd.DataFrame:
-    # TODO implement a "minimum tolerance" so that onsets/releases don't
-    #   have to be *exactly* simultaneous
-    # any zero-length notes will be omitted.
+    """
+    Returns a salami-sliced version of the dataframe.
+
+    A salami-sliced score is a score where, at each timestep with one or more onsets or
+    releases, we split any ongoing notes into two, in order to obtain a purely
+    homophonic rhythmic texture in which all onsets and releases are synchronized across
+    all parts.
+
+    It's probably best to quantize the dataframe before running this function so that
+    very nearly simultaneous onsets/releases are synchronized.
+
+    Any zero-length notes will be omitted.
+    """
     # Given that all onsets/releases will be homophonic after running
     #   this function, there would be a more efficient way of storing notes
     #   than storing each one individually, but then we would have to rewrite
@@ -197,6 +221,11 @@ def slice_into_uniform_steps(
 
 def add_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
     """
+    Add a unique slice id to each note.
+
+    The slice ids will be increasing integers, starting at 0. Non-note rows are given a
+    slice id of -1.
+
     >>> table = '''
     ...    type  pitch  onset  release
     ... 0   bar    NaN    0.0      4.0
@@ -227,6 +256,15 @@ def add_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
 
 def add_distinct_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
     """
+    Add "distinct" slice ids to each note.
+
+    A salami slice is "distinct" if its pitch contents differ from those in the
+    previous slice. Thus "distinct" salami slices capture changes of pitch in the
+    musical content.
+
+    As with `add_slice_ids`, the slice ids will be increasing integers, starting at 0.
+    Non-note rows are given a distinct slice id of -1.
+
     >>> table = '''
     ...    type  pitch  onset  release
     ... 0   bar    NaN    0.0      2.0
@@ -268,6 +306,12 @@ def add_distinct_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
 
 
 def undo_salami_slice(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Inverts the salami slicing operation.
+
+    Requires the `original_note_id` column, which is added by `salami_slice`, in order
+    to specify which notes should be merged.
+    """
     if "original_note_id" not in df.columns:
         raise ValueError(
             "We require the 'original_note_id' column to undo salami slicing"
