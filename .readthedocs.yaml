@@ -18,6 +18,7 @@ build:
     #  - Install the dependencies of your project
     #  - Build the documentation
     #  - Save the generated files in $READTHEDOCS_OUTPUT/html
-    - ls
     - pip install pdoc3 .
-    - pdoc --html --output-dir $READTHEDOCS_OUTPUT/html/music_df music_df
+    - pdoc --html --output-dir $READTHEDOCS_OUTPUT/tmp music_df
+    - mv "$READTHEDOCS_OUTPUT/tmp/music_df" "$READTHEDOCS_OUTPUT/html"
+    - rm -rf "$READTHEDOCS_OUTPUT/tmp"
