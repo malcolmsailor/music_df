@@ -20,4 +20,4 @@ build:
     #  - Save the generated files in $READTHEDOCS_OUTPUT/html
     - ls
     - pip install pdoc3 .
-    - pdoc --html --output-dir $READTHEDOCS_OUTPUT/html music_df
+    - pdoc --html --output-dir $READTHEDOCS_OUTPUT/html/music_df music_df
