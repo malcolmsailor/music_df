@@ -1,0 +1,30 @@
+[project]
+name = "music_df"
+version = "0.0.1"
+description = "A library for working with Pandas dataframes representing music scores"
+authors = [{ name = "Malcolm Sailor", email = "malcolm.sailor@gmail.com" }]
+readme = "README.md"
+# TODO: I think some of these dependencies should be optional
+dependencies = [
+    "pandas",
+    "mido",
+    "matplotlib",
+    "pyyaml",
+    "music21",
+    "omegaconf",
+    "mspell",
+    "sh",
+    "h5py",
+    "tqdm",
+    "metricker @ git+https://github.com/malcolmsailor/metricker.git",
+]
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["music_df"]
+
+[tool.setuptools.package-data]
+"music_df.scripts.humdrum_export" = ["*.sh"]
+
+[project.optional-dependencies]
+dev = ["pytest", "black"]
