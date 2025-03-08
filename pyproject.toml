@@ -30,6 +30,8 @@ packages = [
     "music_df.midi_parser",
     "music_df.plot_piano_rolls",
     "music_df.scripts",
+    "music_df.scripts.humdrum_export",
+    "music_df.scripts.configs",
     "music_df.show_scores",
     "music_df.utils",
     "music_df.xml_parser",
@@ -40,6 +42,7 @@ packages = [
 
 [tool.setuptools.package-data]
 "music_df.scripts.humdrum_export" = ["*.sh"]
+"music_df.scripts.configs" = ["*.yaml"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pdoc3"]
