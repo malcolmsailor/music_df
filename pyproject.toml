@@ -20,8 +20,23 @@ dependencies = [
 ]
 license = { text = "MIT" }
 
+# I haven't been able to get any automatic package discovery to work, so I'm
+#   just going to list all sub-directories here.
 [tool.setuptools]
-packages = ["music_df"]
+packages = [
+    "music_df",
+    "music_df.conversions",
+    "music_df.humdrum_export",
+    "music_df.midi_parser",
+    "music_df.plot_piano_rolls",
+    "music_df.scripts",
+    "music_df.show_scores",
+    "music_df.utils",
+    "music_df.xml_parser",
+]
+
+# [tool.setuptools.packages.find]
+# where = ["music_df"]
 
 [tool.setuptools.package-data]
 "music_df.scripts.humdrum_export" = ["*.sh"]
