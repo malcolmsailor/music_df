@@ -41,3 +41,21 @@ __all__ = [
     "get_eligible_onsets",
     "get_eligible_releases",
 ]
+
+# Unfortunately the following approach means that the documentation of the submodules
+#    isn't generated either.
+# __pdoc__ = {
+#     # because the selection of names that are imported here is somewhat arbitrary,
+#     # I prefer that the documentation be found in the sub-modules rather than here.
+#     "quantize_df": False,
+#     "read_csv": False,
+#     "read_krn": False,
+#     "read_krn_via_xml": False,
+#     "segment_df": False,
+#     "sort_df": False,
+#     "split_musicdf": False,
+#     "chromatic_transpose": False,
+#     "get_df_segment_indices": False,
+#     "get_eligible_onsets": False,
+#     "get_eligible_releases": False,
+# }
