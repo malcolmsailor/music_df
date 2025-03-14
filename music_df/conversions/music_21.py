@@ -1,3 +1,7 @@
+"""
+A function for converting music21 scores to music dataframes.
+"""
+
 import pandas as pd
 from music21.meter import TimeSignature
 from music21.note import Note
@@ -8,28 +12,11 @@ from music_df.add_feature import add_bar_durs
 
 
 def music21_score_to_df(score: Score) -> pd.DataFrame:
-    # TODO: (Malcolm 2024-03-28) remove
-    # # I started implementing this when I was thinking that music21's parsing
-    # #   of the Monteverdi files was somehow aligned. But then I realized that
-    # #   I was mistaken. See notes in Things.
-    # measure_onsets: list | None = None
-    # measure_releases: list | None = None
-    # # for part in score[Part]:
-    # #     assert part is not None
-
-    # #     this_part_measures = part[Measure]
-    # #     these_onsets = []
-    # #     these_releases = []
-    # #     for measure in this_part_measures:
-    # #         for note in measure[Note]:
-    # #             breakpoint()
-
     rows = []
     time_sigs = score[TimeSignature].stream().flatten()  # type:ignore
 
     last_time_sig_offset = None
     for time_sig in time_sigs:
-
         if time_sig.offset == last_time_sig_offset:
             # Don't include duplicate time sigs across different parts
             continue
@@ -47,11 +34,9 @@ def music21_score_to_df(score: Score) -> pd.DataFrame:
         last_time_sig_offset = time_sig.offset
 
     for part_i, part in enumerate(score[Part], start=1):
-
         notes = part[Note].stream().flatten()
 
         for note in notes:
-
             tie_to_next = False
             tie_to_prev = False
 

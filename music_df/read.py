@@ -2,12 +2,13 @@
 Provides a function, `read()`, for reading a file into a music_df.
 
 The allowed extensions are:
-    - .mid or .midi for MIDI files
-    - .krn for Humdrum .krn files. Note however that this won't work until I
-      distribute my `totable` command-line tool.
-    - .csv for CSV files
-    - .xml, .mxl, .mscx, or .mscz for encoded MusicXML files
-    - .txt or .rntxt for Roman numeral text files
+
+- .mid or .midi for MIDI files
+- .krn for Humdrum .krn files. Note however that this won't work until I
+    distribute my `totable` command-line tool.
+- .csv for CSV files
+- .xml, .mxl, .mscx, or .mscz for encoded MusicXML files
+- .txt or .rntxt for Roman numeral text files
 """
 
 import pandas as pd

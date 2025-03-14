@@ -1,12 +1,11 @@
 pandas
 mido
-# matplotlib is only required if plotting (or at least that's my intention)
 matplotlib
 pyyaml
 music21
 omegaconf
-mspell # mspell
+mspell
 sh
-/Users/malcolm/google_drive/python/malmus/metricker
+metricker @ git+https://github.com/malcolmsailor/metricker.git
 h5py
 tqdm

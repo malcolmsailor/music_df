@@ -1,10 +1,14 @@
+"""
+A few functions for working with temporal/rhythmic features of music dataframes.
+"""
+
+from ast import literal_eval
 from fractions import Fraction
 from math import isnan
 from typing import Iterable
 
 import pandas as pd
 
-from ast import literal_eval
 from music_df.add_feature import add_bar_durs
 from music_df.utils.search import get_index_to_item_leq
 
@@ -204,7 +208,7 @@ def time_to_bar_number_and_offset(
 
 
 def merge_contiguous_durations(
-    durs: Iterable[tuple[float, float]]
+    durs: Iterable[tuple[float, float]],
 ) -> list[tuple[float, float]]:
     """
     >>> merge_contiguous_durations([])

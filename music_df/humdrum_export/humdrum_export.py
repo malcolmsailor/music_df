@@ -14,7 +14,7 @@ from music_df.humdrum_export.df_utils.spell_df import spell_df
 from music_df.humdrum_export.df_utils.split_df_by_pitch import split_df_by_pitch
 from music_df.humdrum_export.merge_spines import merge_spines
 from music_df.quantize_df import quantize_df
-from music_df.split_notes_at_barlines import split_notes_at_barlines
+from music_df.split_notes import split_notes_at_barlines
 
 
 def _write_spine(spine: t.List[str], path: str) -> None:
@@ -136,12 +136,9 @@ def number_measures(humdrum_contents: str):
             output_lines.append(line)
             continue
 
-        try:
-            assert bar_tokens == ["="] * len(
-                bar_tokens
-            ), "bar numbers etc. are not implemented"
-        except:
-            breakpoint()
+        assert bar_tokens == ["="] * len(bar_tokens), (
+            "bar numbers etc. are not implemented"
+        )
 
         numbered_bars = "\t".join([f"={bar_n}"] * len(bar_tokens))
         output_lines.append(numbered_bars)

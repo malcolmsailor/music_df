@@ -10,7 +10,7 @@ from music_df.humdrum_export.constants import USER_SIGNIFIERS
 from music_df.humdrum_export.pdf import run_hum2pdf
 from music_df.quantize_df import quantize_df
 from music_df.read_csv import read_csv
-from music_df.split_notes_at_barlines import split_notes_at_barlines
+from music_df.split_notes import split_notes_at_barlines
 from music_df.xml_parser import xml_parse
 
 TEST_FILE = os.getenv("TEST_FILE")

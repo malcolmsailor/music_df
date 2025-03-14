@@ -63,11 +63,30 @@ def crop_df(
     infer_barlines_if_no_barlines_found: bool = True,
 ) -> pd.DataFrame:
     """
-    NB we assume that the dataframe is sorted and that start_i points to a note (so
-    that any bar or time_signature rows with the same onset will precede the note.)
+    Crop `music_df`, handling time signatures and barlines gracefully.
 
-    The preceding bar is left with its original onset; the preceding time signature is
-    moved to align with the preceding bar.
+    Included in the returned dataframe will be the barline and time signature that
+    precede the first note. The barline will have its onset preserved, while the
+    time signature will be moved to align with the barline if it is not already.
+
+    Args:
+        music_df: dataframe. Note that we assume that the dataframe is sorted (see
+            music_df.sort_df)
+        start_i: index of the first row to include in the cropped dataframe. It is
+            assumed that this index points to a note. At most one of `start_i` or
+            `start_time` should be provided.
+        start_time: onset time of the first note to include in the cropped dataframe.
+            At most one of `start_i` or `start_time` should be provided.
+        end_i: index of the last row to include in the cropped dataframe. It is
+            assumed that this index points to a note. Note that end_i is inclusive (like
+            label-based indexing in Pandas). At most one of `end_i` or `end_time` should
+            be provided.
+        end_time: not implemented.
+        infer_barlines_if_no_barlines_found: if True, infer barlines if no barlines are
+            found.
+
+    # Examples:
+
     First define an example dataframe with time signature, note, and bar events:
     >>> music_df = pd.DataFrame(
     ...     {
@@ -161,7 +180,7 @@ def crop_df(
     10  10.0    10.5            note
     """
     if all(x is None for x in (start_i, start_time, end_i, end_time)):
-        LOGGER.warning(f"Nothing to crop, returning dataframe unchanged")
+        LOGGER.warning("Nothing to crop, returning dataframe unchanged")
         return music_df
     if start_i is not None and start_time is not None:
         raise ValueError

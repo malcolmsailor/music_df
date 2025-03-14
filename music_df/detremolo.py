@@ -1,4 +1,9 @@
+"""
+Provides a function for detremoloing (removing rapid repeated notes from) a dataframe.
+"""
+
 from typing import Iterable
+
 import pandas as pd
 
 
@@ -13,6 +18,17 @@ def detremolo(
         "channel",
     ),
 ) -> pd.DataFrame:
+    """
+    Merge rapid repeated notes into single notes.
+
+    Args:
+        df: dataframe.
+        max_tremolo_note_length: maximum length of a note to be eligible for a tremolo.
+        max_tremolo_note_gap: maximum gap between the onset of one note and the repeat
+            of the same note to be eligible for a tremolo.
+        instrument_columns: columns to group by when detremoloing. This permits us
+            to only merge notes that seem to belong to the same instrument.
+    """
     tremoli = []
     for _, instr in df[df["type"] == "note"].groupby(
         [c for c in instrument_columns if c in df.columns]

@@ -1,3 +1,7 @@
+"""
+Functions for splitting notes.
+"""
+
 import io  # for doctest # noqa: F401
 
 import numpy as np
@@ -122,7 +126,7 @@ def subdivide_notes(
     df: pd.DataFrame, grid_size, onset_col="onset", release_col="release"
 ):
     """
-    Subdivides rows into smaller intervals of size grid_size.
+    Subdivides notes into smaller intervals of size grid_size.
 
     Parameters:
         df: pandas DataFrame with onset and release times

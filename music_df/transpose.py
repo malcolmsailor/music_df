@@ -1,7 +1,10 @@
+"""
+Functions for transposing music either by pitch-class or along the circle of fifths.
+"""
+
 import functools
 from collections import defaultdict
 from math import isnan
-from typing import Iterable
 
 import pandas as pd
 

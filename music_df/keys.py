@@ -1,3 +1,7 @@
+"""
+Provides functions for working with keys in music dataframes.
+"""
+
 import pandas as pd
 
 ALPHABET = {letter: (i - 1) for (i, letter) in enumerate("FCGDAEB")} | {
@@ -103,9 +107,22 @@ CHROMATIC_SCALE = (
 
 
 def get_key_pc_interval(key1: str, key2: str):
+    """
+    Returns the interval between the two keys in semitones.
+
+    >>> get_key_pc_interval("C", "C")
+    0
+    >>> get_key_pc_interval("C", "c")
+    0
+    >>> get_key_pc_interval("C", "a")
+    -3
+    >>> get_key_pc_interval("C", "F#")
+    -6
+    >>> get_key_pc_interval("f#", "C")
+    -6
+    """
     pc1 = CHROMATIC_SCALE[key1.capitalize()]
     pc2 = CHROMATIC_SCALE[key2.capitalize()]
-
     pc_interval = (pc2 - pc1) % 12
 
     if pc_interval >= 6:
@@ -114,6 +131,20 @@ def get_key_pc_interval(key1: str, key2: str):
 
 
 def get_key_sharps_interval(key1: str, key2: str):
+    """
+    Return the circle-of-fifths interval between the two keys.
+
+    >>> get_key_sharps_interval("C", "C")
+    0
+    >>> get_key_sharps_interval("C", "c")
+    -3
+    >>> get_key_sharps_interval("C", "a")
+    0
+    >>> get_key_sharps_interval("C", "F#")
+    -6
+    >>> get_key_sharps_interval("C", "Gb")
+    -6
+    """
     sharps1 = key_to_sharps(key1)
     sharps2 = key_to_sharps(key2)
 
@@ -143,6 +174,15 @@ def get_key_interval(key1: str, key2: str):
 
 def get_key_change_id(key1: str, key2: str):
     """
+    Return a "key change id" for the two keys.
+
+    A key change id is a string formed of the concatenation of:
+    - the chromatic interval between the two keys,
+    - the mode of the first key,
+    - the mode of the second key.
+
+    See the examples below.
+
     >>> get_key_change_id("C", "C")
     '0MM'
     >>> get_key_change_id("C", "c")
@@ -162,6 +202,15 @@ def get_key_change_id(key1: str, key2: str):
 
 def keys_to_key_change_ints(key_series: pd.Series) -> tuple[dict, pd.Series]:
     """
+    Return a dictionary and mask indicating key changes in a series of keys.py
+
+    The dictionary contains the following:
+        - key_pc_ints: the chromatic interval between each key and the next.
+        - key_sharps_ints: the circle-of-fifths interval between each key and the next.
+        - rel_key_pc_ints: the chromatic interval between each key and the global key.
+        - rel_key_sharps_ints: the circle-of-fifths interval between each key and the
+          global key.
+
     >>> change_ints, mask = keys_to_key_change_ints(
     ...     pd.Series(["C", "", "F", "f", "ab", "C"])
     ... )
@@ -207,6 +256,7 @@ def keys_to_key_change_ints(key_series: pd.Series) -> tuple[dict, pd.Series]:
 
 def keys_to_key_changes(key_series: pd.Series) -> tuple[list[str], pd.Series]:
     """
+    Convert a series of keys into a series of key change ids.
     >>> changes, mask = keys_to_key_changes(pd.Series(["C", "", "F", "f", "ab", "C"]))
     >>> changes
     ['C', '5MM', '0Mm', '3mm', '4mM']

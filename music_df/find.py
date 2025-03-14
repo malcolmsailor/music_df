@@ -1,3 +1,7 @@
+"""
+Provides a function for searching salami-slices.
+"""
+
 from typing import Any, Iterable
 
 import pandas as pd
@@ -48,8 +52,20 @@ def find_simultaneous_feature(
     music_df: pd.DataFrame, feature_name: str, values: Iterable[Any]
 ) -> list[tuple[float, float]]:
     """
-    The dataframe is assumed to be salami-sliced. (Perhaps this should be enforced
-    somehow.)
+    Find salami-slices that contain all of the specified values.
+
+    For example, if feature_name is "scale_degree", and values contains a list of
+    degrees like ["1", "#1"], then this function will return the onset and release times
+    of any salami-slices that contain both "1" and "#1" (they may contain other
+    degrees as well).
+
+    The dataframe is assumed to be salami-sliced.
+
+    Args:
+        music_df: dataframe.
+        feature_name: name of the feature to search for.
+        values: list of values to search for.
+
     >>> df = pd.DataFrame(
     ...     {
     ...         "pitch": [60, 67, 61, 72],

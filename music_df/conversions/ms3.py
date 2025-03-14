@@ -1,3 +1,7 @@
+"""
+A function, `ms3_to_df`, for converting ms3 dfs to the format used by this package.
+"""
+
 import logging
 from fractions import Fraction
 
@@ -176,9 +180,10 @@ def ms3_to_df(
     fractions: bool = True,
     drop_unused_cols: bool = True,
 ) -> pd.DataFrame:
-    """ """
+    """
+    Convert an ms3 dataframe to the format used by this package.
+    """
     out_df = ms3_df.copy()
-
     if "quarterbeats_playthrough" in out_df.columns:
         # This means the repeats are expanded
         pass
