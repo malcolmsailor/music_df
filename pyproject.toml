@@ -27,6 +27,7 @@ packages = [
     "music_df",
     "music_df.conversions",
     "music_df.humdrum_export",
+    "music_df/humdrum_export/df_utils",
     "music_df.midi_parser",
     "music_df.plot_piano_rolls",
     "music_df.scripts",
