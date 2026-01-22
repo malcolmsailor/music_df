@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 from omegaconf import OmegaConf
 
-from music_df.chord_df import add_chord_pcs, add_key_pcs
+from music_df.chord_df import add_chord_pcs, add_key_pcs, extract_key_df_from_music_df
 from music_df.harmony.matching import label_pc_matches, percent_chord_df_match
 from music_df.plot_piano_rolls.plot import (
     plot_piano_roll_and_continuous_feature,
@@ -39,9 +39,10 @@ def main():
     config = Config(**conf)  # type:ignore
     score_df = read(config.midi_path)
     chord_df = pd.read_csv(config.chord_df_path)[CHORD_COLS_TO_KEEP]
-    breakpoint()
     chord_df = add_chord_pcs(chord_df)
-    chord_df = add_key_pcs(chord_df)
+
+    key_df = extract_key_df_from_music_df(chord_df)
+    key_df = add_key_pcs(key_df)
 
     score_df = slice_df(score_df, chord_df.onset)
 
@@ -50,7 +51,7 @@ def main():
     )
     key_result = percent_chord_df_match(
         chord_result["music_df"],
-        chord_df,
+        key_df,
         chord_df_pc_key="key_pcs",
         is_sliced=True,
         match_col="percent_key_match",
@@ -62,7 +63,7 @@ def main():
     chord_note_df = chord_result_df[chord_result_df["type"] == "note"]
     key_result_df = label_pc_matches(
         key_result["music_df"],
-        chord_df,
+        key_df,
         chord_df_pc_key="key_pcs",
         is_sliced=True,
         match_col="is_key_match",

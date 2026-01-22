@@ -581,6 +581,52 @@ def extract_chord_df_from_music_df(
     return chord_df
 
 
+def extract_key_df_from_music_df(
+    music_df_or_chord_df: pd.DataFrame,
+    null_key_token: str = "na",
+    columns: Iterable[str] = ("key", "onset"),
+    release_col: str = "release",
+) -> pd.DataFrame:
+    """
+    This is really just a simple wrapper for extract_chord_df_from_music_df with
+    different default parameters.
+
+    >>> music_df = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... type,pitch,key,onset,release,degree,quality,inversion
+    ... bar,,,0.0,4.0,,,
+    ... note,60,C,0.0,1.0,I,M,0.0
+    ... note,64,C,1.0,2.0,I,M,0.0
+    ... note,62,C,2.0,3.0,V,M,1.0
+    ... note,67,C,3.0,4.0,V,M,0.0
+    ... note,66,G,4.0,6.0,V,M,0.0
+    ... note,65,F,8.0,10.0,V,M,0.0
+    ... '''
+    ...     )
+    ... )
+    >>> extract_key_df_from_music_df(music_df)
+      key  onset  release
+    0   C    0.0      4.0
+    1   G    4.0      8.0
+    2   F    8.0     10.0
+
+    It should work on chord_df as well as music_df:
+    >>> chord_df = extract_chord_df_from_music_df(music_df)
+    >>> extract_key_df_from_music_df(chord_df)
+      key  onset  release
+    0   C    0.0      4.0
+    1   G    4.0      8.0
+    2   F    8.0     10.0
+    """
+    return extract_chord_df_from_music_df(
+        music_df_or_chord_df,
+        null_chord_token=null_key_token,
+        columns=columns,
+        release_col=release_col,
+    )
+
+
 def label_music_df_with_chord_df(
     music_df: pd.DataFrame,
     chord_df: pd.DataFrame,
