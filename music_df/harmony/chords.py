@@ -1,15 +1,19 @@
 import re
 import warnings
-from typing import Literal
+from typing import Callable, Literal, TypeVar, overload
 
 import mspell
 from music21.chord import Chord
 from music21.key import Key
 from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+from numpy import isin
 
 from music_df.transpose import SPELLING_TRANSPOSER
 from music_df.utils._types import MinorScaleType, Mode
 from music_df.utils.music21_caching import KEY_CACHE
+
+K = TypeVar("K")
+V = TypeVar("V")
 
 MODE_TO_DEFAULT_KEY: dict[Mode, str] = {"M": "C", "m": "c"}
 SPELLER = mspell.Speller()
@@ -38,12 +42,12 @@ def hex_str_to_pc_ints(hex_str: str, return_set: bool = False) -> list[int] | se
     return [int(ch, 16) for ch in hex_str]
 
 
-class CacheDict(dict):
-    def __init__(self, default_factory, *args, **kwargs):
+class CacheDict(dict[K, V]):
+    def __init__(self, default_factory: Callable[[K], V], *args, **kwargs):
         self.default_factory = default_factory
         super().__init__(*args, **kwargs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: K) -> V:
         if key not in self:
             self[key] = self.default_factory(key)
         return super().__getitem__(key)
@@ -56,16 +60,56 @@ def transpose_pcs(pcs: list[int], interval: int) -> list[int]:
     return [(pc + interval) % 12 for pc in pcs]
 
 
+@overload
 def get_rn_pitch_classes(
     rn: str,
     mode_or_key: str,
+    sixth_minor: Minor67Default = ...,
+    seventh_minor: Minor67Default = ...,
+    case_matters: bool = ...,
+    rn_format: Literal["rnbert", "music21"] = ...,
+    rn_translation_cache: CacheDict[str, str] | None = ...,
+    *,
+    hex_str: Literal[True],
+) -> str: ...
+
+
+@overload
+def get_rn_pitch_classes(
+    rn: str,
+    mode_or_key: str,
+    sixth_minor: Minor67Default = ...,
+    seventh_minor: Minor67Default = ...,
+    case_matters: bool = ...,
+    rn_format: Literal["rnbert", "music21"] = ...,
+    rn_translation_cache: CacheDict[str, str] | None = ...,
+    hex_str: Literal[False] = ...,
+) -> list[int]: ...
+
+
+@overload
+def get_rn_pitch_classes(
+    rn: str,
+    mode_or_key: str,
+    sixth_minor: Minor67Default = ...,
+    seventh_minor: Minor67Default = ...,
+    case_matters: bool = ...,
+    rn_format: Literal["rnbert", "music21"] = ...,
+    rn_translation_cache: CacheDict[str, str] | None = ...,
+    hex_str: bool = ...,
+) -> list[int] | str: ...
+
+
+def get_rn_pitch_classes(
+    rn: str,
+    mode_or_key: Mode | str,
     sixth_minor: Minor67Default = Minor67Default.CAUTIONARY,
     seventh_minor: Minor67Default = Minor67Default.CAUTIONARY,
     case_matters: bool = True,
-    hex_str: bool = False,
     rn_format: Literal["rnbert", "music21"] = "music21",
     rn_translation_cache: CacheDict[str, str] | None = None,
-) -> list[int]:
+    hex_str: bool = False,
+) -> list[int] | str:
     """
     Get the pitch classes of a Roman numeral chord.
 
@@ -89,7 +133,7 @@ def get_rn_pitch_classes(
 
     """
 
-    key = MODE_TO_DEFAULT_KEY.get(mode_or_key, mode_or_key)
+    key = MODE_TO_DEFAULT_KEY.get(mode_or_key, mode_or_key)  # type:ignore
 
     if rn_translation_cache is not None:
         rn = rn_translation_cache[rn]
@@ -118,7 +162,7 @@ def get_rn_pc_cache(
     case_matters: bool = True,
     hex_str: bool = False,
     rn_format: Literal["rnbert", "music21"] = "music21",
-) -> CacheDict[tuple[str, str], list[int]]:
+) -> CacheDict[tuple[str, str], list[int] | str]:
     """
     >>> rn_pc_cache = get_rn_pc_cache()
     >>> rn_pc_cache["I", "M"]
@@ -142,8 +186,8 @@ def get_rn_pc_cache(
     else:
         rn_translation_cache = None
 
-    rn_pc_cache: CacheDict[tuple[str, str], list[int]] = CacheDict(
-        lambda rn_and_mode_or_key: get_rn_pitch_classes(
+    def factory(rn_and_mode_or_key: tuple[str, str]) -> list[int] | str:
+        return get_rn_pitch_classes(
             *rn_and_mode_or_key,
             sixth_minor=sixth_minor,
             seventh_minor=seventh_minor,
@@ -152,8 +196,8 @@ def get_rn_pc_cache(
             rn_format=rn_format,
             rn_translation_cache=rn_translation_cache,
         )
-    )
-    return rn_pc_cache
+
+    return CacheDict(factory)
 
 
 SCALES = {
@@ -166,7 +210,7 @@ SCALES = {
 
 def get_key_pitch_classes(
     key: str, minor_scale_type: MinorScaleType = "harmonic", hex_str: bool = False
-) -> list[int]:
+) -> list[int] | str:
     """
     Get the pitch classes of a key.
 
@@ -215,7 +259,7 @@ def get_key_pc_cache(
 
 
     """
-    key_pc_cache: CacheDict[str, list[int]] = CacheDict(
+    key_pc_cache: CacheDict[str, list[int] | str] = CacheDict(
         lambda key: get_key_pitch_classes(key, minor_scale_type, hex_str)
     )
     return key_pc_cache
@@ -244,7 +288,9 @@ def translate_rns(
         if dst != "music21":
             raise NotImplementedError
         try:
-            degree = re.match(r"[IV]+", rn).group(0)
+            m = re.match(r"[IV]+", rn)
+            assert m is not None
+            degree = m.group(0)
             match rn[len(degree)]:
                 case "M":
                     return degree.upper() + rn[len(degree) + 1 :]
@@ -423,6 +469,7 @@ def tonicization_to_key(
 
     if simplify_enharmonics:
         original_key_pc = UNSPELLER(original_key)
+        assert isinstance(original_key_pc, int)
         new_key_pc = (original_key_pc + fifths_offset * 7) % 12
         if secondary_mode == "M":
             new_key = MAJOR_KEYS[new_key_pc]
@@ -430,6 +477,8 @@ def tonicization_to_key(
             new_key = MINOR_KEYS[new_key_pc]
     else:
         new_key = SPELLING_TRANSPOSER(original_key, fifths_offset)
+
+    assert isinstance(new_key, str)
 
     if secondary_mode == "m":
         new_key = new_key[0].lower() + new_key[1:]

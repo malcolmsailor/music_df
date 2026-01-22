@@ -1,5 +1,4 @@
 import io  # noqa: F401
-import re
 from math import isnan
 from types import MappingProxyType
 from typing import Iterable, Mapping
@@ -13,7 +12,7 @@ from music_df.harmony.chords import CacheDict, get_key_pc_cache, get_rn_pc_cache
 def add_chord_pcs(
     chord_df: pd.DataFrame,
     inplace: bool = False,
-    rn_pc_cache: CacheDict[tuple[str, str], list[int]] | None = None,
+    rn_pc_cache: CacheDict[tuple[str, str], list[int] | str] | None = None,
 ) -> pd.DataFrame:
     """
     Adds a column 'chord_pcs' to the chord_df with the pcs of each chord.
@@ -313,10 +312,10 @@ def inversion_number_to_figure(
     # If the chord is a 7th or augmented 6th, we use 7th chord inversions. (Since
     #   we only have integers to indicate 1st, 2nd inversion etc., we can't distinguish
     #   German and Italian 6th chords.)
-    inversion_number = float(inversion_number)
-    if isnan(inversion_number):
+    temp_inversion_number = float(inversion_number)
+    if isnan(temp_inversion_number):
         return ""
-    inversion_number = int(inversion_number)
+    inversion_number = int(temp_inversion_number)
     if "7" in quality or quality == "aug6":
         if seventh_chord_inversions_mapping is None:
             seventh_chord_inversions_mapping = SEVENTH_CHORD_INVERSIONS
