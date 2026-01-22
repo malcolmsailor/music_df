@@ -21,8 +21,6 @@ MIDI_NUM_MEMO = defaultdict(dict)
 
 ALPHABET = "fcgdaeb".upper()
 
-KEY_CACHE = {}
-
 
 def chromatic_transpose(
     df: pd.DataFrame,

@@ -131,7 +131,7 @@ def add_note(
 
 def plot_piano_roll(
     df: pd.DataFrame,
-    colors=None,
+    colors: Optional[Sequence[str]] = None,
     labels: Optional[Sequence[Any]] = None,
     label_colors: Optional[Sequence[str]] = None,
     number_notes: bool = False,
@@ -218,7 +218,7 @@ def get_colormapping(
 
 def plot_piano_roll_and_feature(
     df: pd.DataFrame,
-    feature: List[Any],
+    feature: List[Any] | str,
     featuremapping: None = None,
     label_notes=True,
     colormapping=None,
@@ -228,6 +228,8 @@ def plot_piano_roll_and_feature(
     legend=False,
     show=False,
 ):
+    if isinstance(feature, str):
+        feature = df[feature]
     # TODO implement legend?
     if featuremapping is not None:
         feature = [featuremapping[f] for f in feature]
@@ -246,6 +248,32 @@ def plot_piano_roll_and_feature(
         labels=feature if label_notes else None,
         ax=ax,
         legend=colormapping,
+        show=show,
+    )
+
+
+def plot_piano_roll_and_continuous_feature(
+    df: pd.DataFrame,
+    feature: str | Sequence[float],
+    colormap: str | matplotlib.colors.Colormap | tuple[str, str] = ("red", "blue"),
+    ax: Optional[matplotlib.axes.Axes] = None,
+    title: Optional[str] = None,
+    show: bool = False,
+):
+    if isinstance(colormap, tuple):
+        colormap = matplotlib.colors.LinearSegmentedColormap.from_list(
+            "custom", colormap
+        )
+    elif isinstance(colormap, str):
+        colormap = matplotlib.cm.get_cmap(colormap)
+    if isinstance(feature, str):
+        feature = df[feature]
+    colors = [colormap(item) for item in feature]
+    plot_piano_roll(
+        df,
+        colors,
+        title=title,
+        ax=ax,
         show=show,
     )
 

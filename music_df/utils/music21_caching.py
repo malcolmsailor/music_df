@@ -1,23 +1,45 @@
-# from music21.chord import Chord
-# from music21.key import Key
-# from music21.pitch import Pitch
-# from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+from collections import defaultdict
 
-# RN_CACHE: dict[tuple[str, str, Minor67Default, Minor67Default], RomanNumeral] = {}
+from music21.chord import Chord
+from music21.key import Key
+from music21.pitch import Pitch
+from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+
+from music_df.utils._types import Mode
+
+RN_CACHE: dict[tuple[str, str, Minor67Default, Minor67Default], RomanNumeral] = {}
+
+MODE_TO_DEFAULT_KEY: dict[Mode, str] = {"M": "C", "m": "c"}
 
 
-# def get_rn_from_cache(
-#     rn: str,
-#     key: str,
-#     sixth_minor: Minor67Default = Minor67Default.CAUTIONARY,
-#     seventh_minor: Minor67Default = Minor67Default.CAUTIONARY,
-# ):
-#     if (rn, key, sixth_minor, seventh_minor) in RN_CACHE:
-#         return RN_CACHE[(rn, key, sixth_minor, seventh_minor)]
-#     roman = RomanNumeral(rn, key, sixthMinor=sixth_minor, seventhMinor=seventh_minor)
-#     RN_CACHE[(rn, key, sixth_minor, seventh_minor)] = roman
-#     return roman
+def get_rn_from_cache(
+    rn: str,
+    mode: Mode | None = None,
+    key: str | None = None,
+    sixth_minor: Minor67Default = Minor67Default.CAUTIONARY,
+    seventh_minor: Minor67Default = Minor67Default.CAUTIONARY,
+    case_matters: bool = False,
+):
+    assert (mode is None) != (key is None), (
+        "Either mode or key must be provided, but not both"
+    )
+    if key is None:
+        key = MODE_TO_DEFAULT_KEY[mode]
 
+    if (rn, key, sixth_minor, seventh_minor) in RN_CACHE:
+        return RN_CACHE[(rn, key, sixth_minor, seventh_minor)]
+    roman = RomanNumeral(
+        rn,
+        key,
+        sixthMinor=sixth_minor,
+        seventhMinor=seventh_minor,
+        caseMatters=case_matters,
+    )
+    RN_CACHE[(rn, key, sixth_minor, seventh_minor)] = roman
+    return roman
+
+
+KEY_CACHE: defaultdict[str, Key] = defaultdict(Key)
 
 # RN_FROM_CHORD_CACHE: dict[tuple[tuple[Pitch, ...], str], RomanNumeral] = {}
 

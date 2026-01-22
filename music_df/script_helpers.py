@@ -1,9 +1,13 @@
 import ast
+import itertools
 import logging
 import os
 import pdb
 import sys
+import threading
+import time
 import traceback
+from contextlib import contextmanager
 from typing import Sequence
 
 import numpy as np
@@ -290,9 +294,9 @@ def plot_item_from_logits(
 
     if binary_decision_threshold:
         assert logits.shape[-1] == 2, "binary_decision_threshold requires binary logits"
-        assert (
-            config.n_specials == 0
-        ), "binary_decision_threshold not implemented where config.n_specials != 0"
+        assert config.n_specials == 0, (
+            "binary_decision_threshold not implemented where config.n_specials != 0"
+        )
         predicted_indices = np.where(probs[:, 1] > binary_decision_threshold, 1, 0)
     else:
         predicted_indices = logits.argmax(axis=-1)
@@ -344,3 +348,25 @@ def plot_item_from_logits(
             title=title,
         )
         plt.show()
+
+
+def spinner(stop_event):
+    spinner_cycle = itertools.cycle(["|", "/", "-", "\\"])
+    while not stop_event.is_set():
+        sys.stdout.write(next(spinner_cycle))  # write the next character
+        sys.stdout.flush()  # flush stdout buffer (actual character display)
+        time.sleep(0.1)  # wait a little before next cycle
+        sys.stdout.write("\b")  # backspace to overwrite the previous character
+
+
+@contextmanager
+def spinning_wheel():
+    stop_event = threading.Event()
+    spinner_thread = threading.Thread(target=spinner, args=(stop_event,))
+    spinner_thread.start()
+
+    try:
+        yield
+    finally:
+        stop_event.set()
+        spinner_thread.join()

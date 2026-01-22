@@ -11,5 +11,5 @@ OUTPUT_FILE="$OUTPUT_DIR/${FILENAME%.csv}.pdf"
 
 mkdir -p $(dirname "$OUTPUT_FILE")
 
-python /Users/malcolm/google_drive/python/malmus/music_df/music_df/scripts/compare_annotations.py \
+python /Users/malcolm/google_drive/python/malmus/music_df/main/music_df/scripts/compare_annotations.py \
     input_file1="$F1" input_file2="$F2" output_file="$OUTPUT_FILE"

@@ -50,8 +50,9 @@ def midi_to_table(
     pb_tup_dict: Optional[dict] = None,
     display_name: str | None = None,
     notes_only: bool = False,
-    warn_for_orphan_note_offs: bool = True,
-    warn_for_orphan_note_ons: bool = True,
+    warn_for_orphan_note_offs: bool = False,
+    warn_for_orphan_note_ons: bool = False,
+    warn_for_overlapping_notes: bool = False,
 ) -> pd.DataFrame:
     """Read a midi file and return a pandas DataFrame.
 
@@ -175,7 +176,17 @@ def midi_to_table(
     def _pitch_bend_handler(track_pb_dict, msg):
         track_pb_dict[msg.channel] = msg.pitch
 
-    def _note_on_handler(msg, track_note_on_dict, track_pb_dict):
+    def _note_on_handler(msg, track_i, track_note_on_dict, track_pb_dict):
+        if (
+            warn_for_overlapping_notes
+            and track_note_on_dict[msg.channel][msg.note]
+        ):
+            warnings.warn(
+                f"Overlapping note_on event with pitch {msg.note} at "
+                f"time {_get_time(msg.time)} "
+                f"on track {track_i}, "
+                f"channel {msg.channel}"
+            )
         if track_pb_dict is None:
             # msg.note as key is a midinumber (0-127)
             # msg.note as second item of tuple is a pitch number (which depends
@@ -281,7 +292,7 @@ def midi_to_table(
                 if notes:
                     out.extend(notes)
             elif msg.type == "note_on":
-                _note_on_handler(msg, note_on_dict[track_i], track_pb_dict)
+                _note_on_handler(msg, track_i, note_on_dict[track_i], track_pb_dict)
             elif not notes_only:
                 out.append(_other_msg_handler(msg, track_i))
 
@@ -418,7 +429,6 @@ def df_to_midi(
         )
         event_type = event.type
         if event_type == "text":
-
             mid.tracks[0].append(
                 mido.MetaMessage(
                     "text",

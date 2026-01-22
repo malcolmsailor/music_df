@@ -177,6 +177,7 @@ def merge_annotations(
     5    G.VM6
     dtype: object
 
+    # Not sure what the point, if anything, of the next test is
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
@@ -188,6 +189,10 @@ def merge_annotations(
     ...     )
     ... )
     >>> merge_annotations(df)  # doctest: +NORMALIZE_WHITESPACE
+    0
+    1    a.VM
+    2      C.
+    dtype: object
     """
     df = df.copy()
 

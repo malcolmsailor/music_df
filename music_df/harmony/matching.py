@@ -49,7 +49,7 @@ def percent_pc_match(
     0.666...
     """
     if isinstance(pitch_classes, str):
-        pitch_classes = hex_str_to_pc_ints(pitch_classes, return_set=True)
+        pitch_classes = set(hex_str_to_pc_ints(pitch_classes, return_set=True))
 
     if not input_contains_only_notes:
         notes = passage.loc[passage["type"] == "note"]
@@ -102,7 +102,7 @@ def percent_chord_df_match(
     chord_df_pc_key: str = "chord_pcs",
     is_sliced: bool = False,
     match_col: str = "percent_chord_match",
-) -> tuple[float, list[float]]:
+):
     if is_sliced:
         sliced_notes = music_df.loc[music_df["type"] == "note"]
     else:

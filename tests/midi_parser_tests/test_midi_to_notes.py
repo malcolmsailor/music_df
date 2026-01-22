@@ -9,6 +9,7 @@ import warnings
 import mido
 import pandas as pd
 import pytest
+
 from music_df import sort_df
 from music_df.midi_parser import df_to_midi, midi_to_csv, midi_to_table
 
@@ -69,7 +70,7 @@ def test_orphan_note_on_at_end():
     )
     with temp_midi(mid) as output_path:
         with pytest.warns(UserWarning) as record:
-            midi_to_table(output_path, time_type=float)
+            midi_to_table(output_path, time_type=float, warn_for_orphan_note_ons=True)
         assert len(record) == 1
         assert "Pitch 60 is still on" in record[0].message.args[0]  # type:ignore
 
@@ -85,11 +86,10 @@ def test_orphan_note_off():
     )
     with temp_midi(mid) as output_path:
         with pytest.warns(UserWarning) as record:
-            midi_to_table(output_path, time_type=float)
+            midi_to_table(output_path, time_type=float, warn_for_orphan_note_offs=True)
         assert len(record) == 1
         assert (
-            "no note_on event still sounding"
-            in record[0].message.args[0]  # type:ignore
+            "no note_on event still sounding" in record[0].message.args[0]  # type:ignore
         )
 
 
@@ -148,11 +148,10 @@ def test_overlapping_notes():
     )
     with temp_midi(mid) as output_path:
         with pytest.warns(UserWarning) as record:
-            midi_to_table(output_path, time_type=float)
+            midi_to_table(output_path, time_type=float, warn_for_overlapping_notes=True)
         assert len(record) == 1
         assert (
-            "no note_on event still sounding"
-            in record[0].message.args[0]  # type:ignore
+            "Overlapping note_on event" in record[0].message.args[0]  # type:ignore
         )
         result = midi_to_table(
             output_path,
@@ -235,14 +234,10 @@ def test_sort_order():
     #   track
     lower_i: int = out[
         (out.track == 3) & (out.onset == 0) & (out.pitch == 72) & (out.release == 2)
-    ].index[
-        0
-    ]  # type:ignore
+    ].index[0]  # type:ignore
     greater_i: int = out[
         (out.track == 3) & (out.onset == 0) & (out.pitch == 48) & (out.release == 1)
-    ].index[
-        0
-    ]  # type:ignore
+    ].index[0]  # type:ignore
     assert greater_i > lower_i
     # assert _get_i(
     #     out,
@@ -263,9 +258,7 @@ def test_sort_order():
     ]  # type:ignore
     greater_i: int = out[
         (out.track == 4) & (out.onset == 0) & (out.release == 2)
-    ].index[
-        0
-    ]  # type:ignore
+    ].index[0]  # type:ignore
     assert greater_i > lower_i
     # assert _get_i(
     #     out, lambda x: x[TRACK] == 4 and x[ONSET] == 0 and x[RELEASE] == 1

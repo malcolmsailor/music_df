@@ -1,8 +1,3 @@
-from functools import partial
-from typing import Optional
-
-import pandas as pd
-
 ALPHABET = "fcgdaeb".upper()
 
 

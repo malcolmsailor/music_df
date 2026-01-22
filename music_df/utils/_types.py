@@ -1,4 +1,9 @@
+from typing import Literal
+
 import pandas as pd
+
+Mode = Literal["M", "m"]
+MinorScaleType = Literal["harmonic", "natural", "melodic"]
 
 
 def float_times_df(df: pd.DataFrame) -> pd.DataFrame:
