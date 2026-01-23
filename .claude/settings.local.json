@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git show:*)",
       "Bash(git cat-file:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(python -m doctest:*)"
     ]
   }
 }

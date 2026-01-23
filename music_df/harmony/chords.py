@@ -138,6 +138,9 @@ def get_rn_pitch_classes(
     if rn_translation_cache is not None:
         rn = rn_translation_cache[rn]
     elif rn_format == "rnbert":
+        assert case_matters, (
+            "case_matters must be True with rn_format=rnbert. Even though the format only uses upper case, we translate to case-sensitive music21 symbols for processing"
+        )
         rn = translate_rns(rn, src="rnbert", dst="music21")
 
     roman = RomanNumeral(
@@ -281,27 +284,56 @@ def translate_rns(
     'viio642'
     >>> translate_rns("III+")
     'III+'
+
+    >>> translate_rns("xaug665")
+    'Ger65'
+    >>> translate_rns("xaug643")
+    'Fr43'
+
+    # TODO: (Malcolm 2026-01-22) improve augmented sixth handling
+    All other "inversions" should return It6 for now but this should be improved on!
+    >>> translate_rns("xaug63")
+    'It6'
+    >>> translate_rns("xaug642")
+    'It6'
+
+    >>> translate_rns("vM")  # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+    ...
+    TypeError: Mal-formed rnbert Roman numeral begins with lower-case: vM
     """
     if src != "rnbert":
         raise NotImplementedError
     else:
         if dst != "music21":
             raise NotImplementedError
-        try:
-            m = re.match(r"[IV]+", rn)
-            assert m is not None
-            degree = m.group(0)
-            match rn[len(degree)]:
-                case "M":
-                    return degree.upper() + rn[len(degree) + 1 :]
-                case "m":
-                    return degree.lower() + rn[len(degree) + 1 :]
-                case "o":
-                    return degree.lower() + rn[len(degree) :]
-                case _:
-                    return rn
-        except Exception:
-            return rn
+
+        match rn:
+            case "xaug665":
+                return "Ger65"
+            case "xaug643":
+                return "Fr43"
+        if rn.startswith("xaug6"):
+            return "It6"
+
+        m = re.match(r"[IV]+", rn)
+        if m is None:
+            if src == "rnbert" and re.match(r"^[iv]", rn):
+                raise TypeError(
+                    f"Mal-formed rnbert Roman numeral begins with lower-case: {rn}"
+                )
+            else:
+                return rn
+        degree = m.group(0)
+        match rn[len(degree)]:
+            case "M":
+                return degree.upper() + rn[len(degree) + 1 :]
+            case "m":
+                return degree.lower() + rn[len(degree) + 1 :]
+            case "o":
+                return degree.lower() + rn[len(degree) :]
+            case _:
+                return rn
 
 
 def get_rn_translation_cache(

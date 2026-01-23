@@ -34,6 +34,27 @@ def add_chord_pcs(
     1   b   V       6a1
     2  f#  iv       b26
     3  f#   i       691
+
+    >>> chord_df = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... key,rn
+    ... b,Im
+    ... ,VM
+    ... f#,IVm
+    ... ,Im
+    ... '''
+    ...     )
+    ... )
+    >>> add_chord_pcs(
+    ...     chord_df,
+    ...     rn_pc_cache=get_rn_pc_cache(rn_format="rnbert", hex_str=True),
+    ... )
+      key   rn chord_pcs
+    0   b   Im       b26
+    1   b   VM       6a1
+    2  f#  IVm       b26
+    3  f#   Im       691
     """
     if not inplace:
         chord_df = chord_df.copy()
@@ -176,7 +197,7 @@ def merge_annotations(
     5    G.VM6
     dtype: object
 
-    # Not sure what the point, if anything, of the next test is
+    Testing that V in C is not the same as V in a.
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
@@ -190,7 +211,12 @@ def merge_annotations(
     >>> merge_annotations(df)  # doctest: +NORMALIZE_WHITESPACE
     0
     1    a.VM
-    2      C.
+    2    C.VM
+    dtype: object
+    >>> merge_annotations(df, include_key=False)  # doctest: +NORMALIZE_WHITESPACE
+    0
+    1    VM
+    2    VM
     dtype: object
     """
     df = df.copy()
@@ -234,10 +260,20 @@ def merge_annotations(
     # I was using ":" as the separator character but it is a special
     #   value in humdrum even when escaped.
 
-    df["rn"] = keep_new_elements_only(df["rn"].replace("na", float("nan")))
+    rn_with_nan = df["rn"].replace("na", float("nan"))
+    df["rn"] = keep_new_elements_only(rn_with_nan)
     keys = keep_new_elements_only(df[key_col].replace("na", float("nan")) + ".")
 
-    return keys + df["rn"]
+    # When key is shown but rn was filtered out (same as previous), restore rn
+    key_shown = keys.astype(bool)
+    rn_empty = df["rn"] == ""
+    rn_available = ~rn_with_nan.ffill().isna()
+    restore_mask = key_shown & rn_empty & rn_available
+    df.loc[restore_mask, "rn"] = rn_with_nan.ffill()[restore_mask]
+
+    if include_key:
+        return keys + df["rn"]
+    return pd.Series(df["rn"].values)
 
 
 def get_unique_annotations_per_onset(
