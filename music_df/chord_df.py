@@ -1,12 +1,426 @@
 import io  # noqa: F401
+import re
+from dataclasses import dataclass, field
 from math import isnan
 from types import MappingProxyType
-from typing import Iterable, Mapping
+from typing import Iterable, Literal, Mapping
 
 import numpy as np
 import pandas as pd
 
-from music_df.harmony.chords import CacheDict, get_key_pc_cache, get_rn_pc_cache
+from music_df.harmony.chords import (
+    CacheDict,
+    MAJOR_KEYS,
+    MINOR_KEYS,
+    get_key_pc_cache,
+    get_rn_pc_cache,
+)
+
+# =============================================================================
+# chord_df Specification
+# =============================================================================
+
+JOINED_FORMAT_REQUIRED_COLUMNS = frozenset({"onset", "key", "degree", "quality", "inversion"})
+SPLIT_FORMAT_REQUIRED_COLUMNS = frozenset({
+    "onset", "key",
+    "primary_degree", "primary_alteration",
+    "secondary_degree", "secondary_alteration",
+    "quality", "inversion"
+})
+OPTIONAL_COLUMNS = frozenset({"release"})
+
+VALID_ALTERATIONS = frozenset({"_", "#", "b", "##", "bb"})
+VALID_INVERSIONS = frozenset({0, 1, 2, 3})
+DEFAULT_NULL_CHORD_TOKEN = "na"
+
+DEGREE_REGEX = re.compile(r"""
+    ^
+    ([#b]*)         # group 1: primary alteration (e.g., "#", "b", "##")
+    ([IViv]+)       # group 2: primary Roman numeral (e.g., "I", "VII", "iv")
+    (               # group 3: optional secondary (tonicization)
+        /           #   literal slash separator
+        ([#b]*)     #   group 4: secondary alteration
+        ([IViv]+)   #   group 5: secondary Roman numeral
+    )?
+    $
+""", re.VERBOSE)
+
+
+# =============================================================================
+# Validation
+# =============================================================================
+
+
+@dataclass
+class ValidationError:
+    column: str | None
+    row_index: int | None
+    message: str
+    severity: Literal["error", "warning"] = "error"
+
+
+@dataclass
+class ValidationResult:
+    is_valid: bool
+    errors: list[ValidationError] = field(default_factory=list)
+    warnings: list[ValidationError] = field(default_factory=list)
+    format_detected: Literal["joined", "split", "unknown"] = "unknown"
+
+    def raise_if_invalid(self) -> None:
+        if not self.is_valid:
+            error_messages = [f"  - {e.message}" for e in self.errors]
+            raise ValueError(f"chord_df validation failed:\n" + "\n".join(error_messages))
+
+
+def _detect_format(
+    df: pd.DataFrame,
+) -> Literal["joined", "split", "unknown"]:
+    columns = set(df.columns)
+    if JOINED_FORMAT_REQUIRED_COLUMNS <= columns:
+        return "joined"
+    if SPLIT_FORMAT_REQUIRED_COLUMNS <= columns:
+        return "split"
+    return "unknown"
+
+
+def _check_index(df: pd.DataFrame, errors: list[ValidationError]) -> None:
+    if isinstance(df.index, pd.RangeIndex):
+        if df.index.start != 0 or df.index.stop != len(df) or df.index.step != 1:
+            errors.append(ValidationError(
+                column=None,
+                row_index=None,
+                message=f"Index must be RangeIndex(0, {len(df)}, 1), got RangeIndex({df.index.start}, {df.index.stop}, {df.index.step})"
+            ))
+    elif not (df.index == range(len(df))).all():
+        errors.append(ValidationError(
+            column=None,
+            row_index=None,
+            message=f"Index must be equivalent to range(0, {len(df)})"
+        ))
+
+
+def _check_columns(
+    df: pd.DataFrame,
+    format_detected: Literal["joined", "split", "unknown"],
+    errors: list[ValidationError],
+) -> None:
+    if format_detected == "unknown":
+        errors.append(ValidationError(
+            column=None,
+            row_index=None,
+            message=f"Could not detect format. Columns must include either {sorted(JOINED_FORMAT_REQUIRED_COLUMNS)} (joined) or {sorted(SPLIT_FORMAT_REQUIRED_COLUMNS)} (split). Got: {sorted(df.columns)}"
+        ))
+
+
+def _check_types(
+    df: pd.DataFrame,
+    format_detected: Literal["joined", "split", "unknown"],
+    errors: list[ValidationError],
+) -> None:
+    numeric_cols = ["onset", "inversion"]
+    if "release" in df.columns:
+        numeric_cols.append("release")
+
+    for col in numeric_cols:
+        if col in df.columns and not pd.api.types.is_numeric_dtype(df[col]):
+            errors.append(ValidationError(
+                column=col,
+                row_index=None,
+                message=f"Column '{col}' must be numeric, got {df[col].dtype}"
+            ))
+
+    string_cols = ["key", "quality"]
+    if format_detected == "joined":
+        string_cols.append("degree")
+    elif format_detected == "split":
+        string_cols.extend([
+            "primary_degree", "primary_alteration",
+            "secondary_degree", "secondary_alteration"
+        ])
+
+    for col in string_cols:
+        if col in df.columns and df[col].dtype != object:
+            errors.append(ValidationError(
+                column=col,
+                row_index=None,
+                message=f"Column '{col}' must be object (string) type, got {df[col].dtype}"
+            ))
+
+
+def _check_key_values(
+    df: pd.DataFrame,
+    null_chord_token: str,
+    errors: list[ValidationError],
+) -> None:
+    if "key" not in df.columns:
+        return
+
+    valid_keys = set(MAJOR_KEYS) | set(MINOR_KEYS) | {null_chord_token}
+    invalid_mask = ~df["key"].isin(valid_keys) & ~df["key"].isna()
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        invalid_values = df.loc[invalid_mask, "key"].unique().tolist()
+        errors.append(ValidationError(
+            column="key",
+            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+            message=f"Invalid key value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
+        ))
+
+
+def _check_degree_format(
+    df: pd.DataFrame,
+    null_chord_token: str,
+    errors: list[ValidationError],
+) -> None:
+    if "degree" not in df.columns:
+        return
+
+    def is_valid_degree(val):
+        if pd.isna(val) or val == null_chord_token:
+            return True
+        return DEGREE_REGEX.match(str(val)) is not None
+
+    invalid_mask = ~df["degree"].apply(is_valid_degree)
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        invalid_values = df.loc[invalid_mask, "degree"].unique().tolist()
+        errors.append(ValidationError(
+            column="degree",
+            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+            message=f"Invalid degree format: {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
+        ))
+
+
+def _check_alteration_values(
+    df: pd.DataFrame,
+    null_chord_token: str,
+    null_alteration_char: str,
+    errors: list[ValidationError],
+) -> None:
+    alteration_cols = ["primary_alteration", "secondary_alteration"]
+    valid_alterations = VALID_ALTERATIONS | {null_chord_token, null_alteration_char}
+
+    for col in alteration_cols:
+        if col not in df.columns:
+            continue
+        invalid_mask = ~df[col].isin(valid_alterations) & ~df[col].isna()
+        if invalid_mask.any():
+            invalid_indices = df.index[invalid_mask].tolist()
+            invalid_values = df.loc[invalid_mask, col].unique().tolist()
+            errors.append(ValidationError(
+                column=col,
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid {col} value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
+            ))
+
+
+def _check_inversion_values(
+    df: pd.DataFrame,
+    errors: list[ValidationError],
+) -> None:
+    if "inversion" not in df.columns:
+        return
+
+    non_null_inversions = df["inversion"].dropna()
+    if len(non_null_inversions) == 0:
+        return
+
+    invalid_mask = ~non_null_inversions.isin(VALID_INVERSIONS)
+    if invalid_mask.any():
+        invalid_indices = non_null_inversions.index[invalid_mask].tolist()
+        invalid_values = non_null_inversions.loc[invalid_mask].unique().tolist()
+        errors.append(ValidationError(
+            column="inversion",
+            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+            message=f"Invalid inversion value(s): {invalid_values} (must be in {sorted(VALID_INVERSIONS)}) at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
+        ))
+
+
+def _check_temporal_consistency(
+    df: pd.DataFrame,
+    warnings: list[ValidationError],
+) -> None:
+    if "onset" not in df.columns:
+        return
+
+    onset_diff = df["onset"].diff()
+    decreasing_mask = onset_diff < 0
+    if decreasing_mask.any():
+        decreasing_indices = df.index[decreasing_mask].tolist()
+        warnings.append(ValidationError(
+            column="onset",
+            row_index=decreasing_indices[0] if len(decreasing_indices) == 1 else None,
+            message=f"Onset values are not non-decreasing at row(s) {decreasing_indices[:5]}{'...' if len(decreasing_indices) > 5 else ''}",
+            severity="warning"
+        ))
+
+    if "release" in df.columns:
+        invalid_release_mask = df["release"] < df["onset"]
+        invalid_release_mask = invalid_release_mask & ~df["release"].isna()
+        if invalid_release_mask.any():
+            invalid_indices = df.index[invalid_release_mask].tolist()
+            warnings.append(ValidationError(
+                column="release",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Release < onset at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+                severity="warning"
+            ))
+
+
+def validate_chord_df(
+    chord_df: pd.DataFrame,
+    *,
+    format: Literal["joined", "split", "auto"] = "auto",
+    null_chord_token: str = DEFAULT_NULL_CHORD_TOKEN,
+    null_alteration_char: str = "_",
+    strict: bool = False,
+    check_index: bool = True,
+    check_values: bool = True,
+    check_types: bool = True,
+) -> ValidationResult:
+    """
+    Validate a chord_df DataFrame.
+
+    Parameters
+    ----------
+    chord_df : pd.DataFrame
+        The DataFrame to validate.
+    format : {"joined", "split", "auto"}
+        The expected format. If "auto", detect from columns.
+    null_chord_token : str
+        Token used for null/rest chords (default "na").
+    null_alteration_char : str
+        Character used for no alteration in split format (default "_").
+    strict : bool
+        If True, treat warnings as errors.
+    check_index : bool
+        If True, validate that index is a RangeIndex starting at 0.
+    check_values : bool
+        If True, validate column values (keys, degrees, inversions, etc.).
+    check_types : bool
+        If True, validate column types.
+
+    Returns
+    -------
+    ValidationResult
+        Object containing validation results.
+
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     "onset": [0.0, 1.0],
+    ...     "key": ["C", "C"],
+    ...     "degree": ["I", "V/V"],
+    ...     "quality": ["M", "M"],
+    ...     "inversion": [0, 0],
+    ... })
+    >>> result = validate_chord_df(df)
+    >>> result.is_valid
+    True
+    >>> result.format_detected
+    'joined'
+
+    >>> df_bad = pd.DataFrame({
+    ...     "onset": [0.0],
+    ...     "key": ["X"],
+    ...     "degree": ["I"],
+    ...     "quality": ["M"],
+    ...     "inversion": [0],
+    ... })
+    >>> result = validate_chord_df(df_bad)
+    >>> result.is_valid
+    False
+    >>> "Invalid key" in result.errors[0].message
+    True
+    """
+    errors: list[ValidationError] = []
+    warnings: list[ValidationError] = []
+
+    # Detect format
+    if format == "auto":
+        format_detected = _detect_format(chord_df)
+    else:
+        format_detected = format
+
+    # Check index
+    if check_index:
+        _check_index(chord_df, errors)
+
+    # Check columns
+    _check_columns(chord_df, format_detected, errors)
+
+    # Check types
+    if check_types and format_detected != "unknown":
+        _check_types(chord_df, format_detected, errors)
+
+    # Check values
+    if check_values and format_detected != "unknown":
+        _check_key_values(chord_df, null_chord_token, errors)
+
+        if format_detected == "joined":
+            _check_degree_format(chord_df, null_chord_token, errors)
+        else:
+            _check_alteration_values(chord_df, null_chord_token, null_alteration_char, errors)
+
+        _check_inversion_values(chord_df, errors)
+        _check_temporal_consistency(chord_df, warnings)
+
+    if strict:
+        errors.extend(warnings)
+        warnings = []
+
+    is_valid = len(errors) == 0
+
+    return ValidationResult(
+        is_valid=is_valid,
+        errors=errors,
+        warnings=warnings,
+        format_detected=format_detected,
+    )
+
+
+def assert_valid_chord_df(chord_df: pd.DataFrame, **kwargs) -> None:
+    """
+    Validate a chord_df and raise ValueError if invalid.
+
+    Parameters
+    ----------
+    chord_df : pd.DataFrame
+        The DataFrame to validate.
+    **kwargs
+        Arguments passed to validate_chord_df.
+
+    Raises
+    ------
+    ValueError
+        If the chord_df is invalid.
+
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     "onset": [0.0, 1.0],
+    ...     "key": ["C", "G"],
+    ...     "degree": ["I", "V"],
+    ...     "quality": ["M", "M"],
+    ...     "inversion": [0, 1],
+    ... })
+    >>> assert_valid_chord_df(df)  # No error
+
+    >>> df_bad = pd.DataFrame({
+    ...     "onset": [0.0],
+    ...     "key": ["X"],
+    ...     "degree": ["I"],
+    ...     "quality": ["M"],
+    ...     "inversion": [0],
+    ... })
+    >>> assert_valid_chord_df(df_bad)
+    Traceback (most recent call last):
+        ...
+    ValueError: chord_df validation failed:
+      - Invalid key value(s): ['X'] at row(s) [0]
+    """
+    result = validate_chord_df(chord_df, **kwargs)
+    result.raise_if_invalid()
 
 
 def add_chord_pcs(
