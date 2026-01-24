@@ -81,11 +81,11 @@ def find_differing_notes(
 
     original_with_match = original_with_match.loc[
         original_with_match.type == "note",
-        ["key", "rn", "percent_chord_match", "onset", "pitch"],
+        ["key", "rn", "percent_chord_match", "onset", "pitch", "chord_pcs"],
     ]
     normalized_with_match = normalized_with_match.loc[
         normalized_with_match.type == "note",
-        ["key", "rn", "percent_chord_match", "onset", "pitch"],
+        ["key", "rn", "percent_chord_match", "onset", "pitch", "chord_pcs"],
     ]
 
     original_with_match = original_with_match.rename(
@@ -93,6 +93,7 @@ def find_differing_notes(
             "percent_chord_match": "original_percent_chord_match",
             "key": "original_key",
             "rn": "original_rn",
+            "chord_pcs": "original_chord_pcs",
         }
     )
     normalized_with_match = normalized_with_match.rename(
@@ -100,19 +101,12 @@ def find_differing_notes(
             "percent_chord_match": "normalized_percent_chord_match",
             "key": "normalized_key",
             "rn": "normalized_rn",
+            "chord_pcs": "normalized_chord_pcs",
         }
     )
 
     merged = original_with_match.merge(
-        normalized_with_match[
-            [
-                "onset",
-                "pitch",
-                "normalized_percent_chord_match",
-                "normalized_key",
-                "normalized_rn",
-            ]
-        ],
+        normalized_with_match,
         on=["onset", "pitch"],
         how="outer",
         indicator=True,
@@ -141,6 +135,7 @@ def get_match_percentages(
         is_sliced=True,
         match_col="percent_chord_match",
     )
+
     key_result = percent_chord_df_match(
         chord_result["music_df"],
         key_df,
@@ -176,7 +171,7 @@ def main():
     results = []
     all_diff_notes = []
 
-    rn_pc_cache = get_rn_pc_cache(case_matters=False, rn_format="rnbert", hex_str=True)
+    rn_pc_cache = get_rn_pc_cache(rn_format="rnbert", hex_str=True)
     key_pc_cache = get_key_pc_cache(hex_str=True)
 
     for rel_path in tqdm(csv_paths):

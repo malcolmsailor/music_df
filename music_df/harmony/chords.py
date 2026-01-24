@@ -6,7 +6,6 @@ import mspell
 from music21.chord import Chord
 from music21.key import Key
 from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
-from numpy import isin
 
 from music_df.transpose import SPELLING_TRANSPOSER
 from music_df.utils._types import MinorScaleType, Mode
@@ -176,6 +175,16 @@ def get_rn_pc_cache(
     >>> hex_rn_pc_cache["I", "Eb"]
     '37a'
 
+    >>> hex_rn_pc_cache["V/V", "C"]
+    '269'
+    >>> rnbert_cache = get_rn_pc_cache(hex_str=True, rn_format="rnbert")
+    >>> rnbert_cache["VM/V", "C"]
+    '269'
+    >>> rnbert_cache["IVm/V", "C"]
+    '037'
+    >>> rnbert_cache["IM/bII", "Bb"]
+    'b36'
+
 
     We can double-check that the caching is working by modifying the cached value
     (which in normal circumstances we should avoid ever doing):
@@ -185,6 +194,9 @@ def get_rn_pc_cache(
     [0, 4, 'foobar']
     """
     if rn_format == "rnbert":
+        assert case_matters, (
+            "case_matters must be True with rn_format=rnbert. Even though the format only uses upper case, we translate to case-sensitive music21 symbols for processing"
+        )
         rn_translation_cache = get_rn_translation_cache(src="rnbert", dst="music21")
     else:
         rn_translation_cache = None
@@ -297,11 +309,12 @@ def translate_rns(
     >>> translate_rns("xaug642")
     'It6'
 
-    >>> translate_rns("vM")  # doctest: +ELLIPSIS
+    >>> translate_rns("vM")
     Traceback (most recent call last):
     ...
     TypeError: Mal-formed rnbert Roman numeral begins with lower-case: vM
     """
+
     if src != "rnbert":
         raise NotImplementedError
     else:
@@ -474,6 +487,8 @@ def tonicization_to_key(
     'B'
     >>> tonicization_to_key("bVII", "C")
     'Bb'
+    >>> tonicization_to_key("bII", "Bb")
+    'B'
 
     >>> tonicization_to_key("III", "C")
     'e'

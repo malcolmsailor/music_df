@@ -25,15 +25,17 @@ def add_chord_pcs(
     ... ,V
     ... f#,iv
     ... ,i
+    ... ,V/V
     ... '''
     ...     )
     ... )
     >>> add_chord_pcs(chord_df)
-      key  rn chord_pcs
-    0   b   i       b26
-    1   b   V       6a1
-    2  f#  iv       b26
-    3  f#   i       691
+      key   rn chord_pcs
+    0   b    i       b26
+    1   b    V       6a1
+    2  f#   iv       b26
+    3  f#    i       691
+    4  f#  V/V       803
 
     >>> chord_df = pd.read_csv(
     ...     io.StringIO(
@@ -43,6 +45,7 @@ def add_chord_pcs(
     ... ,VM
     ... f#,IVm
     ... ,Im
+    ... ,VM/V
     ... '''
     ...     )
     ... )
@@ -50,11 +53,12 @@ def add_chord_pcs(
     ...     chord_df,
     ...     rn_pc_cache=get_rn_pc_cache(rn_format="rnbert", hex_str=True),
     ... )
-      key   rn chord_pcs
-    0   b   Im       b26
-    1   b   VM       6a1
-    2  f#  IVm       b26
-    3  f#   Im       691
+      key    rn chord_pcs
+    0   b    Im       b26
+    1   b    VM       6a1
+    2  f#   IVm       b26
+    3  f#    Im       691
+    4  f#  VM/V       803
     """
     if not inplace:
         chord_df = chord_df.copy()

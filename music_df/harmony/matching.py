@@ -111,6 +111,7 @@ def percent_chord_df_match(
     chord_pc_matches = []
 
     music_df.loc[:, match_col] = float("nan")
+    music_df.loc[:, chord_df_pc_key] = ""
 
     for _, chord_row in chord_df.iterrows():
         chord_notes = sliced_notes[
@@ -125,6 +126,7 @@ def percent_chord_df_match(
         )
         chord_pc_matches.append(chord_pc_match)
         music_df.loc[chord_notes.index, match_col] = chord_pc_match
+        music_df.loc[chord_notes.index, chord_df_pc_key] = chord_row[chord_df_pc_key]
 
     return {
         "macroaverage": sum(chord_pc_matches) / len(chord_pc_matches),
