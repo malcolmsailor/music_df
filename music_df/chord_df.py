@@ -1,6 +1,7 @@
 import io  # noqa: F401
 import re
 from dataclasses import dataclass, field
+from fractions import Fraction
 from math import isnan
 from types import MappingProxyType
 from typing import Iterable, Literal, Mapping
@@ -112,22 +113,38 @@ def _check_columns(
         ))
 
 
+def _is_fraction_dtype(series: pd.Series) -> bool:
+    if series.dtype != object:
+        return False
+    non_null = series.dropna()
+    return len(non_null) > 0 and all(isinstance(x, Fraction) for x in non_null)
+
+
 def _check_types(
     df: pd.DataFrame,
     format_detected: Literal["joined", "split", "unknown"],
     errors: list[ValidationError],
 ) -> None:
-    numeric_cols = ["onset", "inversion"]
+    temporal_cols = ["onset"]
     if "release" in df.columns:
-        numeric_cols.append("release")
+        temporal_cols.append("release")
 
-    for col in numeric_cols:
-        if col in df.columns and not pd.api.types.is_numeric_dtype(df[col]):
-            errors.append(ValidationError(
-                column=col,
-                row_index=None,
-                message=f"Column '{col}' must be numeric, got {df[col].dtype}"
-            ))
+    for col in temporal_cols:
+        if col in df.columns:
+            is_valid = pd.api.types.is_numeric_dtype(df[col]) or _is_fraction_dtype(df[col])
+            if not is_valid:
+                errors.append(ValidationError(
+                    column=col,
+                    row_index=None,
+                    message=f"Column '{col}' must be numeric or Fraction, got {df[col].dtype}"
+                ))
+
+    if "inversion" in df.columns and not pd.api.types.is_numeric_dtype(df["inversion"]):
+        errors.append(ValidationError(
+            column="inversion",
+            row_index=None,
+            message=f"Column 'inversion' must be numeric, got {df['inversion'].dtype}"
+        ))
 
     string_cols = ["key", "quality"]
     if format_detected == "joined":

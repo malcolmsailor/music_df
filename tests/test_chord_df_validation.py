@@ -1,3 +1,5 @@
+from fractions import Fraction
+
 import pandas as pd
 import pytest
 
@@ -28,6 +30,33 @@ class TestValidateChordDfJoinedFormat:
             {
                 "onset": [0.0, 1.0],
                 "release": [1.0, 2.0],
+                "key": ["C", "C"],
+                "degree": ["I", "V"],
+                "quality": ["M", "M"],
+                "inversion": [0, 0],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_with_fraction_onset(self):
+        df = pd.DataFrame(
+            {
+                "onset": [Fraction(0), Fraction(1, 2)],
+                "key": ["C", "C"],
+                "degree": ["I", "V"],
+                "quality": ["M", "M"],
+                "inversion": [0, 0],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_with_fraction_onset_and_release(self):
+        df = pd.DataFrame(
+            {
+                "onset": [Fraction(0), Fraction(1, 2)],
+                "release": [Fraction(1, 2), Fraction(1)],
                 "key": ["C", "C"],
                 "degree": ["I", "V"],
                 "quality": ["M", "M"],
