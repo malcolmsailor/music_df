@@ -139,11 +139,11 @@ def _check_types(
         ])
 
     for col in string_cols:
-        if col in df.columns and df[col].dtype != object:
+        if col in df.columns and not pd.api.types.is_string_dtype(df[col]):
             errors.append(ValidationError(
                 column=col,
                 row_index=None,
-                message=f"Column '{col}' must be object (string) type, got {df[col].dtype}"
+                message=f"Column '{col}' must be string type, got {df[col].dtype}"
             ))
 
 
@@ -236,6 +236,31 @@ def _check_inversion_values(
         ))
 
 
+def _check_unrecognized_columns(
+    df: pd.DataFrame,
+    format_detected: Literal["joined", "split", "unknown"],
+    errors: list[ValidationError],
+) -> None:
+    if format_detected == "joined":
+        recognized = JOINED_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
+    elif format_detected == "split":
+        recognized = SPLIT_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
+    else:
+        recognized = (
+            JOINED_FORMAT_REQUIRED_COLUMNS
+            | SPLIT_FORMAT_REQUIRED_COLUMNS
+            | OPTIONAL_COLUMNS
+        )
+
+    unrecognized = set(df.columns) - recognized
+    if unrecognized:
+        errors.append(ValidationError(
+            column=None,
+            row_index=None,
+            message=f"Unrecognized column(s): {sorted(unrecognized)}"
+        ))
+
+
 def _check_temporal_consistency(
     df: pd.DataFrame,
     warnings: list[ValidationError],
@@ -292,7 +317,7 @@ def validate_chord_df(
     null_alteration_char : str
         Character used for no alteration in split format (default "_").
     strict : bool
-        If True, treat warnings as errors.
+        If True, treat warnings as errors and fail on unrecognized columns.
     check_index : bool
         If True, validate that index is a RangeIndex starting at 0.
     check_values : bool
@@ -366,6 +391,7 @@ def validate_chord_df(
         _check_temporal_consistency(chord_df, warnings)
 
     if strict:
+        _check_unrecognized_columns(chord_df, format_detected, errors)
         errors.extend(warnings)
         warnings = []
 

@@ -219,6 +219,62 @@ class TestValidateChordDfStrictMode:
         assert len(result.warnings) == 0
         assert len(result.errors) > 0
 
+    def test_strict_mode_unrecognized_columns_fail(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0],
+                "key": ["C", "C"],
+                "degree": ["I", "V"],
+                "quality": ["M", "M"],
+                "inversion": [0, 0],
+                "extra_column": ["foo", "bar"],
+            }
+        )
+        result = validate_chord_df(df, strict=False)
+        assert result.is_valid
+
+        result = validate_chord_df(df, strict=True)
+        assert not result.is_valid
+        assert any("Unrecognized column" in e.message for e in result.errors)
+        assert "extra_column" in result.errors[-1].message
+
+    def test_strict_mode_multiple_unrecognized_columns(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["C"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+                "foo": [1],
+                "bar": [2],
+            }
+        )
+        result = validate_chord_df(df, strict=True)
+        assert not result.is_valid
+        assert any("Unrecognized column" in e.message for e in result.errors)
+        error_msg = next(e.message for e in result.errors if "Unrecognized" in e.message)
+        assert "bar" in error_msg
+        assert "foo" in error_msg
+
+    def test_strict_mode_split_format_unrecognized_columns(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["C"],
+                "primary_degree": ["I"],
+                "primary_alteration": ["_"],
+                "secondary_degree": ["I"],
+                "secondary_alteration": ["_"],
+                "quality": ["M"],
+                "inversion": [0],
+                "extra": ["x"],
+            }
+        )
+        result = validate_chord_df(df, strict=True)
+        assert not result.is_valid
+        assert any("Unrecognized column" in e.message for e in result.errors)
+
 
 class TestValidateChordDfMissingColumns:
     def test_missing_columns_unknown_format(self):
