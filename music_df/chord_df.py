@@ -46,6 +46,8 @@ DEGREE_REGEX = re.compile(r"""
     $
 """, re.VERBOSE)
 
+ENHARMONIC_KEY_REGEX = re.compile(r"^[A-Ga-g](#*|b*)$")
+
 
 # =============================================================================
 # Validation
@@ -168,12 +170,21 @@ def _check_key_values(
     df: pd.DataFrame,
     null_chord_token: str,
     errors: list[ValidationError],
+    allow_enharmonic_keys: bool = False,
 ) -> None:
     if "key" not in df.columns:
         return
 
-    valid_keys = set(MAJOR_KEYS) | set(MINOR_KEYS) | {null_chord_token}
-    invalid_mask = ~df["key"].isin(valid_keys) & ~df["key"].isna()
+    non_null_mask = ~df["key"].isna()
+
+    if allow_enharmonic_keys:
+        def is_valid_key(val):
+            return val == null_chord_token or ENHARMONIC_KEY_REGEX.match(str(val)) is not None
+        invalid_mask = ~df["key"].apply(is_valid_key) & non_null_mask
+    else:
+        valid_keys = set(MAJOR_KEYS) | set(MINOR_KEYS) | {null_chord_token}
+        invalid_mask = ~df["key"].isin(valid_keys) & non_null_mask
+
     if invalid_mask.any():
         invalid_indices = df.index[invalid_mask].tolist()
         invalid_values = df.loc[invalid_mask, "key"].unique().tolist()
@@ -319,6 +330,7 @@ def validate_chord_df(
     check_index: bool = True,
     check_values: bool = True,
     check_types: bool = True,
+    allow_enharmonic_keys: bool = False,
 ) -> ValidationResult:
     """
     Validate a chord_df DataFrame.
@@ -341,6 +353,9 @@ def validate_chord_df(
         If True, validate column values (keys, degrees, inversions, etc.).
     check_types : bool
         If True, validate column types.
+    allow_enharmonic_keys : bool
+        If True, accept any key matching the pattern [A-Ga-g](#*|b*) instead of
+        validating against the predefined MAJOR_KEYS and MINOR_KEYS lists.
 
     Returns
     -------
@@ -397,7 +412,7 @@ def validate_chord_df(
 
     # Check values
     if check_values and format_detected != "unknown":
-        _check_key_values(chord_df, null_chord_token, errors)
+        _check_key_values(chord_df, null_chord_token, errors, allow_enharmonic_keys)
 
         if format_detected == "joined":
             _check_degree_format(chord_df, null_chord_token, errors)

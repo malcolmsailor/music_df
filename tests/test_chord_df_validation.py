@@ -399,3 +399,86 @@ class TestAssertValidChordDf:
             }
         )
         assert_valid_chord_df(df)  # should not raise
+
+
+class TestValidateChordDfEnharmonicKeys:
+    def test_enharmonic_keys_valid_when_flag_true(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0, 2.0],
+                "key": ["F#", "Cbb", "g###"],
+                "degree": ["I", "V", "I"],
+                "quality": ["M", "M", "m"],
+                "inversion": [0, 0, 0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert result.is_valid
+
+    def test_enharmonic_keys_invalid_when_flag_false(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["F#"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=False)
+        assert not result.is_valid
+        assert any("Invalid key" in e.message for e in result.errors)
+
+    def test_invalid_key_h_fails_even_with_flag_true(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["H"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert not result.is_valid
+        assert any("Invalid key" in e.message for e in result.errors)
+
+    def test_mixed_accidentals_fail_even_with_flag_true(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["C#b"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert not result.is_valid
+        assert any("Invalid key" in e.message for e in result.errors)
+
+    def test_null_chord_token_valid_with_flag_true(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0],
+                "key": ["F#", "na"],
+                "degree": ["I", "na"],
+                "quality": ["M", "na"],
+                "inversion": [0, 0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert result.is_valid
+
+    def test_standard_keys_valid_with_flag_true(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0],
+                "key": ["C", "g"],
+                "degree": ["I", "i"],
+                "quality": ["M", "m"],
+                "inversion": [0, 0],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert result.is_valid

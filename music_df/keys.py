@@ -2,15 +2,38 @@
 Provides functions for working with keys in music dataframes.
 """
 
+import mspell
 import pandas as pd
 
 ALPHABET = {letter: (i - 1) for (i, letter) in enumerate("FCGDAEB")} | {
     letter: (i - 4) for (i, letter) in enumerate("fcgdaeb")
 }
 
+MAJOR_KEYS = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
+MINOR_KEYS = ("c", "c#", "d", "eb", "e", "f", "f#", "g", "g#", "a", "bb", "b")
+UNSPELLER = mspell.Unspeller()
+
 
 def get_mode(key):
     return "M" if key[0].isupper() else "m"
+
+
+def simplify_enharmonic_key(key):
+    """
+    >>> simplify_enharmonic_key("C")
+    'C'
+    >>> simplify_enharmonic_key("F#")
+    'Gb'
+    >>> simplify_enharmonic_key("ab")
+    'g#'
+    """
+    original_key_pc = UNSPELLER(key)
+    assert isinstance(original_key_pc, int)
+
+    if key[0].isupper():
+        return MAJOR_KEYS[original_key_pc]
+    else:
+        return MINOR_KEYS[original_key_pc]
 
 
 def pc_and_mode_to_key(pc_and_mode: str):
@@ -27,8 +50,8 @@ def pc_and_mode_to_key(pc_and_mode: str):
     pc, mode = pc_and_mode[:-1], pc_and_mode[-1]
     pc = int(float(pc))
     if mode == "M":
-        return ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"][pc]
-    return ["c", "c#", "d", "eb", "e", "f", "f#", "g", "g#", "a", "bb", "b"][pc]
+        return MAJOR_KEYS[pc]
+    return MINOR_KEYS[pc]
 
 
 def key_to_pc_and_mode(key: str):

@@ -4,7 +4,9 @@
       "Bash(git show:*)",
       "Bash(git cat-file:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(python -m doctest:*)"
+      "Bash(python -m doctest:*)",
+      "Bash(venvon)",
+      "Bash(pytest:*)"
     ]
   }
 }

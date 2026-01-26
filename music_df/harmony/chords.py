@@ -7,6 +7,7 @@ from music21.chord import Chord
 from music21.key import Key
 from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
 
+from music_df.keys import MAJOR_KEYS, MINOR_KEYS
 from music_df.transpose import SPELLING_TRANSPOSER
 from music_df.utils._types import MinorScaleType, Mode
 from music_df.utils.music21_caching import KEY_CACHE
@@ -443,8 +444,8 @@ for mode in TONICIZATIONS.keys():
 
 MODES = {0: "m", 1: "M"}
 
-MAJOR_KEYS = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
-MINOR_KEYS = ["c", "c#", "d", "eb", "e", "f", "f#", "g", "g#", "a", "bb", "b"]
+# MAJOR_KEYS = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+# MINOR_KEYS = ["c", "c#", "d", "eb", "e", "f", "f#", "g", "g#", "a", "bb", "b"]
 
 
 def tonicization_to_key(
