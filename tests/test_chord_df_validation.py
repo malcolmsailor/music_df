@@ -482,3 +482,255 @@ class TestValidateChordDfEnharmonicKeys:
         )
         result = validate_chord_df(df, allow_enharmonic_keys=True)
         assert result.is_valid
+
+
+class TestValidateChordDfRnFormat:
+    def test_valid_rn_format(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1, 2],
+                "key": ["C", "", "G"],
+                "rn": ["I", "V", "I"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert result.format_detected == "rn"
+
+    def test_valid_rn_format_with_release(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "release": [1, 2],
+                "key": ["C", ""],
+                "rn": ["I", "V"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert result.format_detected == "rn"
+
+    def test_valid_rn_format_with_chord_pcs(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["C", ""],
+                "rn": ["I", "V"],
+                "chord_pcs": ["047", "4b7"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert result.format_detected == "rn"
+
+    def test_rn_format_empty_first_key_fails(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["", "C"],
+                "rn": ["I", "V"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("First row key must not be empty" in e.message for e in result.errors)
+
+    def test_rn_format_null_first_key_fails(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": [None, "C"],
+                "rn": ["I", "V"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("First row key must not be empty" in e.message for e in result.errors)
+
+    def test_rn_format_invalid_key_fails(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["X", ""],
+                "rn": ["I", "V"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("Invalid key" in e.message for e in result.errors)
+
+    def test_rn_format_non_string_rn_fails(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["C", "G"],
+                "rn": [1, 5],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("'rn' must be string type" in e.message for e in result.errors)
+
+    def test_rn_format_temporal_consistency_warning(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 2, 1],
+                "key": ["C", "", ""],
+                "rn": ["I", "IV", "V"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert len(result.warnings) > 0
+        assert any("non-decreasing" in w.message for w in result.warnings)
+
+    def test_rn_format_strict_mode_unrecognized_columns(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["C", ""],
+                "rn": ["I", "V"],
+                "extra": ["foo", "bar"],
+            }
+        )
+        result = validate_chord_df(df, strict=False)
+        assert result.is_valid
+
+        result = validate_chord_df(df, strict=True)
+        assert not result.is_valid
+        assert any("Unrecognized column" in e.message for e in result.errors)
+
+    def test_rn_format_enharmonic_keys(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["F#", ""],
+                "rn": ["I", "V"],
+            }
+        )
+        result = validate_chord_df(df, allow_enharmonic_keys=False)
+        assert not result.is_valid
+
+        result = validate_chord_df(df, allow_enharmonic_keys=True)
+        assert result.is_valid
+
+
+class TestValidateChordDfChordPcs:
+    def test_valid_chord_pcs_joined_format(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0],
+                "key": ["C"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+                "chord_pcs": ["047"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_chord_pcs_split_format(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0],
+                "key": ["C"],
+                "primary_degree": ["I"],
+                "primary_alteration": ["_"],
+                "secondary_degree": ["I"],
+                "secondary_alteration": ["_"],
+                "quality": ["M"],
+                "inversion": [0],
+                "chord_pcs": ["047"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_chord_pcs_various_hex_values(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1, 2, 3],
+                "key": ["C", "C", "C", "C"],
+                "degree": ["I", "ii", "V", "I"],
+                "quality": ["M", "m", "M", "M"],
+                "inversion": [0, 0, 0, 0],
+                "chord_pcs": ["047", "259", "4b7", "abcdef0123456789"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_invalid_chord_pcs_non_hex(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0],
+                "key": ["C"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+                "chord_pcs": ["xyz"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("Invalid chord_pcs" in e.message for e in result.errors)
+        assert any("must be hex digits" in e.message for e in result.errors)
+
+    def test_invalid_chord_pcs_uppercase_hex(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0],
+                "key": ["C"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+                "chord_pcs": ["ABC"],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("Invalid chord_pcs" in e.message for e in result.errors)
+
+    def test_chord_pcs_empty_string_allowed(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["C", "C"],
+                "degree": ["I", "V"],
+                "quality": ["M", "M"],
+                "inversion": [0, 0],
+                "chord_pcs": ["047", ""],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_chord_pcs_null_allowed(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0, 1],
+                "key": ["C", "C"],
+                "degree": ["I", "V"],
+                "quality": ["M", "M"],
+                "inversion": [0, 0],
+                "chord_pcs": ["047", None],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_chord_pcs_non_string_type_fails(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0],
+                "key": ["C"],
+                "degree": ["I"],
+                "quality": ["M"],
+                "inversion": [0],
+                "chord_pcs": [47],
+            }
+        )
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("'chord_pcs' must be string type" in e.message for e in result.errors)

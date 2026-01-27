@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 
 from music_df.harmony.chords import (
-    CacheDict,
     MAJOR_KEYS,
     MINOR_KEYS,
+    CacheDict,
     get_key_pc_cache,
     get_rn_pc_cache,
 )
@@ -21,20 +21,34 @@ from music_df.harmony.chords import (
 # chord_df Specification
 # =============================================================================
 
-JOINED_FORMAT_REQUIRED_COLUMNS = frozenset({"onset", "key", "degree", "quality", "inversion"})
-SPLIT_FORMAT_REQUIRED_COLUMNS = frozenset({
-    "onset", "key",
-    "primary_degree", "primary_alteration",
-    "secondary_degree", "secondary_alteration",
-    "quality", "inversion"
-})
-OPTIONAL_COLUMNS = frozenset({"release"})
+JOINED_FORMAT_REQUIRED_COLUMNS = frozenset(
+    {"onset", "key", "degree", "quality", "inversion"}
+)
+SPLIT_FORMAT_REQUIRED_COLUMNS = frozenset(
+    {
+        "onset",
+        "key",
+        "primary_degree",
+        "primary_alteration",
+        "secondary_degree",
+        "secondary_alteration",
+        "quality",
+        "inversion",
+    }
+)
+OPTIONAL_COLUMNS = frozenset({"release", "chord_pcs"})
+
+RN_FORMAT_REQUIRED_COLUMNS = frozenset({"onset", "key", "rn"})
 
 VALID_ALTERATIONS = frozenset({"_", "#", "b", "##", "bb"})
 VALID_INVERSIONS = frozenset({0, 1, 2, 3})
 DEFAULT_NULL_CHORD_TOKEN = "na"
 
-DEGREE_REGEX = re.compile(r"""
+# Validates hex strings like "b26", "6a1", "047"
+CHORD_PCS_REGEX = re.compile(r"^[0-9a-f]+$")
+
+DEGREE_REGEX = re.compile(
+    r"""
     ^
     ([#b]*)         # group 1: primary alteration (e.g., "#", "b", "##")
     ([IViv]+)       # group 2: primary Roman numeral (e.g., "I", "VII", "iv")
@@ -44,7 +58,9 @@ DEGREE_REGEX = re.compile(r"""
         ([IViv]+)   #   group 5: secondary Roman numeral
     )?
     $
-""", re.VERBOSE)
+""",
+    re.VERBOSE,
+)
 
 ENHARMONIC_KEY_REGEX = re.compile(r"^[A-Ga-g](#*|b*)$")
 
@@ -67,52 +83,63 @@ class ValidationResult:
     is_valid: bool
     errors: list[ValidationError] = field(default_factory=list)
     warnings: list[ValidationError] = field(default_factory=list)
-    format_detected: Literal["joined", "split", "unknown"] = "unknown"
+    format_detected: Literal["joined", "split", "rn", "unknown"] = "unknown"
 
     def raise_if_invalid(self) -> None:
         if not self.is_valid:
             error_messages = [f"  - {e.message}" for e in self.errors]
-            raise ValueError(f"chord_df validation failed:\n" + "\n".join(error_messages))
+            raise ValueError(
+                "chord_df validation failed:\n" + "\n".join(error_messages)
+            )
 
 
 def _detect_format(
     df: pd.DataFrame,
-) -> Literal["joined", "split", "unknown"]:
+) -> Literal["joined", "split", "rn", "unknown"]:
     columns = set(df.columns)
+    # Check joined and split first since they are supersets of rn
     if JOINED_FORMAT_REQUIRED_COLUMNS <= columns:
         return "joined"
     if SPLIT_FORMAT_REQUIRED_COLUMNS <= columns:
         return "split"
+    if RN_FORMAT_REQUIRED_COLUMNS <= columns:
+        return "rn"
     return "unknown"
 
 
 def _check_index(df: pd.DataFrame, errors: list[ValidationError]) -> None:
     if isinstance(df.index, pd.RangeIndex):
         if df.index.start != 0 or df.index.stop != len(df) or df.index.step != 1:
-            errors.append(ValidationError(
+            errors.append(
+                ValidationError(
+                    column=None,
+                    row_index=None,
+                    message=f"Index must be RangeIndex(0, {len(df)}, 1), got RangeIndex({df.index.start}, {df.index.stop}, {df.index.step})",
+                )
+            )
+    elif not (df.index == range(len(df))).all():
+        errors.append(
+            ValidationError(
                 column=None,
                 row_index=None,
-                message=f"Index must be RangeIndex(0, {len(df)}, 1), got RangeIndex({df.index.start}, {df.index.stop}, {df.index.step})"
-            ))
-    elif not (df.index == range(len(df))).all():
-        errors.append(ValidationError(
-            column=None,
-            row_index=None,
-            message=f"Index must be equivalent to range(0, {len(df)})"
-        ))
+                message=f"Index must be equivalent to range(0, {len(df)})",
+            )
+        )
 
 
 def _check_columns(
     df: pd.DataFrame,
-    format_detected: Literal["joined", "split", "unknown"],
+    format_detected: Literal["joined", "split", "rn", "unknown"],
     errors: list[ValidationError],
 ) -> None:
     if format_detected == "unknown":
-        errors.append(ValidationError(
-            column=None,
-            row_index=None,
-            message=f"Could not detect format. Columns must include either {sorted(JOINED_FORMAT_REQUIRED_COLUMNS)} (joined) or {sorted(SPLIT_FORMAT_REQUIRED_COLUMNS)} (split). Got: {sorted(df.columns)}"
-        ))
+        errors.append(
+            ValidationError(
+                column=None,
+                row_index=None,
+                message=f"Could not detect format. Columns must include either {sorted(JOINED_FORMAT_REQUIRED_COLUMNS)} (joined), {sorted(SPLIT_FORMAT_REQUIRED_COLUMNS)} (split), or {sorted(RN_FORMAT_REQUIRED_COLUMNS)} (rn). Got: {sorted(df.columns)}",
+            )
+        )
 
 
 def _is_fraction_dtype(series: pd.Series) -> bool:
@@ -124,7 +151,7 @@ def _is_fraction_dtype(series: pd.Series) -> bool:
 
 def _check_types(
     df: pd.DataFrame,
-    format_detected: Literal["joined", "split", "unknown"],
+    format_detected: Literal["joined", "split", "rn", "unknown"],
     errors: list[ValidationError],
 ) -> None:
     temporal_cols = ["onset"]
@@ -133,37 +160,53 @@ def _check_types(
 
     for col in temporal_cols:
         if col in df.columns:
-            is_valid = pd.api.types.is_numeric_dtype(df[col]) or _is_fraction_dtype(df[col])
+            is_valid = pd.api.types.is_numeric_dtype(df[col]) or _is_fraction_dtype(
+                df[col]
+            )
             if not is_valid:
-                errors.append(ValidationError(
-                    column=col,
-                    row_index=None,
-                    message=f"Column '{col}' must be numeric or Fraction, got {df[col].dtype}"
-                ))
+                errors.append(
+                    ValidationError(
+                        column=col,
+                        row_index=None,
+                        message=f"Column '{col}' must be numeric or Fraction, got {df[col].dtype}",
+                    )
+                )
 
     if "inversion" in df.columns and not pd.api.types.is_numeric_dtype(df["inversion"]):
-        errors.append(ValidationError(
-            column="inversion",
-            row_index=None,
-            message=f"Column 'inversion' must be numeric, got {df['inversion'].dtype}"
-        ))
+        errors.append(
+            ValidationError(
+                column="inversion",
+                row_index=None,
+                message=f"Column 'inversion' must be numeric, got {df['inversion'].dtype}",
+            )
+        )
 
-    string_cols = ["key", "quality"]
-    if format_detected == "joined":
-        string_cols.append("degree")
-    elif format_detected == "split":
-        string_cols.extend([
-            "primary_degree", "primary_alteration",
-            "secondary_degree", "secondary_alteration"
-        ])
+    if format_detected == "rn":
+        # rn format only has key and rn as string columns
+        string_cols = ["key", "rn"]
+    else:
+        string_cols = ["key", "quality"]
+        if format_detected == "joined":
+            string_cols.append("degree")
+        elif format_detected == "split":
+            string_cols.extend(
+                [
+                    "primary_degree",
+                    "primary_alteration",
+                    "secondary_degree",
+                    "secondary_alteration",
+                ]
+            )
 
     for col in string_cols:
         if col in df.columns and not pd.api.types.is_string_dtype(df[col]):
-            errors.append(ValidationError(
-                column=col,
-                row_index=None,
-                message=f"Column '{col}' must be string type, got {df[col].dtype}"
-            ))
+            errors.append(
+                ValidationError(
+                    column=col,
+                    row_index=None,
+                    message=f"Column '{col}' must be string type, got {df[col].dtype}",
+                )
+            )
 
 
 def _check_key_values(
@@ -178,8 +221,13 @@ def _check_key_values(
     non_null_mask = ~df["key"].isna()
 
     if allow_enharmonic_keys:
+
         def is_valid_key(val):
-            return val == null_chord_token or ENHARMONIC_KEY_REGEX.match(str(val)) is not None
+            return (
+                val == null_chord_token
+                or ENHARMONIC_KEY_REGEX.match(str(val)) is not None
+            )
+
         invalid_mask = ~df["key"].apply(is_valid_key) & non_null_mask
     else:
         valid_keys = set(MAJOR_KEYS) | set(MINOR_KEYS) | {null_chord_token}
@@ -188,11 +236,13 @@ def _check_key_values(
     if invalid_mask.any():
         invalid_indices = df.index[invalid_mask].tolist()
         invalid_values = df.loc[invalid_mask, "key"].unique().tolist()
-        errors.append(ValidationError(
-            column="key",
-            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
-            message=f"Invalid key value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
-        ))
+        errors.append(
+            ValidationError(
+                column="key",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid key value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
 
 
 def _check_degree_format(
@@ -212,11 +262,13 @@ def _check_degree_format(
     if invalid_mask.any():
         invalid_indices = df.index[invalid_mask].tolist()
         invalid_values = df.loc[invalid_mask, "degree"].unique().tolist()
-        errors.append(ValidationError(
-            column="degree",
-            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
-            message=f"Invalid degree format: {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
-        ))
+        errors.append(
+            ValidationError(
+                column="degree",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid degree format: {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
 
 
 def _check_alteration_values(
@@ -235,11 +287,13 @@ def _check_alteration_values(
         if invalid_mask.any():
             invalid_indices = df.index[invalid_mask].tolist()
             invalid_values = df.loc[invalid_mask, col].unique().tolist()
-            errors.append(ValidationError(
-                column=col,
-                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
-                message=f"Invalid {col} value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
-            ))
+            errors.append(
+                ValidationError(
+                    column=col,
+                    row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                    message=f"Invalid {col} value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+                )
+            )
 
 
 def _check_inversion_values(
@@ -257,36 +311,134 @@ def _check_inversion_values(
     if invalid_mask.any():
         invalid_indices = non_null_inversions.index[invalid_mask].tolist()
         invalid_values = non_null_inversions.loc[invalid_mask].unique().tolist()
-        errors.append(ValidationError(
-            column="inversion",
-            row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
-            message=f"Invalid inversion value(s): {invalid_values} (must be in {sorted(VALID_INVERSIONS)}) at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}"
-        ))
+        errors.append(
+            ValidationError(
+                column="inversion",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid inversion value(s): {invalid_values} (must be in {sorted(VALID_INVERSIONS)}) at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
+
+
+def _check_chord_pcs_values(
+    df: pd.DataFrame,
+    errors: list[ValidationError],
+) -> None:
+    """Validate chord_pcs column when present (hex string format)."""
+    if "chord_pcs" not in df.columns:
+        return
+
+    # Check type: allow string dtype or object dtype (for mixed string/None)
+    is_string = pd.api.types.is_string_dtype(df["chord_pcs"])
+    is_object = df["chord_pcs"].dtype == object
+    if not (is_string or is_object):
+        errors.append(
+            ValidationError(
+                column="chord_pcs",
+                row_index=None,
+                message=f"Column 'chord_pcs' must be string type, got {df['chord_pcs'].dtype}",
+            )
+        )
+        return
+
+    # Check values: must be hex digits only (null and empty allowed)
+    def is_valid_chord_pcs(val):
+        if pd.isna(val) or val == "":
+            return True
+        if not isinstance(val, str):
+            return False
+        return CHORD_PCS_REGEX.match(val) is not None
+
+    invalid_mask = ~df["chord_pcs"].apply(is_valid_chord_pcs)
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        invalid_values = df.loc[invalid_mask, "chord_pcs"].unique().tolist()
+        errors.append(
+            ValidationError(
+                column="chord_pcs",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid chord_pcs value(s): {invalid_values} (must be hex digits) at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
+
+
+def _check_key_values_rn_format(
+    df: pd.DataFrame,
+    null_chord_token: str,
+    errors: list[ValidationError],
+    allow_enharmonic_keys: bool = False,
+) -> None:
+    """Validate key column for rn format (allows empty strings for ffill)."""
+    if "key" not in df.columns:
+        return
+
+    # First row key must not be empty (required for ffill)
+    first_key = df["key"].iloc[0] if len(df) > 0 else None
+    if first_key is None or pd.isna(first_key) or first_key == "":
+        errors.append(
+            ValidationError(
+                column="key",
+                row_index=0,
+                message="First row key must not be empty (required for forward-fill)",
+            )
+        )
+
+    # Non-empty keys must be valid
+    non_empty_mask = ~df["key"].isna() & (df["key"] != "")
+
+    if allow_enharmonic_keys:
+
+        def is_valid_key(val):
+            return (
+                val == null_chord_token
+                or ENHARMONIC_KEY_REGEX.match(str(val)) is not None
+            )
+
+        invalid_mask = ~df["key"].apply(is_valid_key) & non_empty_mask
+    else:
+        valid_keys = set(MAJOR_KEYS) | set(MINOR_KEYS) | {null_chord_token}
+        invalid_mask = ~df["key"].isin(valid_keys) & non_empty_mask
+
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        invalid_values = df.loc[invalid_mask, "key"].unique().tolist()
+        errors.append(
+            ValidationError(
+                column="key",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid key value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
 
 
 def _check_unrecognized_columns(
     df: pd.DataFrame,
-    format_detected: Literal["joined", "split", "unknown"],
+    format_detected: Literal["joined", "split", "rn", "unknown"],
     errors: list[ValidationError],
 ) -> None:
     if format_detected == "joined":
         recognized = JOINED_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
     elif format_detected == "split":
         recognized = SPLIT_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
+    elif format_detected == "rn":
+        recognized = RN_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
     else:
         recognized = (
             JOINED_FORMAT_REQUIRED_COLUMNS
             | SPLIT_FORMAT_REQUIRED_COLUMNS
+            | RN_FORMAT_REQUIRED_COLUMNS
             | OPTIONAL_COLUMNS
         )
 
     unrecognized = set(df.columns) - recognized
     if unrecognized:
-        errors.append(ValidationError(
-            column=None,
-            row_index=None,
-            message=f"Unrecognized column(s): {sorted(unrecognized)}"
-        ))
+        errors.append(
+            ValidationError(
+                column=None,
+                row_index=None,
+                message=f"Unrecognized column(s): {sorted(unrecognized)}",
+            )
+        )
 
 
 def _check_temporal_consistency(
@@ -300,30 +452,36 @@ def _check_temporal_consistency(
     decreasing_mask = onset_diff < 0
     if decreasing_mask.any():
         decreasing_indices = df.index[decreasing_mask].tolist()
-        warnings.append(ValidationError(
-            column="onset",
-            row_index=decreasing_indices[0] if len(decreasing_indices) == 1 else None,
-            message=f"Onset values are not non-decreasing at row(s) {decreasing_indices[:5]}{'...' if len(decreasing_indices) > 5 else ''}",
-            severity="warning"
-        ))
+        warnings.append(
+            ValidationError(
+                column="onset",
+                row_index=decreasing_indices[0]
+                if len(decreasing_indices) == 1
+                else None,
+                message=f"Onset values are not non-decreasing at row(s) {decreasing_indices[:5]}{'...' if len(decreasing_indices) > 5 else ''}",
+                severity="warning",
+            )
+        )
 
     if "release" in df.columns:
         invalid_release_mask = df["release"] < df["onset"]
         invalid_release_mask = invalid_release_mask & ~df["release"].isna()
         if invalid_release_mask.any():
             invalid_indices = df.index[invalid_release_mask].tolist()
-            warnings.append(ValidationError(
-                column="release",
-                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
-                message=f"Release < onset at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
-                severity="warning"
-            ))
+            warnings.append(
+                ValidationError(
+                    column="release",
+                    row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                    message=f"Release < onset at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+                    severity="warning",
+                )
+            )
 
 
 def validate_chord_df(
     chord_df: pd.DataFrame,
     *,
-    format: Literal["joined", "split", "auto"] = "auto",
+    format: Literal["joined", "split", "rn", "auto"] = "auto",
     null_chord_token: str = DEFAULT_NULL_CHORD_TOKEN,
     null_alteration_char: str = "_",
     strict: bool = False,
@@ -339,7 +497,7 @@ def validate_chord_df(
     ----------
     chord_df : pd.DataFrame
         The DataFrame to validate.
-    format : {"joined", "split", "auto"}
+    format : {"joined", "split", "rn", "auto"}
         The expected format. If "auto", detect from columns.
     null_chord_token : str
         Token used for null/rest chords (default "na").
@@ -364,26 +522,30 @@ def validate_chord_df(
 
     Examples
     --------
-    >>> df = pd.DataFrame({
-    ...     "onset": [0.0, 1.0],
-    ...     "key": ["C", "C"],
-    ...     "degree": ["I", "V/V"],
-    ...     "quality": ["M", "M"],
-    ...     "inversion": [0, 0],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "onset": [0.0, 1.0],
+    ...         "key": ["C", "C"],
+    ...         "degree": ["I", "V/V"],
+    ...         "quality": ["M", "M"],
+    ...         "inversion": [0, 0],
+    ...     }
+    ... )
     >>> result = validate_chord_df(df)
     >>> result.is_valid
     True
     >>> result.format_detected
     'joined'
 
-    >>> df_bad = pd.DataFrame({
-    ...     "onset": [0.0],
-    ...     "key": ["X"],
-    ...     "degree": ["I"],
-    ...     "quality": ["M"],
-    ...     "inversion": [0],
-    ... })
+    >>> df_bad = pd.DataFrame(
+    ...     {
+    ...         "onset": [0.0],
+    ...         "key": ["X"],
+    ...         "degree": ["I"],
+    ...         "quality": ["M"],
+    ...         "inversion": [0],
+    ...     }
+    ... )
     >>> result = validate_chord_df(df_bad)
     >>> result.is_valid
     False
@@ -412,15 +574,26 @@ def validate_chord_df(
 
     # Check values
     if check_values and format_detected != "unknown":
-        _check_key_values(chord_df, null_chord_token, errors, allow_enharmonic_keys)
-
-        if format_detected == "joined":
-            _check_degree_format(chord_df, null_chord_token, errors)
+        if format_detected == "rn":
+            _check_key_values_rn_format(
+                chord_df, null_chord_token, errors, allow_enharmonic_keys
+            )
+            # TODO(validation): rn content validation could be added in the future.
+            # Currently skipped because rn format varies by cache (e.g., "V" vs "VM").
         else:
-            _check_alteration_values(chord_df, null_chord_token, null_alteration_char, errors)
+            _check_key_values(chord_df, null_chord_token, errors, allow_enharmonic_keys)
 
-        _check_inversion_values(chord_df, errors)
+            if format_detected == "joined":
+                _check_degree_format(chord_df, null_chord_token, errors)
+            else:
+                _check_alteration_values(
+                    chord_df, null_chord_token, null_alteration_char, errors
+                )
+
+            _check_inversion_values(chord_df, errors)
+
         _check_temporal_consistency(chord_df, warnings)
+        _check_chord_pcs_values(chord_df, errors)
 
     if strict:
         _check_unrecognized_columns(chord_df, format_detected, errors)
@@ -455,22 +628,26 @@ def assert_valid_chord_df(chord_df: pd.DataFrame, **kwargs) -> None:
 
     Examples
     --------
-    >>> df = pd.DataFrame({
-    ...     "onset": [0.0, 1.0],
-    ...     "key": ["C", "G"],
-    ...     "degree": ["I", "V"],
-    ...     "quality": ["M", "M"],
-    ...     "inversion": [0, 1],
-    ... })
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "onset": [0.0, 1.0],
+    ...         "key": ["C", "G"],
+    ...         "degree": ["I", "V"],
+    ...         "quality": ["M", "M"],
+    ...         "inversion": [0, 1],
+    ...     }
+    ... )
     >>> assert_valid_chord_df(df)  # No error
 
-    >>> df_bad = pd.DataFrame({
-    ...     "onset": [0.0],
-    ...     "key": ["X"],
-    ...     "degree": ["I"],
-    ...     "quality": ["M"],
-    ...     "inversion": [0],
-    ... })
+    >>> df_bad = pd.DataFrame(
+    ...     {
+    ...         "onset": [0.0],
+    ...         "key": ["X"],
+    ...         "degree": ["I"],
+    ...         "quality": ["M"],
+    ...         "inversion": [0],
+    ...     }
+    ... )
     >>> assert_valid_chord_df(df_bad)
     Traceback (most recent call last):
         ...
