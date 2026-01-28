@@ -7,7 +7,6 @@ readme = "README.md"
 # TODO: I think some of these dependencies should be optional
 dependencies = [
     "pandas",
-    "mido",
     "symusic",
     "matplotlib",
     "pyyaml",

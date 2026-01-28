@@ -1,5 +1,8 @@
 """
-Tests comparing mido-based midi_to_table() with symusic-based read_midi_symusic().
+Tests for symusic-based MIDI parsing functions.
+
+This module tests read_midi_symusic() and write_midi_symusic() from
+music_df.conversions.symusic_conv.
 """
 
 import fractions
@@ -11,109 +14,30 @@ import pandas as pd
 import pytest
 
 from music_df.conversions import read_midi_symusic, write_midi_symusic
-from music_df.midi_parser import midi_to_table
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 PALMID = os.path.join(SCRIPT_DIR, "test_files", "misc_Palestrina.mid")
 
 
-def _compare_note_dfs(
-    mido_df: pd.DataFrame,
-    symusic_df: pd.DataFrame,
-    atol: float = 1e-9,
-    compare_tracks: bool = False,
-):
-    """Compare note DataFrames from mido and symusic.
-
-    Args:
-        mido_df: DataFrame from midi_to_table.
-        symusic_df: DataFrame from read_midi_symusic.
-        atol: Absolute tolerance for float comparisons.
-        compare_tracks: If True, compare track numbers. Note that mido and symusic
-            may have different track numbering (symusic skips empty tracks).
-    """
-    # Filter to notes only
-    mido_notes = mido_df[mido_df["type"] == "note"].copy()
-    symusic_notes = symusic_df[symusic_df["type"] == "note"].copy()
-
-    # Sort both for comparison (don't sort by track since numbering may differ)
-    mido_notes = mido_notes.sort_values(
-        ["onset", "pitch", "release"]
-    ).reset_index(drop=True)
-    symusic_notes = symusic_notes.sort_values(
-        ["onset", "pitch", "release"]
-    ).reset_index(drop=True)
-
-    assert len(mido_notes) == len(symusic_notes), (
-        f"Note count mismatch: mido={len(mido_notes)}, symusic={len(symusic_notes)}"
-    )
-
-    for i, (_, mido_row), (_, symusic_row) in zip(
-        range(len(mido_notes)), mido_notes.iterrows(), symusic_notes.iterrows()
-    ):
-        # Compare onset
-        if isinstance(mido_row["onset"], fractions.Fraction):
-            assert mido_row["onset"] == symusic_row["onset"], (
-                f"Onset mismatch at row {i}: mido={mido_row['onset']}, symusic={symusic_row['onset']}"
-            )
-        else:
-            assert math.isclose(mido_row["onset"], symusic_row["onset"], abs_tol=atol), (
-                f"Onset mismatch at row {i}: mido={mido_row['onset']}, symusic={symusic_row['onset']}"
-            )
-
-        # Compare release
-        if isinstance(mido_row["release"], fractions.Fraction):
-            assert mido_row["release"] == symusic_row["release"], (
-                f"Release mismatch at row {i}: mido={mido_row['release']}, symusic={symusic_row['release']}"
-            )
-        else:
-            assert math.isclose(mido_row["release"], symusic_row["release"], abs_tol=atol), (
-                f"Release mismatch at row {i}: mido={mido_row['release']}, symusic={symusic_row['release']}"
-            )
-
-        # Compare pitch
-        assert mido_row["pitch"] == symusic_row["pitch"], (
-            f"Pitch mismatch at row {i}: mido={mido_row['pitch']}, symusic={symusic_row['pitch']}"
-        )
-
-        # Compare velocity
-        assert mido_row["velocity"] == symusic_row["velocity"], (
-            f"Velocity mismatch at row {i}: mido={mido_row['velocity']}, symusic={symusic_row['velocity']}"
-        )
-
-        # Compare track (optional - symusic may skip empty tracks)
-        if compare_tracks:
-            assert mido_row["track"] == symusic_row["track"], (
-                f"Track mismatch at row {i}: mido={mido_row['track']}, symusic={symusic_row['track']}"
-            )
+def test_read_midi_symusic_float_time():
+    """Test read_midi_symusic with float time."""
+    df = read_midi_symusic(PALMID, time_type=float, notes_only=True)
+    assert len(df) > 0
+    assert all(isinstance(t, float) for t in df["onset"])
 
 
-def test_equivalence_float_time():
-    """Test that mido and symusic produce equivalent results with float time."""
-    mido_df = midi_to_table(PALMID, time_type=float, notes_only=True)
-    symusic_df = read_midi_symusic(PALMID, time_type=float, notes_only=True)
-    _compare_note_dfs(mido_df, symusic_df)
+def test_read_midi_symusic_fraction_time():
+    """Test read_midi_symusic with Fraction time."""
+    df = read_midi_symusic(PALMID, time_type=fractions.Fraction, notes_only=True)
+    assert len(df) > 0
+    assert all(isinstance(t, fractions.Fraction) for t in df["onset"])
 
 
-def test_equivalence_fraction_time():
-    """Test that mido and symusic produce equivalent results with Fraction time."""
-    mido_df = midi_to_table(PALMID, time_type=fractions.Fraction, notes_only=True)
-    symusic_df = read_midi_symusic(PALMID, time_type=fractions.Fraction, notes_only=True)
-    _compare_note_dfs(mido_df, symusic_df)
-
-
-def test_equivalence_int_time():
-    """Test that mido and symusic produce equivalent results with int (tick) time."""
-    mido_df = midi_to_table(PALMID, time_type=int, notes_only=True)
-    symusic_df = read_midi_symusic(PALMID, time_type=int, notes_only=True)
-    _compare_note_dfs(mido_df, symusic_df)
-
-
-def test_equivalence_with_non_note_events():
-    """Test that note extraction is equivalent even when non-note events are included."""
-    mido_df = midi_to_table(PALMID, time_type=float, notes_only=False)
-    symusic_df = read_midi_symusic(PALMID, time_type=float, notes_only=False)
-    _compare_note_dfs(mido_df, symusic_df)
+def test_read_midi_symusic_int_time():
+    """Test read_midi_symusic with int (tick) time."""
+    df = read_midi_symusic(PALMID, time_type=int, notes_only=True)
+    assert len(df) > 0
+    assert all(isinstance(t, int) for t in df["onset"])
 
 
 def test_round_trip_symusic():
@@ -126,7 +50,24 @@ def test_round_trip_symusic():
     try:
         write_midi_symusic(original_df, temp_path)
         reloaded_df = read_midi_symusic(temp_path, time_type=float, notes_only=True)
-        _compare_note_dfs(original_df, reloaded_df)
+
+        # Sort both for comparison
+        original_sorted = original_df.sort_values(
+            ["onset", "pitch", "release"]
+        ).reset_index(drop=True)
+        reloaded_sorted = reloaded_df.sort_values(
+            ["onset", "pitch", "release"]
+        ).reset_index(drop=True)
+
+        assert len(original_sorted) == len(reloaded_sorted)
+
+        for i in range(len(original_sorted)):
+            orig = original_sorted.iloc[i]
+            reload = reloaded_sorted.iloc[i]
+            assert math.isclose(orig["onset"], reload["onset"], abs_tol=1e-9)
+            assert math.isclose(orig["release"], reload["release"], abs_tol=1e-9)
+            assert orig["pitch"] == reload["pitch"]
+            assert orig["velocity"] == reload["velocity"]
     finally:
         os.remove(temp_path)
 
@@ -170,10 +111,9 @@ def test_tempo_extraction():
 
 
 if __name__ == "__main__":
-    test_equivalence_float_time()
-    test_equivalence_fraction_time()
-    test_equivalence_int_time()
-    test_equivalence_with_non_note_events()
+    test_read_midi_symusic_float_time()
+    test_read_midi_symusic_fraction_time()
+    test_read_midi_symusic_int_time()
     test_round_trip_symusic()
     test_display_name()
     test_notes_only_flag()

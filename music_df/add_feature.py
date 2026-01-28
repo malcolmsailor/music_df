@@ -13,9 +13,12 @@ from typing import Callable, Iterable
 
 import numpy as np
 import pandas as pd
-from mido import tempo2bpm
-
 from music_df.constants import NAME_TO_MIDI_INSTRUMENT
+
+
+def _tempo2bpm(tempo: int) -> float:
+    """Convert MIDI tempo (microseconds per beat) to BPM."""
+    return 60_000_000 / tempo
 from music_df.sort_df import sort_df
 
 
@@ -321,7 +324,7 @@ def make_tempos_explicit(music_df: pd.DataFrame, default_tempo: float) -> pd.Dat
     tempo_mask = music_df.type == "set_tempo"
     music_df["tempo"] = float("nan")
     music_df.loc[tempo_mask, "tempo"] = [
-        tempo2bpm(_to_dict_if_necessary(d)["tempo"])
+        _tempo2bpm(_to_dict_if_necessary(d)["tempo"])
         for _, d in music_df[tempo_mask].other.items()
     ]
     # Next handle BPM tempi from musicxml etc
