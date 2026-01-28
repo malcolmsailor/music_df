@@ -6,7 +6,11 @@
       "mcp__ide__getDiagnostics",
       "Bash(python -m doctest:*)",
       "Bash(venvon)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:symusic.readthedocs.io)",
+      "Bash(python3:*)"
     ]
   }
 }
