@@ -50,6 +50,7 @@ def symusic_score_to_df(
 
     # Extract notes from all tracks
     for track_i, track in enumerate(score.tracks):
+        channel = 9 if track.is_drum else 0
         for note in track.notes:
             rows.append(
                 {
@@ -58,7 +59,7 @@ def symusic_score_to_df(
                     "onset": _get_time(note.time),
                     "release": _get_time(note.time + note.duration),
                     "track": track_i,
-                    "channel": 0,
+                    "channel": channel,
                     "pitch": note.pitch,
                     "velocity": note.velocity,
                     "other": None,
