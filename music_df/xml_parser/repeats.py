@@ -11,11 +11,12 @@ def _get_onset_from_measure_num(measure_num, measure_ends):
     return measure_ends[measure_num]
 
 
-def _update_ending_number(ending_number: str):
+def _update_ending_number(ending_number: str, warn: bool = False):
     try:
         ending_int = int(re.match(r".*(\d+).*", ending_number).group(1))
     except IndexError:
-        warnings.warn(f"no ending number found in {ending_number}")
+        if warn:
+            warnings.warn(f"no ending number found in {ending_number}")
         return "unknown"
     else:
         return str(ending_int + 1)
@@ -24,6 +25,7 @@ def _update_ending_number(ending_number: str):
 def get_repeat_segments(
     repeats: t.Dict[int, t.Dict[str, t.Dict[str, t.Any]]],
     measure_ends: t.Dict[int, Number],
+    warn: bool = False,
 ) -> t.Tuple[
     t.List[t.Tuple[Number, Number]],
     t.List[t.Tuple[Number, Number]],
@@ -225,10 +227,11 @@ def get_repeat_segments(
         repeat_dict = repeats[measure_num]
         if "forward" in repeat_dict:
             if "start-ending" in repeat_dict:
-                warnings.warn(
-                    f"M. {measure_num} has 'forward' repeat bar and "
-                    "'start-ending'; ignoring 'start-ending'"
-                )
+                if warn:
+                    warnings.warn(
+                        f"M. {measure_num} has 'forward' repeat bar and "
+                        "'start-ending'; ignoring 'start-ending'"
+                    )
             onset = _get_onset_from_measure_num(measure_num - 1, measure_ends)
             if ending_jump_from is not None:
                 # there are incomplete endings...
@@ -239,7 +242,7 @@ def get_repeat_segments(
                     ]
                 )
                 if ending_number_used:
-                    ending_number = _update_ending_number(ending_number)
+                    ending_number = _update_ending_number(ending_number, warn=warn)
                 segment_types.extend(
                     ["pre_ending_repeat", f"ending_{ending_number}"]
                 )
@@ -292,7 +295,7 @@ def get_repeat_segments(
             ]
         )
         if ending_number_used:
-            ending_number = _update_ending_number(ending_number)
+            ending_number = _update_ending_number(ending_number, warn=warn)
         segment_types.extend(["pre_ending_repeat", f"ending_{ending_number}"])
     if last_forward_repeat == last_boundary():
         # There is a missing backward repeat at the end of the score.

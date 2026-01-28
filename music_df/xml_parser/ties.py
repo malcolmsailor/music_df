@@ -11,6 +11,7 @@ def merge_ties(
     notes: t.Iterable[Note],
     max_overlap: float = 1 / 16,
     min_gap_for_warn: float = 1 / 16,
+    warn: bool = False,
 ) -> t.List[Note]:
     """
     Assumes that notes are in sorted order by onset.
@@ -55,14 +56,14 @@ def merge_ties(
 
     >>> import warnings
     >>> warnings.simplefilter("error")
-    >>> merge_ties([Note(60, 0.0, 1.0, tie_to_next=True), Note(60, 1.0, 2.0)])
+    >>> merge_ties([Note(60, 0.0, 1.0, tie_to_next=True), Note(60, 1.0, 2.0)], warn=True)
     Traceback (most recent call last):
     UserWarning: dangling tie at 60:0.0-1.0⌒
 
     For a similar reason the same warning is emitted if the last Note is
     tied:
 
-    >>> merge_ties([Note(60, 0.0, 1.0), Note(60, 1.0, 2.0, tie_to_next=True)])
+    >>> merge_ties([Note(60, 0.0, 1.0), Note(60, 1.0, 2.0, tie_to_next=True)], warn=True)
     Traceback (most recent call last):
     UserWarning: dangling tie at 60:1.0-2.0⌒
 
@@ -73,6 +74,7 @@ def merge_ties(
     ...         Note(60, 0.0, 1.0, tie_to_next=True),
     ...         Note(62, 1.0, 2.0, tie_to_prev=True),
     ...     ],
+    ...     warn=True,
     ... )
     Traceback (most recent call last):
     UserWarning: dangling tie at 60:0.0-1.0⌒
@@ -118,6 +120,7 @@ def merge_ties(
     ...         Note(60, 0.0, 2.0, tie_to_next=True),
     ...         Note(60, 2.5, 3.0, tie_to_prev=True),
     ...     ],
+    ...     warn=True,
     ... )
     Traceback (most recent call last):
     UserWarning: Release of note at 2.0 < onset of note at 2.5
@@ -160,7 +163,8 @@ def merge_ties(
     ...             tie_to_next=False,
     ...             tie_to_prev=True,
     ...         ),
-    ...     ]
+    ...     ],
+    ...     warn=True,
     ... )
     Traceback (most recent call last):
     UserWarning: Release of note at 0.5 < onset of note at 1.0
@@ -272,7 +276,7 @@ def merge_ties(
         # if not math.isclose(note1.release, note2.onset):
         if note1.release < note2.onset:
             if allow_gap[note1.pitch]:
-                if note2.onset - note1.release >= min_gap_for_warn:
+                if warn and note2.onset - note1.release >= min_gap_for_warn:
                     warnings.warn(
                         f"Release of note at {note1.release} < "
                         f"onset of note at {note2.onset}"
@@ -291,7 +295,7 @@ def merge_ties(
                 )
 
     def _clear_queue(queue):
-        if queue[-1].tie_to_next:
+        if warn and queue[-1].tie_to_next:
             warnings.warn(f"dangling tie at {queue[-1]}")
         first_note = queue.popleft()
         note1 = first_note
@@ -354,7 +358,7 @@ def merge_ties(
     for voice_queue in queues.values():
         for queue in voice_queue.values():
             if queue:
-                if queue[-1].tie_to_next:
+                if warn and queue[-1].tie_to_next:
                     warnings.warn(f"dangling tie at {queue[-1]}")
                 _clear_queue(queue)
     return sorted(out, key=lambda note: (note.onset, note.release))

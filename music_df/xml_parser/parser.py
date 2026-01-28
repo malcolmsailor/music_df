@@ -815,7 +815,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         # if "tocoda" in attrs:
         #     pass
 
-    def _expand_repeats(self):
+    def _expand_repeats(self, warn: bool = False):
         def _expand_sub(list_):
             expanded = []
             for (repeat_start, _), (orig_start, orig) in zip(
@@ -836,7 +836,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         assert not self._repeats_have_been_expanded
         repeats = self._repeats[0]
         measure_ends = self._measure_ends[0]
-        orig_segments, repeated_segments, _ = get_repeat_segments(repeats, measure_ends)
+        orig_segments, repeated_segments, _ = get_repeat_segments(repeats, measure_ends, warn=warn)
         out = []
         for part in self._parts:
             out.append(_expand_sub(part))
@@ -847,12 +847,12 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._repeats_have_been_expanded = True
         self._parts = out
 
-    def _drop_endings(self):
+    def _drop_endings(self, warn: bool = False):
         assert not self._repeats_have_been_expanded
 
         repeats = self._repeats[0]
         measure_ends = self._measure_ends[0]
-        orig_segments, _, segment_types = get_repeat_segments(repeats, measure_ends)
+        orig_segments, _, segment_types = get_repeat_segments(repeats, measure_ends, warn=warn)
         prev_ending_num = None
         prev_ending_i = None
         to_remove = []
@@ -907,7 +907,7 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         self._parts = out
         self._repeats_have_been_expanded = True
 
-    def get_df(self, sort=True) -> pd.DataFrame:
+    def get_df(self, sort=True, warn: bool = False) -> pd.DataFrame:
         expand_repeats = self._expand_repeats_flag
         assert self._parsed
         if (
@@ -916,9 +916,9 @@ class MusicXmlHandler(xml.sax.ContentHandler):
             and any(repeats for repeats in self._repeats)
         ):
             if expand_repeats in ("yes", "max2"):
-                self._expand_repeats()
+                self._expand_repeats(warn=warn)
             elif expand_repeats == "drop":
-                self._drop_endings()
+                self._drop_endings(warn=warn)
             else:
                 raise ValueError(
                     f"expand_repeats must be in ('yes', 'max2', 'no', 'drop')"
@@ -926,13 +926,13 @@ class MusicXmlHandler(xml.sax.ContentHandler):
 
         no_rests = [[note for note in part if note.pitch] for part in self._parts]
         no_graces = [[note for note in part if not note.grace] for part in no_rests]
-        if (not WARNED_RE_GRACE_NOTES) and [len(l) for l in no_rests] != [
+        if warn and (not WARNED_RE_GRACE_NOTES) and [len(l) for l in no_rests] != [
             len(l) for l in no_graces
         ]:
             warnings.warn("removing grace notes")
         merged_ties = []
         for i, part in enumerate(no_graces):
-            merged_ties.append(merge_ties(part))
+            merged_ties.append(merge_ties(part, warn=warn))
         # merged_ties = [merge_ties(part) for part in no_rests]
         all_parts = reduce(
             list.__add__,
@@ -975,18 +975,18 @@ def parse_mxl_metadata(archive: ZipFile) -> str:
     return handler.musicxml_path
 
 
-def parse_xml(fp, sort=True, expand_repeats: RepeatOptions = "yes"):
+def parse_xml(fp, sort=True, expand_repeats: RepeatOptions = "yes", warn: bool = False):
     handler = MusicXmlHandler(expand_repeats=expand_repeats)
     xml.sax.parse(fp, handler)
-    df = handler.get_df(sort=sort)
+    df = handler.get_df(sort=sort, warn=warn)
     return df
 
 
-def parse_mxl(path, sort=True, expand_repeats="yes"):
+def parse_mxl(path, sort=True, expand_repeats="yes", warn: bool = False):
     archive = ZipFile(path)
     musicxml_path = parse_mxl_metadata(archive)
     with archive.open(musicxml_path) as inf:
-        return parse_xml(inf, sort=sort, expand_repeats=expand_repeats)
+        return parse_xml(inf, sort=sort, expand_repeats=expand_repeats, warn=warn)
 
 
 @cacher()
@@ -1007,19 +1007,21 @@ def read_mscore(path) -> bytes:
     return data
 
 
-def parse_musescore(path, sort=True, expand_repeats: RepeatOptions = "yes"):
+def parse_musescore(path, sort=True, expand_repeats: RepeatOptions = "yes", warn: bool = False):
     _, musicxml_path = tempfile.mkstemp(suffix=".xml")
 
     try:
         xml_bytes = read_mscore(path)
         with open(musicxml_path, "wb") as outf:
             outf.write(xml_bytes)
-        return parse_xml(musicxml_path, sort=sort, expand_repeats=expand_repeats)
+        return parse_xml(musicxml_path, sort=sort, expand_repeats=expand_repeats, warn=warn)
     finally:
         os.remove(musicxml_path)
 
 
-def parse(path, sort=True, expand_repeats: RepeatOptions = "yes") -> pd.DataFrame:
+def parse(
+    path, sort=True, expand_repeats: RepeatOptions = "yes", warn: bool = False
+) -> pd.DataFrame:
     """Parse a musicxml file, return a Pandas DataFrame.
 
     Args:
@@ -1036,6 +1038,7 @@ def parse(path, sort=True, expand_repeats: RepeatOptions = "yes") -> pd.DataFram
             "max2": repeats take place but the `times` attribute is set to at most
                 2.
             Default: "yes".
+        warn: whether to emit warnings (default: False).
 
     Returns:
         None
@@ -1045,11 +1048,11 @@ def parse(path, sort=True, expand_repeats: RepeatOptions = "yes") -> pd.DataFram
     """
     try:
         if path.endswith(".mscx") or path.endswith(".mscz"):
-            return parse_musescore(path, sort=sort, expand_repeats=expand_repeats)
+            return parse_musescore(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
         if path.endswith(".mxl"):
-            return parse_mxl(path, sort=sort, expand_repeats=expand_repeats)
+            return parse_mxl(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
         else:
-            return parse_xml(path, sort=sort, expand_repeats=expand_repeats)
+            return parse_xml(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
     except FileNotFoundError:
         raise
     except Exception as e:
