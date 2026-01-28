@@ -22,6 +22,9 @@ MIDI_NUM_MEMO = defaultdict(dict)
 ALPHABET = "fcgdaeb".upper()
 
 
+PERCUSSION_CHANNEL = 9
+
+
 def chromatic_transpose(
     df: pd.DataFrame,
     interval: int,
@@ -35,6 +38,9 @@ def chromatic_transpose(
     Note that this will change the "pitch" column but not any other columns that may
     be pitch-related such as those that may indicate the spelling or key signature.
 
+    Percussion notes (channel 9) are not transposed since MIDI percussion pitches
+    represent drum instruments rather than actual pitches.
+
     Args:
         df: a music_df
         interval: the interval to transpose by
@@ -46,7 +52,11 @@ def chromatic_transpose(
         A new music_df with the pitches transposed by the given interval.
     """
     out_df = df if inplace else df.copy()
-    out_df.pitch += interval
+    if "channel" in out_df.columns:
+        non_perc_mask = out_df.channel != PERCUSSION_CHANNEL
+        out_df.loc[non_perc_mask, "pitch"] += interval
+    else:
+        out_df.pitch += interval
     if metadata:
         if "chromatic_transpose" in out_df.attrs:
             out_df.attrs["chromatic_transpose"] += interval
@@ -246,8 +256,13 @@ def transpose_to_key(
     if not interval:
         return out_df
 
+    if "channel" in df.columns:
+        non_perc_mask = df.channel != PERCUSSION_CHANNEL
+    else:
+        non_perc_mask = slice(None)
+
     for column in df.attrs.get("pitch_columns", ("pitch",)):
-        out_df[column] = df[column].apply(
+        out_df.loc[non_perc_mask, column] = df.loc[non_perc_mask, column].apply(
             functools.partial(MIDI_NUM_TRANSPOSER, interval=interval)
         )
     for column in df.attrs.get("spelled_columns", ()):
