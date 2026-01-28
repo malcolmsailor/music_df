@@ -7,7 +7,13 @@ from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from typing import Literal
 
-import h5py
+try:
+    import h5py
+except ImportError as e:
+    raise ImportError(
+        "h5py is required for this script. "
+        "Install with: pip install music_df[scripts]"
+    ) from e
 import numpy as np
 import pandas as pd
 from tqdm import tqdm

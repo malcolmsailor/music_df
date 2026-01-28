@@ -4,7 +4,13 @@ import re
 import tempfile
 import typing as t
 
-import sh
+try:
+    import sh
+except ImportError as e:
+    raise ImportError(
+        "sh is required for humdrum export features. "
+        "Install with: pip install music_df[humdrum]"
+    ) from e
 
 
 def run_minrhy(files: t.List[str]) -> int:

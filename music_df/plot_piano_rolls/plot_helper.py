@@ -1,7 +1,14 @@
 from typing import Any, Sequence
 
 import pandas as pd
-from matplotlib import pyplot as plt
+
+try:
+    from matplotlib import pyplot as plt
+except ImportError as e:
+    raise ImportError(
+        "matplotlib is required for visualization features. "
+        "Install with: pip install music_df[visualization]"
+    ) from e
 
 from music_df.plot_piano_rolls.plot import get_colormapping, plot_piano_roll
 

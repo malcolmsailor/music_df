@@ -3,9 +3,16 @@ A function for converting music21 scores to music dataframes.
 """
 
 import pandas as pd
-from music21.meter import TimeSignature
-from music21.note import Note
-from music21.stream import Measure, Part, Score
+
+try:
+    from music21.meter import TimeSignature
+    from music21.note import Note
+    from music21.stream import Measure, Part, Score
+except ImportError as e:
+    raise ImportError(
+        "music21 is required for this feature. "
+        "Install with: pip install music_df[music21]"
+    ) from e
 
 from music_df import sort_df
 from music_df.add_feature import add_bar_durs

@@ -5,7 +5,10 @@ from copy import copy
 from dataclasses import asdict, dataclass
 from fractions import Fraction
 
-from mspell.transpose import transpose_spelling
+try:
+    from mspell.transpose import transpose_spelling
+except ImportError:
+    transpose_spelling = None  # type: ignore
 
 LIMIT_DENOMINATOR = 64
 
@@ -76,6 +79,11 @@ class Note(DFItem):
             acc = alter * "#"
         spelling = step + acc
         if chromatic_transpose is not None:
+            if transpose_spelling is None:
+                raise ImportError(
+                    "mspell is required for transposition. "
+                    "Install with: pip install music_df[humdrum]"
+                )
             assert diatonic_transpose is not None
             spelling = transpose_spelling(
                 [spelling],

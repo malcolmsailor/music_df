@@ -1,9 +1,15 @@
 from collections import defaultdict
 
-from music21.chord import Chord
-from music21.key import Key
-from music21.pitch import Pitch
-from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+try:
+    from music21.chord import Chord
+    from music21.key import Key
+    from music21.pitch import Pitch
+    from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+except ImportError as e:
+    raise ImportError(
+        "music21 is required for this feature. "
+        "Install with: pip install music_df[music21]"
+    ) from e
 
 from music_df.utils._types import Mode
 

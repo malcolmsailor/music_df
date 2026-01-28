@@ -2,7 +2,13 @@ import re
 import typing as t
 from collections import defaultdict
 
-from mspell import Unspeller
+try:
+    from mspell import Unspeller
+except ImportError as e:
+    raise ImportError(
+        "mspell is required for humdrum export features. "
+        "Install with: pip install music_df[humdrum]"
+    ) from e
 
 from music_df.humdrum_export.constants import USER_SIGNIFIERS
 

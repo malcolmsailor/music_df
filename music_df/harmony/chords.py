@@ -2,10 +2,23 @@ import re
 import warnings
 from typing import Callable, Literal, TypeVar, overload
 
-import mspell
-from music21.chord import Chord
-from music21.key import Key
-from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+try:
+    import mspell
+except ImportError as e:
+    raise ImportError(
+        "mspell is required for this feature. "
+        "Install with: pip install music_df[humdrum]"
+    ) from e
+
+try:
+    from music21.chord import Chord
+    from music21.key import Key
+    from music21.roman import Minor67Default, RomanNumeral, romanNumeralFromChord
+except ImportError as e:
+    raise ImportError(
+        "music21 is required for this feature. "
+        "Install with: pip install music_df[music21]"
+    ) from e
 
 from music_df.keys import MAJOR_KEYS, MINOR_KEYS
 from music_df.transpose import SPELLING_TRANSPOSER

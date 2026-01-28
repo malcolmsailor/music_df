@@ -2,8 +2,15 @@ import typing as t
 from math import isnan
 
 import pandas as pd
-from mspell import GroupSpeller
-from mspell.spelling_funcs import shell_spelling_to_humdrum_spelling
+
+try:
+    from mspell import GroupSpeller
+    from mspell.spelling_funcs import shell_spelling_to_humdrum_spelling
+except ImportError as e:
+    raise ImportError(
+        "mspell is required for humdrum export features. "
+        "Install with: pip install music_df[humdrum]"
+    ) from e
 
 
 def humdrum_spelling_from_row(row):

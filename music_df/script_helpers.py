@@ -12,9 +12,23 @@ from typing import Sequence
 
 import numpy as np
 import pandas as pd
-import yaml
-from matplotlib import pyplot as plt
-from omegaconf import OmegaConf
+
+try:
+    import yaml
+    from omegaconf import OmegaConf
+except ImportError as e:
+    raise ImportError(
+        "yaml and omegaconf are required for script features. "
+        "Install with: pip install music_df[scripts]"
+    ) from e
+
+try:
+    from matplotlib import pyplot as plt
+except ImportError as e:
+    raise ImportError(
+        "matplotlib is required for visualization features. "
+        "Install with: pip install music_df[visualization]"
+    ) from e
 
 from music_df.add_feature import concatenate_features
 from music_df.plot_piano_rolls.plot_helper import plot_predictions

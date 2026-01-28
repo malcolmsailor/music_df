@@ -2,8 +2,12 @@
 Provides functions for working with keys in music dataframes.
 """
 
-import mspell
 import pandas as pd
+
+try:
+    import mspell
+except ImportError:
+    mspell = None  # type: ignore
 
 ALPHABET = {letter: (i - 1) for (i, letter) in enumerate("FCGDAEB")} | {
     letter: (i - 4) for (i, letter) in enumerate("fcgdaeb")
@@ -11,7 +15,7 @@ ALPHABET = {letter: (i - 1) for (i, letter) in enumerate("FCGDAEB")} | {
 
 MAJOR_KEYS = ("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")
 MINOR_KEYS = ("c", "c#", "d", "eb", "e", "f", "f#", "g", "g#", "a", "bb", "b")
-UNSPELLER = mspell.Unspeller()
+UNSPELLER = mspell.Unspeller() if mspell else None
 
 
 def get_mode(key):
@@ -27,6 +31,11 @@ def simplify_enharmonic_key(key):
     >>> simplify_enharmonic_key("ab")
     'g#'
     """
+    if UNSPELLER is None:
+        raise ImportError(
+            "mspell is required for this feature. "
+            "Install with: pip install music_df[humdrum]"
+        )
     original_key_pc = UNSPELLER(key)
     assert isinstance(original_key_pc, int)
 

@@ -9,10 +9,23 @@ import sys
 import traceback
 from dataclasses import dataclass, field
 
-import h5py
+try:
+    import h5py
+except ImportError as e:
+    raise ImportError(
+        "h5py is required for this script. "
+        "Install with: pip install music_df[scripts]"
+    ) from e
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
+
+try:
+    from matplotlib import pyplot as plt
+except ImportError as e:
+    raise ImportError(
+        "matplotlib is required for this script. "
+        "Install with: pip install music_df[visualization]"
+    ) from e
 
 from music_df.crop_df import crop_df
 from music_df.plot_piano_rolls.plot_helper import plot_predictions

@@ -1,12 +1,19 @@
 import math
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
-import matplotlib.axes
-import matplotlib.cm
-import matplotlib.figure
-import matplotlib.lines
-import matplotlib.patches
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.axes
+    import matplotlib.cm
+    import matplotlib.colors
+    import matplotlib.figure
+    import matplotlib.lines
+    import matplotlib.patches
+    import matplotlib.pyplot as plt
+except ImportError as e:
+    raise ImportError(
+        "matplotlib is required for visualization features. "
+        "Install with: pip install music_df[visualization]"
+    ) from e
 import numpy as np
 import pandas as pd
 

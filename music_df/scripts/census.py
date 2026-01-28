@@ -3,7 +3,14 @@ from multiprocessing import Pool
 import os
 import sys
 from dataclasses import dataclass
-from omegaconf import OmegaConf
+
+try:
+    from omegaconf import OmegaConf
+except ImportError as e:
+    raise ImportError(
+        "omegaconf is required for this script. "
+        "Install with: pip install music_df[scripts]"
+    ) from e
 import traceback, pdb, sys
 
 import pandas as pd
