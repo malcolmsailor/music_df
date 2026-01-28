@@ -31,6 +31,12 @@ def symusic_score_to_df(
     Returns:
         A DataFrame with columns: filename, type, onset, release, track, channel,
         pitch, velocity, other.
+
+    Note:
+        symusic creates Note objects by pairing note_on with note_off events.
+        MIDI files with unpaired note_ons (no corresponding note_off) will have
+        those notes silently dropped. This can occur with some percussion-only
+        files where drum hits are treated as one-shots.
     """
     if display_name is None:
         display_name = ""
@@ -341,6 +347,12 @@ def read_midi_symusic(
     Returns:
         A DataFrame with columns: filename, type, onset, release, track, channel,
         pitch, velocity, other.
+
+    Note:
+        symusic creates Note objects by pairing note_on with note_off events.
+        MIDI files with unpaired note_ons (no corresponding note_off) will have
+        those notes silently dropped. This can occur with some percussion-only
+        files where drum hits are treated as one-shots.
     """
     import os
 

@@ -85,6 +85,12 @@ def midi_to_table(
 
     Raises:
         MidiError: If the file cannot be read.
+
+    Note:
+        symusic creates Note objects by pairing note_on with note_off events.
+        MIDI files with unpaired note_ons (no corresponding note_off) will have
+        those notes silently dropped. This can occur with some percussion-only
+        files where drum hits are treated as one-shots.
     """
     if pb_tup_dict is not None:
         warnings.warn(
