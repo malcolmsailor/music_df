@@ -8,6 +8,7 @@ readme = "README.md"
 dependencies = [
     "pandas",
     "mido",
+    "symusic",
     "matplotlib",
     "pyyaml",
     "music21",
