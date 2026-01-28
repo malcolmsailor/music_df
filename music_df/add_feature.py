@@ -81,8 +81,12 @@ def infer_barlines(
     time_sig_mask = music_df.type == "time_signature"
     time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
 
+    notes = music_df[music_df.type == "note"]
+    if notes.empty:
+        return music_df
+
     assert time_sigs and (
-        time_sigs[0].onset <= music_df[music_df.type == "note"].iloc[0].onset
+        time_sigs[0].onset <= notes.iloc[0].onset
     ), (
         "There is no time signature before the first note; default time signature not yet implemented"
     )
