@@ -7,7 +7,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "mspell is required for this feature. "
-        "Install with: pip install music_df[humdrum]"
+        "Install with: pip install music_df[harmony]"
     ) from e
 
 try:
@@ -17,7 +17,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "music21 is required for this feature. "
-        "Install with: pip install music_df[music21]"
+        "Install with: pip install music_df[harmony]"
     ) from e
 
 from music_df.keys import MAJOR_KEYS, MINOR_KEYS

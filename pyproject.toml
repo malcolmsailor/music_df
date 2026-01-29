@@ -39,7 +39,7 @@ packages = [
 
 [project.optional-dependencies]
 visualization = ["matplotlib"]
-music21 = ["music21"]
+harmony = ["music21", "mspell"]
 humdrum = [
     "mspell",
     "sh",
@@ -49,7 +49,7 @@ scripts = ["omegaconf", "pyyaml", "h5py"]
 dev = ["pytest", "pdoc3"]
 full = [
     "music_df[visualization]",
-    "music_df[music21]",
+    "music_df[harmony]",
     "music_df[humdrum]",
     "music_df[scripts]",
 ]

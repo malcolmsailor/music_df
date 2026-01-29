@@ -34,7 +34,7 @@ def simplify_enharmonic_key(key):
     if UNSPELLER is None:
         raise ImportError(
             "mspell is required for this feature. "
-            "Install with: pip install music_df[humdrum]"
+            "Install with: pip install music_df[harmony]"
         )
     original_key_pc = UNSPELLER(key)
     assert isinstance(original_key_pc, int)

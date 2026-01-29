@@ -10,7 +10,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:symusic.readthedocs.io)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python:*)"
     ]
   }
 }

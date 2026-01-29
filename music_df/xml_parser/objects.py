@@ -82,7 +82,7 @@ class Note(DFItem):
             if transpose_spelling is None:
                 raise ImportError(
                     "mspell is required for transposition. "
-                    "Install with: pip install music_df[humdrum]"
+                    "Install with: pip install music_df[harmony]"
                 )
             assert diatonic_transpose is not None
             spelling = transpose_spelling(

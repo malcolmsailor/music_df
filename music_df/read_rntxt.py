@@ -7,7 +7,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "music21 is required for this feature. "
-        "Install with: pip install music_df[music21]"
+        "Install with: pip install music_df[harmony]"
     ) from e
 
 from music_df.sort_df import sort_df

@@ -9,7 +9,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "mspell is required for humdrum export features. "
-        "Install with: pip install music_df[humdrum]"
+        "Install with: pip install music_df[harmony]"
     ) from e
 
 
