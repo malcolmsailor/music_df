@@ -91,6 +91,11 @@ def symusic_score_to_df(
 
         # Extract time signature events
         for ts in score.time_signatures:
+            if ts.denominator <= 0:
+                raise ValueError(
+                    f"Malformed MIDI file: invalid time signature denominator ({ts.denominator}). "
+                    f"Time signature numerator was {ts.numerator}."
+                )
             rows.append(
                 {
                     "filename": display_name,

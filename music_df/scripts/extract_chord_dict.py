@@ -42,6 +42,87 @@ SPLIT_DEGREE_FIELD_NAMES = [
     "secondary_alteration",
 ]
 
+FieldStructure = list[list[str] | str]
+
+
+def parse_concatenate_spec(
+    spec: str | None, all_fields: list[str]
+) -> FieldStructure | None:
+    """
+    Parse --concatenate spec and return new field structure.
+
+    Returns a list where each element is either:
+    - A single field name (str)
+    - A list of field names to concatenate (list[str])
+
+    Validates that all original fields appear exactly once.
+    Returns None if spec is None.
+
+    >>> parse_concatenate_spec(None, ["a", "b", "c"])
+    >>> parse_concatenate_spec("a+b", ["a", "b", "c"])
+    [['a', 'b'], 'c']
+    >>> parse_concatenate_spec("b+c", ["a", "b", "c"])
+    ['a', ['b', 'c']]
+    """
+    if spec is None:
+        return None
+
+    groups = spec.split(",")
+    concatenated_fields: list[list[str]] = []
+    all_specified: set[str] = set()
+
+    for group in groups:
+        fields = group.split("+")
+        if len(fields) < 2:
+            raise ValueError(
+                f"Concatenation group must have at least 2 fields: {group!r}"
+            )
+        for field in fields:
+            if field not in all_fields:
+                raise ValueError(f"Unknown field: {field!r}")
+            if field in all_specified:
+                raise ValueError(f"Field appears more than once: {field!r}")
+            all_specified.add(field)
+        concatenated_fields.append(fields)
+
+    # Build structure: iterate through original fields, replacing with groups
+    structure: FieldStructure = []
+    used_groups: set[int] = set()
+
+    for field in all_fields:
+        if field in all_specified:
+            # Find which group this field belongs to
+            for i, group in enumerate(concatenated_fields):
+                if field in group and i not in used_groups:
+                    structure.append(group)
+                    used_groups.add(i)
+                    break
+        else:
+            structure.append(field)
+
+    return structure
+
+
+def get_field_names_from_structure(structure: FieldStructure | None) -> list[str]:
+    """
+    Convert structure to field_names list (joining concatenated fields with _).
+
+    >>> get_field_names_from_structure(None)
+    ['mode', 'quality', 'primary_degree', 'primary_alteration', 'secondary_degree', 'secondary_alteration']
+    >>> get_field_names_from_structure(["a", ["b", "c"], "d"])
+    ['a', 'b_c', 'd']
+    """
+    if structure is None:
+        return SPLIT_DEGREE_FIELD_NAMES.copy()
+
+    result: list[str] = []
+    for item in structure:
+        if isinstance(item, list):
+            result.append("_".join(item))
+        else:
+            result.append(item)
+    return result
+
 
 INVERSION_SUFFIXES = re.compile(r"(6|64|7|65|43|42)$")
 
@@ -180,11 +261,39 @@ class FailedChord:
 EXPECTED_FAILURES = {"xx/x"}
 
 
+def _get_chord_field_value(chord: ExtractedChord, field: str) -> str:
+    """Get a field value from an ExtractedChord, with mode converted to YAML name."""
+    if field == "mode":
+        return MODE_INTERNAL_TO_YAML[chord.mode]
+    return getattr(chord, field)
+
+
+def _get_hierarchy_key(
+    chord: ExtractedChord, structure_item: list[str] | str
+) -> str:
+    """Get the hierarchy key for a chord given a structure item."""
+    if isinstance(structure_item, list):
+        return "".join(_get_chord_field_value(chord, f) for f in structure_item)
+    return _get_chord_field_value(chord, structure_item)
+
+
 def extract_chord_dict(
-    csv_files: list[Path], rn_format: str, *, show_progress: bool = False
+    csv_files: list[Path],
+    rn_format: str,
+    *,
+    show_progress: bool = False,
+    field_structure: FieldStructure | None = None,
 ) -> tuple[dict[str, Any], list[FailedChord]]:
     """
     Extract chord dictionary from CSV files.
+
+    Args:
+        csv_files: List of CSV file paths to process.
+        rn_format: Format of roman numerals in CSV.
+        show_progress: Whether to show progress bars.
+        field_structure: Optional structure for hierarchy levels. Each element is
+            either a single field name (str) or a list of field names to concatenate.
+            If None, uses default SPLIT_DEGREE_FIELD_NAMES structure.
 
     Returns:
         - nested dict with field_names header and hierarchy:
@@ -225,6 +334,12 @@ def extract_chord_dict(
         if key not in seen:
             seen[key] = chord
 
+    # Use default structure if none provided
+    if field_structure is None:
+        structure: FieldStructure = list(SPLIT_DEGREE_FIELD_NAMES)
+    else:
+        structure = field_structure
+
     output: dict[str, Any] = {}
     failures: list[FailedChord] = []
 
@@ -255,33 +370,20 @@ def extract_chord_dict(
                 )
             continue
 
-        mode_name = MODE_INTERNAL_TO_YAML[chord.mode]
+        # Build nested hierarchy dynamically based on structure
+        current_dict = output
+        for i, structure_item in enumerate(structure):
+            hierarchy_key = _get_hierarchy_key(chord, structure_item)
+            is_last = i == len(structure) - 1
+            if is_last:
+                current_dict[hierarchy_key] = pcs
+            else:
+                if hierarchy_key not in current_dict:
+                    current_dict[hierarchy_key] = {}
+                current_dict = current_dict[hierarchy_key]
 
-        # Build nested hierarchy: mode → quality → primary_degree →
-        # primary_alteration → secondary_degree → secondary_alteration
-        if mode_name not in output:
-            output[mode_name] = {}
-        quality_dict = output[mode_name]
-
-        if chord.quality not in quality_dict:
-            quality_dict[chord.quality] = {}
-        primary_degree_dict = quality_dict[chord.quality]
-
-        if chord.primary_degree not in primary_degree_dict:
-            primary_degree_dict[chord.primary_degree] = {}
-        primary_alt_dict = primary_degree_dict[chord.primary_degree]
-
-        if chord.primary_alteration not in primary_alt_dict:
-            primary_alt_dict[chord.primary_alteration] = {}
-        secondary_degree_dict = primary_alt_dict[chord.primary_alteration]
-
-        if chord.secondary_degree not in secondary_degree_dict:
-            secondary_degree_dict[chord.secondary_degree] = {}
-        secondary_alt_dict = secondary_degree_dict[chord.secondary_degree]
-
-        secondary_alt_dict[chord.secondary_alteration] = pcs
-
-    return {"field_names": SPLIT_DEGREE_FIELD_NAMES, **output}, failures
+    field_names = get_field_names_from_structure(field_structure)
+    return {"field_names": field_names, **output}, failures
 
 
 def _quoted_str_representer(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
@@ -407,6 +509,15 @@ def main() -> None:
         default=None,
         help="Path to save CSV of rows that failed pitch class extraction",
     )
+    parser.add_argument(
+        "--concatenate",
+        type=str,
+        default=None,
+        help=(
+            "Concatenate fields into single hierarchy levels. "
+            "Format: field1+field2+field3,field4+field5 (comma separates groups, + joins fields)"
+        ),
+    )
     args = parser.parse_args()
 
     csv_files = find_csv_files(args.input_paths)
@@ -414,8 +525,10 @@ def main() -> None:
         print("No CSV files found.", file=sys.stderr)
         sys.exit(1)
 
+    field_structure = parse_concatenate_spec(args.concatenate, SPLIT_DEGREE_FIELD_NAMES)
+
     chord_dict, failures = extract_chord_dict(
-        csv_files, args.rn_format, show_progress=True
+        csv_files, args.rn_format, show_progress=True, field_structure=field_structure
     )
 
     if failures and args.debug_output:
