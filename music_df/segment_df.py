@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
+from music_df.add_feature import make_bar_explicit
 from music_df.utils.search import get_item_leq
 
 DF_TYPE_SORT_ORDER = MappingProxyType({"bar": 0, "time_signature": 1, "note": 2})
@@ -258,3 +259,80 @@ def segment_df_by_onset(df: pd.DataFrame, segment_dur: float):
     """
     df["group"] = np.floor(df["onset"] / segment_dur)
     return df.groupby("group")
+
+
+def segment_df_by_bar(df: pd.DataFrame, n_bars: int = 1):
+    """
+    Segment a dataframe by bar boundaries.
+
+    Args:
+        df: DataFrame with bar events (type == "bar")
+        n_bars: Number of bars per segment (default 1)
+
+    Returns:
+        DataFrameGroupBy object, grouped by bar segment
+
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "pitch": [0, 60, 64, 60, 64, 0, 60, 64, 60, 64, 0],
+    ...         "onset": [0, 0, 0, 1, 1, 1.5, 1.5, 2.0, 3.0, 3.0, 5.0],
+    ...         "release": [0, 1, 1, 1.5, 2.0, 0, 3.0, 3.0, 4.0, 4.5, 0],
+    ...         "type": ["bar"] + ["note"] * 4 + ["bar"] + ["note"] * 4 + ["bar"],
+    ...     }
+    ... )
+    >>> df
+        pitch  onset  release  type
+    0       0    0.0      0.0   bar
+    1      60    0.0      1.0  note
+    2      64    0.0      1.0  note
+    3      60    1.0      1.5  note
+    4      64    1.0      2.0  note
+    5       0    1.5      0.0   bar
+    6      60    1.5      3.0  note
+    7      64    2.0      3.0  note
+    8      60    3.0      4.0  note
+    9      64    3.0      4.5  note
+    10      0    5.0      0.0   bar
+
+    With n_bars=1, each bar forms its own group:
+
+    >>> for (name, group) in segment_df_by_bar(df, n_bars=1):
+    ...     print(group)
+    ...
+       pitch  onset  release  type  bar_number  bar_group
+    0      0    0.0      0.0   bar         1.0        0.0
+    1     60    0.0      1.0  note         1.0        0.0
+    2     64    0.0      1.0  note         1.0        0.0
+    3     60    1.0      1.5  note         1.0        0.0
+    4     64    1.0      2.0  note         1.0        0.0
+       pitch  onset  release  type  bar_number  bar_group
+    5      0    1.5      0.0   bar         2.0        1.0
+    6     60    1.5      3.0  note         2.0        1.0
+    7     64    2.0      3.0  note         2.0        1.0
+    8     60    3.0      4.0  note         2.0        1.0
+    9     64    3.0      4.5  note         2.0        1.0
+        pitch  onset  release type  bar_number  bar_group
+    10      0    5.0      0.0  bar         3.0        2.0
+
+    With n_bars=2, bars are grouped in pairs:
+
+    >>> for (name, group) in segment_df_by_bar(df, n_bars=2):
+    ...     print(group)
+    ...
+       pitch  onset  release  type  bar_number  bar_group
+    0      0    0.0      0.0   bar         1.0        0.0
+    1     60    0.0      1.0  note         1.0        0.0
+    2     64    0.0      1.0  note         1.0        0.0
+    3     60    1.0      1.5  note         1.0        0.0
+    4     64    1.0      2.0  note         1.0        0.0
+    5      0    1.5      0.0   bar         2.0        0.0
+    6     60    1.5      3.0  note         2.0        0.0
+    7     64    2.0      3.0  note         2.0        0.0
+    8     60    3.0      4.0  note         2.0        0.0
+    9     64    3.0      4.5  note         2.0        0.0
+        pitch  onset  release type  bar_number  bar_group
+    10      0    5.0      0.0  bar         3.0        1.0
+    """
+    df = make_bar_explicit(df)
+    df["bar_group"] = (df["bar_number"] - 1) // n_bars
+    return df.groupby("bar_group")

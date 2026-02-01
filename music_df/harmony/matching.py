@@ -1,4 +1,5 @@
 import io  # noqa: F401
+import math
 
 import pandas as pd
 
@@ -56,6 +57,9 @@ def percent_pc_match(
     else:
         notes = passage
 
+    if len(notes) == 0:
+        return float("nan")
+
     matches = (notes["pitch"] % 12).isin(pitch_classes)
 
     if not weight_by_duration:
@@ -65,7 +69,10 @@ def percent_pc_match(
     else:
         durations = notes["release"] - notes["onset"]
 
-    return (matches * durations).sum() / durations.sum()
+    total_duration = durations.sum()
+    if total_duration == 0:
+        return float("nan")
+    return (matches * durations).sum() / total_duration
 
 
 def label_pc_matches(
@@ -108,6 +115,13 @@ def percent_chord_df_match(
     else:
         sliced_notes = slice_df(music_df[music_df["type"] == "note"], chord_df["onset"])
 
+    if chord_df.empty:
+        return {
+            "macroaverage": float("nan"),
+            "microaverage": float("nan"),
+            "music_df": music_df,
+        }
+
     chord_pc_matches = []
 
     music_df.loc[:, match_col] = float("nan")
@@ -128,8 +142,14 @@ def percent_chord_df_match(
         music_df.loc[chord_notes.index, match_col] = chord_pc_match
         music_df.loc[chord_notes.index, chord_df_pc_key] = chord_row[chord_df_pc_key]
 
+    valid_matches = [m for m in chord_pc_matches if not math.isnan(m)]
+    if len(valid_matches) == 0:
+        macroaverage = float("nan")
+    else:
+        macroaverage = sum(valid_matches) / len(valid_matches)
+
     return {
-        "macroaverage": sum(chord_pc_matches) / len(chord_pc_matches),
+        "macroaverage": macroaverage,
         "microaverage": music_df[match_col].mean(skipna=True),
         "music_df": music_df,
     }

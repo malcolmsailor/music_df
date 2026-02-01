@@ -55,6 +55,7 @@ def add_piano_roll_background(
     # white keys
     consecutive_white_keys: Iterable[int] = (0, 5),
     beats: None | float = None,
+    barlines: Iterable[float] | None = None,
 ):
     colors = ("white", "gainsboro")
     low, hi = map(int, ax.get_ylim())
@@ -96,6 +97,14 @@ def add_piano_roll_background(
             for beat in beat_positions:
                 line = matplotlib.lines.Line2D(
                     [beat, beat], [low, hi], color="#bbbbbb", zorder=z["line"]
+                )
+                ax.add_line(line)
+    if barlines is not None:
+        for barline_onset in barlines:
+            if begin < barline_onset < end:
+                line = matplotlib.lines.Line2D(
+                    [barline_onset, barline_onset], [low, hi],
+                    color="#dddddd", zorder=z["line"]
                 )
                 ax.add_line(line)
 
@@ -150,9 +159,17 @@ def plot_piano_roll(
     title=None,
     legend: Optional[Dict[str, Any]] = None,
     beats: None | float = None,
+    barlines: bool = False,
     release_delta: float = 0.0,
 ):
-    if "type" in df.columns and (df.type != "note").any():
+    # Extract barline positions before filtering to notes only
+    barline_positions = None
+    if barlines and "type" in df.columns:
+        bars_df = df[df.type == "bar"]
+        if len(bars_df) > 0:
+            barline_positions = bars_df.onset.values
+        df = df[df.type == "note"].reset_index(drop=True)
+    elif "type" in df.columns and (df.type != "note").any():
         raise ValueError("df should only have 'note' events")
     if labels is not None:
         labels = [str(label) for label in labels]
@@ -170,7 +187,7 @@ def plot_piano_roll(
         ax.set_xticks([], minor=True)
     if not show_axes:
         ax.axis("off")
-    add_piano_roll_background(ax, beats=beats)
+    add_piano_roll_background(ax, beats=beats, barlines=barline_positions)
     for i, (row_i, note) in enumerate(df.iterrows()):
         add_note(
             ax,

@@ -144,6 +144,9 @@ def get_rn_pitch_classes(
     >>> get_rn_pitch_classes("I", "Eb", hex_str=True)
     '37a'
 
+    >>> get_rn_pitch_classes("Im6", "c", rn_format="rnbert")
+    [3, 7, 0]
+
     """
 
     key = MODE_TO_DEFAULT_KEY.get(mode_or_key, mode_or_key)  # type:ignore
