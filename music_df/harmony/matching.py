@@ -159,6 +159,178 @@ def percent_chord_df_match(
     }
 
 
+def percent_bass_pc_match(
+    music_df: pd.DataFrame,
+    chord_df: pd.DataFrame,
+    weight_by_duration: bool = True,
+    chord_df_pc_key: str = "chord_pcs",
+    is_sliced: bool = False,
+    match_col: str = "is_bass_match",
+) -> dict[str, float | pd.DataFrame]:
+    """
+    Calculate how often the lowest pitch at each onset matches the expected bass PC.
+
+    The expected bass pitch class is the first character of the chord_pcs hex string
+    (e.g., for "047" representing C major, the expected bass is 0 = C).
+
+    Args:
+        music_df: DataFrame with notes (columns: type, pitch, onset, release).
+        chord_df: DataFrame with chord annotations (columns: onset, release, chord_pcs).
+        weight_by_duration: If True, weight bass matches by bass note duration.
+        chord_df_pc_key: Column name for pitch class hex string.
+        is_sliced: If True, skip slicing music_df to chord boundaries.
+        match_col: Column name to store per-note match results.
+
+    Returns:
+        Dict with keys:
+        - "macroaverage": Mean of per-chord bass match rates.
+        - "microaverage": Mean of all bass note matches (optionally duration-weighted).
+        - "music_df": Input DataFrame with match_col added (True/False for bass notes,
+          NaN for non-bass notes).
+
+    >>> df = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... type,pitch,onset,release
+    ... note,48,0.0,2.0
+    ... note,60,0.0,1.0
+    ... note,64,0.0,1.0
+    ... note,43,2.0,4.0
+    ... note,59,2.0,3.0
+    ... note,62,2.0,3.0
+    ... '''
+    ...     )
+    ... )
+    >>> chord_df = pd.DataFrame({
+    ...     "onset": [0.0, 2.0],
+    ...     "release": [2.0, 4.0],
+    ...     "chord_pcs": ["047", "72B"],
+    ... })
+    >>> result = percent_bass_pc_match(df, chord_df)
+    >>> result["macroaverage"]
+    1.0
+    >>> result["microaverage"]
+    1.0
+    >>> # Bass notes at onsets 0.0 (pitch 48=C) and 2.0 (pitch 43=G) both match
+    >>> result["music_df"]["is_bass_match"].tolist()
+    [True, <NA>, <NA>, True, <NA>, <NA>]
+
+    >>> # Test with non-matching bass (pitch 50=D, expected bass PC=0=C)
+    >>> df2 = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... type,pitch,onset,release
+    ... note,50,0.0,2.0
+    ... note,60,0.0,1.0
+    ... '''
+    ...     )
+    ... )
+    >>> chord_df2 = pd.DataFrame({"onset": [0.0], "release": [2.0], "chord_pcs": ["047"]})
+    >>> result2 = percent_bass_pc_match(df2, chord_df2)
+    >>> result2["macroaverage"]
+    0.0
+    >>> result2["microaverage"]
+    0.0
+
+    >>> # Test duration weighting: longer bass note has more weight
+    >>> df3 = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... type,pitch,onset,release
+    ... note,48,0.0,3.0
+    ... note,50,3.0,4.0
+    ... '''
+    ...     )
+    ... )
+    >>> chord_df3 = pd.DataFrame({"onset": [0.0], "release": [4.0], "chord_pcs": ["047"]})
+    >>> result3 = percent_bass_pc_match(df3, chord_df3, weight_by_duration=True)
+    >>> result3["microaverage"]
+    0.75
+    >>> result3_unweighted = percent_bass_pc_match(df3, chord_df3, weight_by_duration=False)
+    >>> result3_unweighted["microaverage"]
+    0.5
+    """
+    if is_sliced:
+        sliced_notes = music_df.loc[music_df["type"] == "note"]
+    else:
+        sliced_notes = slice_df(music_df[music_df["type"] == "note"], chord_df["onset"])
+
+    if chord_df.empty:
+        return {
+            "macroaverage": float("nan"),
+            "microaverage": float("nan"),
+            "music_df": music_df,
+        }
+
+    music_df = music_df.copy()
+    music_df[match_col] = pd.Series([pd.NA] * len(music_df), dtype="object")
+
+    chord_bass_match_rates = []
+    all_bass_matches = []
+    all_bass_durations = []
+
+    for _, chord_row in chord_df.iterrows():
+        chord_notes = sliced_notes[
+            (sliced_notes["onset"] >= chord_row["onset"])
+            & (sliced_notes["release"] <= chord_row["release"])
+        ]
+
+        if chord_notes.empty:
+            continue
+
+        chord_pcs_str = str(chord_row[chord_df_pc_key])
+        expected_bass_pc = int(chord_pcs_str[0], 16)
+
+        bass_indices = chord_notes.groupby("onset")["pitch"].idxmin()
+        bass_notes = chord_notes.loc[bass_indices]
+
+        matches = (bass_notes["pitch"] % 12) == expected_bass_pc
+        music_df.loc[bass_indices, match_col] = matches.values
+
+        if "duration" in bass_notes.columns:
+            durations = bass_notes["duration"]
+        else:
+            durations = bass_notes["release"] - bass_notes["onset"]
+
+        all_bass_matches.extend(matches.tolist())
+        all_bass_durations.extend(durations.tolist())
+
+        total_duration = durations.sum()
+        if total_duration > 0 and weight_by_duration:
+            chord_match_rate = (matches * durations).sum() / total_duration
+        elif len(matches) > 0:
+            chord_match_rate = matches.mean()
+        else:
+            chord_match_rate = float("nan")
+
+        if not math.isnan(chord_match_rate):
+            chord_bass_match_rates.append(chord_match_rate)
+
+    if len(chord_bass_match_rates) == 0:
+        macroaverage = float("nan")
+    else:
+        macroaverage = sum(chord_bass_match_rates) / len(chord_bass_match_rates)
+
+    if len(all_bass_matches) == 0:
+        microaverage = float("nan")
+    elif weight_by_duration:
+        total_duration = sum(all_bass_durations)
+        if total_duration > 0:
+            microaverage = sum(
+                m * d for m, d in zip(all_bass_matches, all_bass_durations)
+            ) / total_duration
+        else:
+            microaverage = float("nan")
+    else:
+        microaverage = sum(all_bass_matches) / len(all_bass_matches)
+
+    return {
+        "macroaverage": macroaverage,
+        "microaverage": microaverage,
+        "music_df": music_df,
+    }
+
+
 def _correlate_pc_counts_with_profile(
     pc_counts: Sequence[float], profile: Sequence[float]
 ) -> float:
