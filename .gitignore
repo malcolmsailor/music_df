@@ -4,3 +4,5 @@ pyrightconfig.json
 **/test_output
 notebooks/.ipynb_checkpoints
 .ipynb_checkpoints
+CLAUDE.md
+.claude
