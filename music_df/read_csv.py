@@ -7,6 +7,7 @@ from fractions import Fraction
 from typing import Mapping
 
 import pandas as pd
+from pandas._typing import FilePath, ReadCsvBuffer
 
 from music_df.quantize_df import quantize_df
 
@@ -54,7 +55,7 @@ COLUMN_CONVERTERS = {
 
 
 def read_csv(
-    path: str,
+    path: FilePath | ReadCsvBuffer[bytes] | ReadCsvBuffer[str],
     # onset_type=fraction_to_float,
     # release_type=fraction_to_float,
     quantize_tpq: int | None = None,
@@ -70,7 +71,7 @@ def read_csv(
     for key in column_converters:
         column_dtypes.pop(key, None)
 
-    if not os.path.exists(path):
+    if isinstance(path, str) and not os.path.exists(path):
         LOGGER.warning(f"{path} does not appear to exist")
         return None
     df = pd.read_csv(
