@@ -250,10 +250,17 @@ def percent_bass_pc_match(
     >>> result3_unweighted["microaverage"]
     0.5
     """
+    # Filter to notes and optionally slice at chord boundaries.
+    # Store original indices to correctly assign results back to music_df.
+    notes_only = music_df.loc[music_df["type"] == "note"]
     if is_sliced:
-        sliced_notes = music_df.loc[music_df["type"] == "note"]
+        sliced_notes = notes_only.copy()
+        sliced_notes["_orig_idx"] = sliced_notes.index
     else:
-        sliced_notes = slice_df(music_df[music_df["type"] == "note"], chord_df["onset"])
+        # slice_df may split notes at chord boundaries; track original indices
+        notes_with_idx = notes_only.copy()
+        notes_with_idx["_orig_idx"] = notes_with_idx.index
+        sliced_notes = slice_df(notes_with_idx, chord_df["onset"])
 
     if chord_df.empty:
         return {
@@ -285,7 +292,9 @@ def percent_bass_pc_match(
         bass_notes = chord_notes.loc[bass_indices]
 
         matches = (bass_notes["pitch"] % 12) == expected_bass_pc
-        music_df.loc[bass_indices, match_col] = matches.values
+        # Use original indices to assign back to music_df
+        orig_bass_indices = bass_notes["_orig_idx"].values
+        music_df.loc[orig_bass_indices, match_col] = matches.values
 
         if "duration" in bass_notes.columns:
             durations = bass_notes["duration"]
