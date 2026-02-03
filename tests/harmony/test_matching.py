@@ -129,3 +129,44 @@ class TestPercentChordDfMatch:
         result = percent_chord_df_match(music_df, chord_df)
         assert result["macroaverage"] == 1.0
         assert result["microaverage"] == 1.0
+
+    def test_index_alignment_with_non_note_rows(self):
+        """Verify that non-note rows don't receive chord match values after slicing.
+
+        This tests a bug where slice_df reindexes the DataFrame, causing assignments
+        to go to wrong rows when using the sliced DataFrame's indices.
+        """
+        music_df = pd.DataFrame(
+            {
+                "type": ["bar", "time_signature", "note", "note", "bar", "note", "note"],
+                "pitch": [None, None, 60, 64, None, 67, 71],
+                "onset": [0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+                "release": [2.0, 2.0, 1.0, 2.0, 4.0, 3.0, 4.0],
+            }
+        )
+        chord_df = pd.DataFrame(
+            {
+                "onset": [0.0, 2.0],
+                "release": [2.0, 4.0],
+                "chord_pcs": ["047", "72B"],
+            }
+        )
+        result = percent_chord_df_match(music_df, chord_df)
+        result_df = result["music_df"]
+
+        # Non-note rows should have NaN for percent_chord_match
+        non_note_mask = result_df["type"] != "note"
+        assert result_df.loc[non_note_mask, "percent_chord_match"].isna().all()
+
+        # Non-note rows should have empty string for chord_pcs
+        assert (result_df.loc[non_note_mask, "chord_pcs"] == "").all()
+
+        # Note rows should have values assigned
+        note_mask = result_df["type"] == "note"
+        assert not result_df.loc[note_mask, "percent_chord_match"].isna().any()
+
+        # Verify chord_pcs alignment: notes at onset 0-2 get "047", notes at 2-4 get "72B"
+        first_chord_notes = (result_df["type"] == "note") & (result_df["onset"] < 2.0)
+        second_chord_notes = (result_df["type"] == "note") & (result_df["onset"] >= 2.0)
+        assert (result_df.loc[first_chord_notes, "chord_pcs"] == "047").all()
+        assert (result_df.loc[second_chord_notes, "chord_pcs"] == "72B").all()

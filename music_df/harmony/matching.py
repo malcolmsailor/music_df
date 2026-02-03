@@ -114,10 +114,14 @@ def percent_chord_df_match(
     is_sliced: bool = False,
     match_col: str = "percent_chord_match",
 ):
+    notes_only = music_df.loc[music_df["type"] == "note"]
     if is_sliced:
-        sliced_notes = music_df.loc[music_df["type"] == "note"]
+        sliced_notes = notes_only.copy()
+        sliced_notes["_orig_idx"] = sliced_notes.index
     else:
-        sliced_notes = slice_df(music_df[music_df["type"] == "note"], chord_df["onset"])
+        notes_with_idx = notes_only.copy()
+        notes_with_idx["_orig_idx"] = notes_with_idx.index
+        sliced_notes = slice_df(notes_with_idx, chord_df["onset"])
 
     if chord_df.empty:
         return {
@@ -143,8 +147,9 @@ def percent_chord_df_match(
             input_contains_only_notes=True,
         )
         chord_pc_matches.append(chord_pc_match)
-        music_df.loc[chord_notes.index, match_col] = chord_pc_match
-        music_df.loc[chord_notes.index, chord_df_pc_key] = chord_row[chord_df_pc_key]
+        orig_indices = chord_notes["_orig_idx"].values
+        music_df.loc[orig_indices, match_col] = chord_pc_match
+        music_df.loc[orig_indices, chord_df_pc_key] = chord_row[chord_df_pc_key]
 
     valid_matches = [m for m in chord_pc_matches if not math.isnan(m)]
     if len(valid_matches) == 0:
