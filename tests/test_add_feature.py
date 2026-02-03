@@ -4,6 +4,7 @@ import pytest
 from music_df import read_krn
 from music_df.add_feature import (
     add_bar_durs,
+    add_sounding_bass,
     add_time_sig_dur,
     get_bar_relative_onset,
     infer_barlines,
@@ -93,3 +94,130 @@ def test_make_instruments_explicit(n_kern_files):
             df.drop("midi_instrument", axis=1, errors="ignore")
         )
         assert not output_df["midi_instrument"].isna().sum()
+
+
+class TestAddSoundingBass:
+    def test_basic(self):
+        """Basic case: three notes, middle one is lowest."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note", "note"],
+                "pitch": [60.0, 48.0, 55.0],
+                "onset": [0.0, 0.0, 1.0],
+                "release": [2.0, 1.5, 2.5],
+            }
+        )
+        result = add_sounding_bass(df)
+        # At onset 0.0: notes 0,1 sounding, min pitch 48 at idx 1
+        # At onset 1.0: notes 0,1,2 sounding (note 1 releases at 1.5 > 1.0), min pitch 48 at idx 1
+        assert result["sounding_bass_idx"].tolist() == [1, 1, 1]
+
+    def test_empty_dataframe(self):
+        """Empty DataFrame gets NaN column."""
+        df = pd.DataFrame({"type": [], "pitch": [], "onset": [], "release": []})
+        result = add_sounding_bass(df)
+        assert "sounding_bass_idx" in result.columns
+        assert len(result) == 0
+
+    def test_no_notes(self):
+        """DataFrame with no notes gets all NaN."""
+        df = pd.DataFrame(
+            {
+                "type": ["bar", "time_signature"],
+                "pitch": [float("nan"), float("nan")],
+                "onset": [0.0, 0.0],
+                "release": [4.0, float("nan")],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert result["sounding_bass_idx"].isna().all()
+
+    def test_single_note(self):
+        """Single note is its own bass."""
+        df = pd.DataFrame(
+            {
+                "type": ["note"],
+                "pitch": [60.0],
+                "onset": [0.0],
+                "release": [1.0],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert result["sounding_bass_idx"].tolist() == [0]
+
+    def test_same_pitch_tiebreaker(self):
+        """If multiple notes share lowest pitch, first index wins."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note", "note"],
+                "pitch": [60.0, 60.0, 60.0],
+                "onset": [0.0, 0.0, 0.0],
+                "release": [1.0, 1.0, 1.0],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert result["sounding_bass_idx"].tolist() == [0, 0, 0]
+
+    def test_note_ending_exactly_at_onset(self):
+        """A note ending exactly at onset time is not sounding (release > t, not >=)."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [48.0, 60.0],
+                "onset": [0.0, 1.0],
+                "release": [1.0, 2.0],  # First note ends exactly when second starts
+            }
+        )
+        result = add_sounding_bass(df)
+        # At onset 0.0: only note 0 sounding -> bass is 0
+        # At onset 1.0: note 0 has release=1.0, so NOT sounding (release > t fails)
+        #              only note 1 sounding -> bass is 1
+        assert result["sounding_bass_idx"].tolist() == [0, 1]
+
+    def test_non_notes_get_nan(self):
+        """Non-note rows get NaN for sounding_bass_idx."""
+        df = pd.DataFrame(
+            {
+                "type": ["bar", "note", "time_signature", "note"],
+                "pitch": [float("nan"), 60.0, float("nan"), 48.0],
+                "onset": [0.0, 0.0, 0.0, 0.0],
+                "release": [4.0, 1.0, float("nan"), 1.0],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert pd.isna(result["sounding_bass_idx"].iloc[0])
+        assert pd.isna(result["sounding_bass_idx"].iloc[2])
+        # Notes should have valid values
+        assert result["sounding_bass_idx"].iloc[1] == 3
+        assert result["sounding_bass_idx"].iloc[3] == 3
+
+    def test_bass_changes_over_time(self):
+        """Bass changes as notes enter and exit."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note", "note"],
+                "pitch": [60.0, 48.0, 36.0],
+                "onset": [0.0, 1.0, 2.0],
+                "release": [3.0, 2.0, 3.0],
+            }
+        )
+        result = add_sounding_bass(df)
+        # At onset 0.0: only note 0 sounding -> bass is 0
+        # At onset 1.0: notes 0,1 sounding, min pitch 48 at idx 1
+        # At onset 2.0: notes 0,2 sounding (note 1 ended), min pitch 36 at idx 2
+        assert result["sounding_bass_idx"].tolist() == [0, 1, 2]
+
+    def test_preserves_original_index(self):
+        """Function works correctly with non-default index."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [60.0, 48.0],
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+            },
+            index=[10, 20],
+        )
+        result = add_sounding_bass(df)
+        assert result.index.tolist() == [10, 20]
+        assert result["sounding_bass_idx"].tolist() == [20, 20]

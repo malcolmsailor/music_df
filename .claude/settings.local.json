@@ -12,7 +12,8 @@
       "WebFetch(domain:symusic.readthedocs.io)",
       "Bash(python3:*)",
       "Bash(python:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git -C /Users/malcolm/google_drive/python/malmus/music_df/sounding_bass worktree list)"
     ]
   }
 }

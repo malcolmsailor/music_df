@@ -1100,3 +1100,73 @@ def add_key_signature(music_df: pd.DataFrame) -> pd.DataFrame:
         return add_key_signature_from_key(music_df)
     else:
         raise ValueError
+
+
+def add_sounding_bass(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add 'sounding_bass_idx' column: index of lowest-pitched note sounding at each note's onset.
+
+    A note is sounding at time t if: onset <= t < release
+    Non-note rows get NaN.
+
+    >>> df = pd.DataFrame({
+    ...     "type": ["note", "note", "note"],
+    ...     "pitch": [60.0, 48.0, 55.0],
+    ...     "onset": [0.0, 0.0, 1.0],
+    ...     "release": [2.0, 1.5, 2.5],
+    ... })
+    >>> result = add_sounding_bass(df)
+    >>> result["sounding_bass_idx"].tolist()
+    [1.0, 1.0, 1.0]
+
+    If multiple notes share the lowest pitch, the first by index wins:
+    >>> df = pd.DataFrame({
+    ...     "type": ["note", "note"],
+    ...     "pitch": [60.0, 60.0],
+    ...     "onset": [0.0, 0.0],
+    ...     "release": [1.0, 1.0],
+    ... })
+    >>> result = add_sounding_bass(df)
+    >>> result["sounding_bass_idx"].tolist()
+    [0.0, 0.0]
+
+    Non-note rows get NaN:
+    >>> df = pd.DataFrame({
+    ...     "type": ["bar", "note", "note"],
+    ...     "pitch": [float("nan"), 60.0, 48.0],
+    ...     "onset": [0.0, 0.0, 0.0],
+    ...     "release": [4.0, 1.0, 1.0],
+    ... })
+    >>> result = add_sounding_bass(df)
+    >>> import math
+    >>> math.isnan(result["sounding_bass_idx"].iloc[0])
+    True
+    >>> result["sounding_bass_idx"].iloc[1:].tolist()
+    [2.0, 2.0]
+    """
+    df = df.copy()
+    df["sounding_bass_idx"] = float("nan")
+
+    notes = df[df.type == "note"]
+    if len(notes) == 0:
+        return df
+
+    onsets = notes["onset"].values
+    releases = notes["release"].values
+    pitches = notes["pitch"].values
+    indices = notes.index.values
+
+    unique_onsets = np.unique(onsets)
+    bass_idx_map = {}
+
+    for t in unique_onsets:
+        sounding = (onsets <= t) & (releases > t)
+        if sounding.any():
+            sounding_pitches = pitches[sounding]
+            sounding_indices = indices[sounding]
+            min_pos = np.argmin(sounding_pitches)
+            bass_idx_map[t] = sounding_indices[min_pos]
+
+    df.loc[notes.index, "sounding_bass_idx"] = notes["onset"].map(bass_idx_map)
+
+    return df
