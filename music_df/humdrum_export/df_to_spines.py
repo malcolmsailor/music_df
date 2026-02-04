@@ -27,6 +27,13 @@ else:
         "note": 2,
     }
 
+    # Tolerance for floating point comparisons when detecting rests.
+    # Triplet durations (1/3 beat) cannot be exactly represented in binary
+    # floating point, leading to tiny gaps (~1e-15) between consecutive notes.
+    # This tolerance is small enough to not affect real durations but large
+    # enough to absorb floating point errors.
+    REST_TOLERANCE = 1e-9
+
     LOGGER = logging.getLogger(__name__)
 
     def kern_barline():
@@ -343,7 +350,7 @@ else:
                 )
                 prev_release: float = row.onset
 
-            if row.onset > prev_release:
+            if row.onset > prev_release + REST_TOLERANCE:
                 try:
                     handle_rest(
                         prev_release,
