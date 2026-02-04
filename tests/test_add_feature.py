@@ -221,3 +221,61 @@ class TestAddSoundingBass:
         result = add_sounding_bass(df)
         assert result.index.tolist() == [10, 20]
         assert result["sounding_bass_idx"].tolist() == [20, 20]
+
+    def test_percussion_excluded_from_bass(self):
+        """Percussion notes are not considered as bass candidates."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [36.0, 60.0],  # 36 = kick drum, lower pitch
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+                "channel": [9, 0],  # 9 = percussion
+            }
+        )
+        result = add_sounding_bass(df)
+        # Bass should be note 1 (pitch 60), not note 0 (percussion)
+        assert result["sounding_bass_idx"].tolist() == [1, 1]
+
+    def test_percussion_gets_bass_assigned(self):
+        """Percussion notes still get a sounding_bass_idx value."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [36.0, 60.0],
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+                "channel": [9, 0],
+            }
+        )
+        result = add_sounding_bass(df)
+        # Percussion note at idx 0 should have bass_idx = 1
+        assert result["sounding_bass_idx"].iloc[0] == 1
+
+    def test_no_channel_column_works(self):
+        """Function works when channel column is absent."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [48.0, 60.0],
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert result["sounding_bass_idx"].tolist() == [0, 0]
+
+    def test_only_percussion_sounding_returns_nan(self):
+        """When only percussion is sounding, bass is NaN."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "pitch": [36.0, 60.0],
+                "onset": [0.0, 1.0],  # Percussion alone at onset 0
+                "release": [0.5, 2.0],
+                "channel": [9, 0],
+            }
+        )
+        result = add_sounding_bass(df)
+        assert pd.isna(result["sounding_bass_idx"].iloc[0])  # Percussion-only onset
+        assert result["sounding_bass_idx"].iloc[1] == 1  # Normal note

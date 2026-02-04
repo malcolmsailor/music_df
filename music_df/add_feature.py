@@ -14,6 +14,7 @@ from typing import Callable, Iterable
 import numpy as np
 import pandas as pd
 from music_df.constants import NAME_TO_MIDI_INSTRUMENT
+from music_df.transpose import PERCUSSION_CHANNEL
 
 
 def _tempo2bpm(tempo: int) -> float:
@@ -1151,19 +1152,28 @@ def add_sounding_bass(df: pd.DataFrame) -> pd.DataFrame:
     if len(notes) == 0:
         return df
 
+    # Exclude percussion from bass candidates (pitches represent drums, not notes)
+    if "channel" in notes.columns:
+        bass_candidates = notes[notes["channel"] != PERCUSSION_CHANNEL]
+    else:
+        bass_candidates = notes
+
     onsets = notes["onset"].values
     releases = notes["release"].values
-    pitches = notes["pitch"].values
-    indices = notes.index.values
+
+    cand_onsets = bass_candidates["onset"].values
+    cand_releases = bass_candidates["release"].values
+    cand_pitches = bass_candidates["pitch"].values
+    cand_indices = bass_candidates.index.values
 
     unique_onsets = np.unique(onsets)
     bass_idx_map = {}
 
     for t in unique_onsets:
-        sounding = (onsets <= t) & (releases > t)
+        sounding = (cand_onsets <= t) & (cand_releases > t)
         if sounding.any():
-            sounding_pitches = pitches[sounding]
-            sounding_indices = indices[sounding]
+            sounding_pitches = cand_pitches[sounding]
+            sounding_indices = cand_indices[sounding]
             min_pos = np.argmin(sounding_pitches)
             bass_idx_map[t] = sounding_indices[min_pos]
 
