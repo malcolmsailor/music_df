@@ -17,6 +17,7 @@ except ImportError:
 else:
     from mspell import Speller
 
+    from music_df.add_feature import _to_dict_if_necessary
     from music_df.humdrum_export.df_to_homo_df import df_to_homo_df
     from music_df.humdrum_export.dur_to_kern import KernDurError, dur_to_kern
 
@@ -32,7 +33,7 @@ else:
         return "="
 
     def kern_ts(numer, denom):
-        return f"*M{numer}/{denom}"
+        return f"*M{int(numer)}/{int(denom)}"
 
     def _get_kern_notes_sub(
         symbol: str,
@@ -396,17 +397,18 @@ else:
                 skip_measure = False
 
             elif row.type == "time_signature":
+                other = _to_dict_if_necessary(row.other)
                 this_measure_tokens.append(
                     (
                         row.onset,
                         TOKEN_ORDER["time_signature"],
                         kern_ts(
-                            numer=row.other["numerator"],
-                            denom=row.other["denominator"],
+                            numer=other["numerator"],
+                            denom=other["denominator"],
                         ),
                     )
                 )
-                meter = Meter(f"{row.other['numerator']}/{row.other['denominator']}")
+                meter = Meter(f"{int(other['numerator'])}/{int(other['denominator'])}")
                 if label_col is not None or nth_note_label_col is not None:
                     # We need to append a dummy value so we can zip tokens and labels
                     #   together below

@@ -8,6 +8,7 @@ from typing import Type
 import pandas as pd
 import symusic
 
+from music_df.add_feature import _to_dict_if_necessary
 from music_df.sort_df import sort_df
 
 
@@ -269,15 +270,17 @@ def df_to_symusic_score(
 
         elif event_type == "tempo":
             tempo_val = row.get("tempo")
-            if tempo_val is None and isinstance(row.get("other"), dict):
-                tempo_val = row["other"].get("tempo")
+            if tempo_val is None:
+                other = _to_dict_if_necessary(row.get("other", {}))
+                if isinstance(other, dict):
+                    tempo_val = other.get("tempo")
             if tempo_val is not None:
                 score.tempos.append(
                     symusic.Tempo(time=_to_ticks(row["onset"]), qpm=float(tempo_val))
                 )
 
         elif event_type == "time_signature":
-            other = row.get("other", {})
+            other = _to_dict_if_necessary(row.get("other", {}))
             if isinstance(other, dict):
                 score.time_signatures.append(
                     symusic.TimeSignature(
@@ -288,7 +291,7 @@ def df_to_symusic_score(
                 )
 
         elif event_type == "key_signature":
-            other = row.get("other", {})
+            other = _to_dict_if_necessary(row.get("other", {}))
             if isinstance(other, dict):
                 score.key_signatures.append(
                     symusic.KeySignature(
@@ -300,13 +303,13 @@ def df_to_symusic_score(
 
         elif event_type == "program_change":
             track_i = int(row["track"]) if pd.notna(row.get("track")) else 0
-            other = row.get("other", {})
+            other = _to_dict_if_necessary(row.get("other", {}))
             if isinstance(other, dict) and "program" in other:
                 score.tracks[track_i].program = int(other["program"])
 
         elif event_type == "control_change":
             track_i = int(row["track"]) if pd.notna(row.get("track")) else 0
-            other = row.get("other", {})
+            other = _to_dict_if_necessary(row.get("other", {}))
             if isinstance(other, dict):
                 score.tracks[track_i].controls.append(
                     symusic.ControlChange(
@@ -318,7 +321,7 @@ def df_to_symusic_score(
 
         elif event_type == "pitchwheel":
             track_i = int(row["track"]) if pd.notna(row.get("track")) else 0
-            other = row.get("other", {})
+            other = _to_dict_if_necessary(row.get("other", {}))
             if isinstance(other, dict) and "pitch" in other:
                 score.tracks[track_i].pitch_bends.append(
                     symusic.PitchBend(
