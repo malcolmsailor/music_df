@@ -1,0 +1,44 @@
+# Dockerfile for building Linux totable binaries
+#
+# Usage (from repository root):
+#   # Build for Linux x86_64:
+#   docker build -f scripts/Dockerfile.build-linux --platform linux/amd64 -t totable-builder .
+#   docker run --rm -v $(pwd)/music_df/bin:/out totable-builder
+#
+#   # Build for Linux arm64:
+#   docker build -f scripts/Dockerfile.build-linux --platform linux/arm64 -t totable-builder-arm .
+#   docker run --rm -v $(pwd)/music_df/bin:/out totable-builder-arm
+
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy humlib sources (amalgamated version) and totable
+COPY scripts/humlib /humlib
+COPY scripts/totable.cpp /totable.cpp
+
+# Build - compile pugixml.cpp and humlib.cpp along with totable.cpp
+RUN g++ -O3 -std=c++11 -Wall \
+    -I/humlib \
+    -o /totable \
+    /totable.cpp \
+    /humlib/humlib.cpp \
+    /humlib/pugixml.cpp
+
+# Detect architecture and copy with appropriate name
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        cp /totable /totable-linux-x86_64; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        cp /totable /totable-linux-arm64; \
+    fi
+
+FROM scratch AS export
+COPY --from=builder /totable-linux-* /
+
+# For running the container to extract the binary
+FROM debian:bookworm-slim AS runner
+COPY --from=builder /totable-linux-* /
+CMD ["sh", "-c", "cp /totable-linux-* /out/"]

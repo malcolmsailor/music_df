@@ -1,9 +1,8 @@
 """
 Provides functions for reading a humdrum .krn file into a music_df.
 
-Requires the `totable` command-line tool, which is a small executable I wrote based
-using `humlib` and which isn't yet distributed with this package. If you'd like to
-use it, please contact me.
+Requires the `totable` command-line tool, which is bundled with this package
+for supported platforms (macOS arm64/x86_64, Linux x86_64/arm64).
 """
 
 import io
@@ -19,8 +18,14 @@ from music_df.sort_df import sort_df
 from music_df.xml_parser import xml_parse
 from music_df.xml_parser.parser import RepeatOptions
 
-TOTABLE = os.getenv("TOTABLE")
 LOGGER = logging.getLogger(__name__)
+
+
+def _get_totable_path() -> str:
+    """Get the path to the bundled totable binary."""
+    from music_df.bin import get_totable_path
+
+    return str(get_totable_path())
 
 
 def _insert_initial_barline(df: pd.DataFrame) -> pd.DataFrame:
@@ -112,8 +117,8 @@ def read_krn(
     default_tempo: float | None = None,
     label_identifiers: str | None = None,
 ) -> pd.DataFrame:
-    assert TOTABLE is not None, "TOTABLE environment variable undefined"
-    totable_cmd = [TOTABLE, krn_path]
+    totable_path = _get_totable_path()
+    totable_cmd = [totable_path, krn_path]
     if label_identifiers is not None:
         totable_cmd.append(label_identifiers)
 

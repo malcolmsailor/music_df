@@ -16,6 +16,7 @@ license = { text = "MIT" }
 [tool.setuptools]
 packages = [
     "music_df",
+    "music_df.bin",
     "music_df.conversions",
     "music_df.harmony",
     "music_df.humdrum_export",
@@ -34,6 +35,7 @@ packages = [
 # where = ["music_df"]
 
 [tool.setuptools.package-data]
+"music_df.bin" = ["totable-*"]
 "music_df.scripts.humdrum_export" = ["*.sh"]
 "music_df.scripts.configs" = ["*.yaml"]
 

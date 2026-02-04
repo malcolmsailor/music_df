@@ -1,6 +1,4 @@
-"""Convenience script so we don't have to convert from krn on HPC (where we'd
-have to build the TOTABLE binary.)
-"""
+"""Convenience script for batch converting krn files to CSV."""
 
 import glob
 import json

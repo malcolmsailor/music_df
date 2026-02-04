@@ -1,7 +1,6 @@
 import os
 import random
 
-TOTABLE = os.getenv("TOTABLE")
 HUMDRUM_DATA_PATH = os.getenv("HUMDRUM_DATA")
 MIDIDATA_PATH = os.getenv("MIDIDATA_PATH")
 
