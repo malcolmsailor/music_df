@@ -304,6 +304,12 @@ def df_with_harmony_to_hum(
     split_point: int = 60,
     label_color_col: t.Optional[str] = None,
     quantize: t.Optional[int] = None,
+    color_col: t.Optional[str] = None,
+    color_mask_col: t.Optional[str] = None,
+    color_mapping: t.Optional[t.Mapping[t.Any, str]] = None,
+    color_transparency_col: t.Optional[str] = None,
+    n_transparency_levels: t.Optional[int] = None,
+    uncolored_val: t.Optional[str] = None,
 ) -> str:
     """Export note_df with harmonic annotations from chord_df to Humdrum format.
 
@@ -317,6 +323,12 @@ def df_with_harmony_to_hum(
         split_point: MIDI pitch at which to split into treble/bass staves.
         label_color_col: Optional column for coloring labels.
         quantize: Optional quantization level (ticks per quarter).
+        color_col: Optional column for coloring notes.
+        color_mask_col: Optional boolean mask column for which notes to color.
+        color_mapping: Optional mapping from color_col values to hex colors.
+        color_transparency_col: Optional column for note transparency.
+        n_transparency_levels: Optional number of transparency levels.
+        uncolored_val: Optional value label for uncolored notes in the color key.
 
     Returns:
         Humdrum-formatted string with harmonic analysis labels.
@@ -348,4 +360,10 @@ def df_with_harmony_to_hum(
         label_col="harmonic_analysis",
         label_color_col=label_color_col,
         quantize=quantize,
+        color_col=color_col,
+        color_mask_col=color_mask_col,
+        color_mapping=color_mapping,
+        color_transparency_col=color_transparency_col,
+        n_transparency_levels=n_transparency_levels,
+        uncolored_val=uncolored_val,
     )
