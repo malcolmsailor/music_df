@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import pandas as pd
 
 from music_df.add_feature import add_bar_durs
+from music_df.chord_df import label_music_df_with_chord_df, merge_annotations
 from music_df.humdrum_export.collate_spines import collate_spines
 from music_df.humdrum_export.color_df import ColorMapping, color_df
 from music_df.humdrum_export.constants import DEFAULT_COLOR_MAPPING, USER_SIGNIFIERS
@@ -14,6 +15,7 @@ from music_df.humdrum_export.df_utils.spell_df import spell_df
 from music_df.humdrum_export.df_utils.split_df_by_pitch import split_df_by_pitch
 from music_df.humdrum_export.merge_spines import merge_spines
 from music_df.quantize_df import quantize_df
+from music_df.sort_df import sort_df
 from music_df.split_notes import split_notes_at_barlines
 
 
@@ -292,3 +294,58 @@ def df2clef(df: pd.DataFrame):
             _write_spine(spine, path)
         collated = collate_spines(paths)
     return collated
+
+
+def df_with_harmony_to_hum(
+    note_df: pd.DataFrame,
+    chord_df: pd.DataFrame,
+    split_degree: bool = False,
+    include_key: bool = True,
+    split_point: int = 60,
+    label_color_col: t.Optional[str] = None,
+    quantize: t.Optional[int] = None,
+) -> str:
+    """Export note_df with harmonic annotations from chord_df to Humdrum format.
+
+    Args:
+        note_df: DataFrame containing notes.
+        chord_df: DataFrame containing chord annotations with onset, key, degree/
+            primary_degree+secondary_degree, quality, and inversion columns.
+        split_degree: If True, use primary/secondary degree columns instead of
+            a single degree column.
+        include_key: If True, include key in the annotation labels (e.g., "C.IM").
+        split_point: MIDI pitch at which to split into treble/bass staves.
+        label_color_col: Optional column for coloring labels.
+        quantize: Optional quantization level (ticks per quarter).
+
+    Returns:
+        Humdrum-formatted string with harmonic analysis labels.
+    """
+    if split_degree:
+        columns_to_add = (
+            "key",
+            "primary_degree",
+            "primary_alteration",
+            "secondary_degree",
+            "secondary_alteration",
+            "quality",
+            "inversion",
+        )
+    else:
+        columns_to_add = ("key", "degree", "quality", "inversion")
+
+    labeled_df = label_music_df_with_chord_df(
+        note_df, chord_df, columns_to_add=columns_to_add
+    )
+    labeled_df = sort_df(labeled_df)
+    labeled_df["harmonic_analysis"] = merge_annotations(
+        labeled_df, include_key=include_key
+    )
+
+    return df2hum(
+        labeled_df,
+        split_point=split_point,
+        label_col="harmonic_analysis",
+        label_color_col=label_color_col,
+        quantize=quantize,
+    )

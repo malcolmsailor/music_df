@@ -664,9 +664,9 @@ def remove_long_tonicizations(
                 remove_tonicization(tonicization, start_i, end_i)
 
     chord_df = replace_spurious_tonics(chord_df)
-    chord_df["secondary_degree"] = "/" + chord_df["secondary_degree"]
-    chord_df["secondary_degree"] = chord_df["secondary_degree"].replace("/I", "")
-    chord_df["degree"] = chord_df["primary_degree"] + chord_df["secondary_degree"]
+    secondary_with_slash = "/" + chord_df["secondary_degree"]
+    secondary_with_slash = secondary_with_slash.replace("/I", "")
+    chord_df["degree"] = chord_df["primary_degree"] + secondary_with_slash
 
     if not had_split_columns:
         chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
@@ -938,9 +938,9 @@ def remove_short_modulations(
 
     replace_spurious_tonics(chord_df, inplace=True)
 
-    chord_df["secondary_degree"] = "/" + chord_df["secondary_degree"]
-    chord_df["secondary_degree"] = chord_df["secondary_degree"].replace("/I", "")
-    chord_df["degree"] = chord_df["primary_degree"] + chord_df["secondary_degree"]
+    secondary_with_slash = "/" + chord_df["secondary_degree"]
+    secondary_with_slash = secondary_with_slash.replace("/I", "")
+    chord_df["degree"] = chord_df["primary_degree"] + secondary_with_slash
 
     if not had_split_columns:
         chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
