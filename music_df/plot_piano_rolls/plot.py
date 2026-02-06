@@ -161,6 +161,8 @@ def plot_piano_roll(
     beats: None | float = None,
     barlines: bool = False,
     release_delta: float = 0.0,
+    annotations: Optional[Sequence[tuple[float, str]]] = None,
+    regions: Optional[Sequence[tuple]] = None,
 ):
     # Extract barline positions before filtering to notes only
     barline_positions = None
@@ -188,6 +190,47 @@ def plot_piano_roll(
     if not show_axes:
         ax.axis("off")
     add_piano_roll_background(ax, beats=beats, barlines=barline_positions)
+    if regions is not None:
+        for region in regions:
+            if len(region) == 2:
+                rx1, rx2 = region
+                ry1, ry2 = float(low), float(hi)
+            else:
+                assert len(region) == 4
+                rx1, rx2, ry1, ry2 = region
+            rect = matplotlib.patches.Polygon(
+                xy=[[rx1, ry1], [rx2, ry1], [rx2, ry2], [rx1, ry2]],
+                color="yellow",
+                alpha=0.3,
+                zorder=2.5,
+                clip_on=True,
+            )
+            ax.add_patch(rect)
+    if annotations is not None:
+        annotation_height = 4
+        ax.set_ylim(float(low) - annotation_height, float(hi))
+        # Separator line between notes and annotations
+        ax.add_line(matplotlib.lines.Line2D(
+            [float(begin), float(end)], [float(low), float(low)],
+            color="gray", linewidth=0.5, zorder=5,
+        ))
+        # Extend barlines into the annotation area
+        if barline_positions is not None:
+            for barline_onset in barline_positions:
+                if begin < barline_onset < end:
+                    ax.add_line(matplotlib.lines.Line2D(
+                        [barline_onset, barline_onset],
+                        [float(low) - annotation_height, float(low)],
+                        color="#dddddd", zorder=2,
+                    ))
+        for onset, label in annotations:
+            ax.text(
+                onset, float(low) - 0.5, label,
+                ha="left", va="top", fontsize=8,
+                zorder=5, clip_on=True,
+            )
+        # Filter y-ticks to only show values in the note range
+        ax.set_yticks([t for t in ax.get_yticks() if t >= float(low)])
     for i, (row_i, note) in enumerate(df.iterrows()):
         add_note(
             ax,

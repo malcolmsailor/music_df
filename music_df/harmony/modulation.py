@@ -116,6 +116,21 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     4              V               VI   C
     5              I               VI   C
 
+    >>> df = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... primary_degree,secondary_degree,key
+    ... vi,i,C
+    ... V,VI,C
+    ... vi,i,C
+    ... ii,VI,C
+    ... V,VI,C
+    ... VI,i,C
+    ... '''
+    ...     )
+    ... )
+    >>> expand_tonicizations(df)
+
     Dominant chord behavior
     >>> df = pd.read_csv(
     ...     io.StringIO(
@@ -286,6 +301,36 @@ def remove_long_tonicizations(
             tonicization. Ignored if tonicization_cache is provided.
         simplify_enharmonics: Whether to simplify enharmonic spellings of the key of
             the tonicization. Ignored if tonicization_cache is provided.
+
+    A pesky passage from the DCML version of op 10,2
+    >>> op10_2 = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 173,ii,F
+    ... 173.5,iv/V,F
+    ... 174.0,#viio64/V,F
+    ... 174.5,v6,F
+    ... 175.0,v6,F
+    ... 175.5,V6/V,F
+    ... 176.0,V6/V,F
+    ... 176.5,v,F
+    ... 170.0,v,F
+    ... 177.5,IV,F
+    ... 178,viio64,F
+    ... 178.5,I6,F
+    ... 179.5,I,F
+    ... 180,V7/IV,F
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(
+    ...     op10_2,
+    ...     max_tonicization_duration=16.0,
+    ...     min_removal_duration=4.0,
+    ...     max_tonicization_num_chords=2,
+    ...     min_removal_num_chords=2,
+    ... )
 
     >>> no_tonicizations = pd.read_csv(
     ...     io.StringIO(
@@ -563,6 +608,23 @@ def remove_long_tonicizations(
     1    1.0      V   G
     2    2.0      V   G
     3    3.0      V   G
+
+    173.0,173.5,7a2,II,_,I,_,0.0,F,m
+    173.5,174.0,580,IV,_,V,_,0.0,F,m
+    174.0,174.5,5b2,VII,#,V,_,2.0,F,o
+    174.5,175.0,370,V,_,I,_,1.0,F,m
+    175.0,175.5,370,V,_,I,_,1.0,F,m
+    175.5,176.0,b27,V,_,V,_,1.0,F,M
+    176.0,176.5,b27,V,_,V,_,1.0,F,M
+    176.5,177.0,037,V,_,I,_,0.0,F,m
+    177.0,177.5,037,V,_,I,_,0.0,F,m
+    177.5,178.0,a25,IV,_,I,_,0.0,F,M
+    178.0,178.5,a47,VII,_,I,_,2.0,F,o
+    178.5,179.5,905,I,_,I,_,1.0,F,M
+    179.5,180.0,590,I,_,I,_,0.0,F,M
+    180.0,180.5,5903,V,_,IV,_,0.0,F,Mm7
+
+
     """
     assert (
         max_tonicization_duration is not None or max_tonicization_num_chords is not None
@@ -607,6 +669,7 @@ def remove_long_tonicizations(
         chord_df, quality_col="quality" if "quality" in chord_df.columns else None
     )
 
+    # breakpoint()
     tonicization_changes = (
         chord_df["secondary_degree"] != chord_df["secondary_degree"].shift(1)
     ) | (chord_df["key"] != chord_df["key"].shift(1))
