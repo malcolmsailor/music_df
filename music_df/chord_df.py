@@ -37,6 +37,9 @@ SPLIT_FORMAT_REQUIRED_COLUMNS = frozenset(
     }
 )
 OPTIONAL_COLUMNS = frozenset({"release", "chord_pcs"})
+SPLIT_FORMAT_OPTIONAL_COLUMNS = frozenset({"secondary_mode"})
+
+VALID_SECONDARY_MODES = frozenset({"m", "M"})
 
 RN_FORMAT_REQUIRED_COLUMNS = frozenset({"onset", "key", "rn"})
 
@@ -56,6 +59,7 @@ DEGREE_REGEX = re.compile(
         /           #   literal slash separator
         ([#b]*)     #   group 4: secondary alteration
         ([IViv]+)   #   group 5: secondary Roman numeral
+        ([mM]?)     #   group 6: optional secondary mode
     )?
     $
 """,
@@ -197,6 +201,8 @@ def _check_types(
                     "secondary_alteration",
                 ]
             )
+            if "secondary_mode" in df.columns:
+                string_cols.append("secondary_mode")
 
     for col in string_cols:
         if col in df.columns and not pd.api.types.is_string_dtype(df[col]):
@@ -294,6 +300,31 @@ def _check_alteration_values(
                     message=f"Invalid {col} value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
                 )
             )
+
+
+def _check_secondary_mode_values(
+    df: pd.DataFrame,
+    null_chord_token: str,
+    null_alteration_char: str,
+    errors: list[ValidationError],
+) -> None:
+    if "secondary_mode" not in df.columns:
+        return
+
+    valid_values = VALID_SECONDARY_MODES | {null_alteration_char, null_chord_token}
+    invalid_mask = (
+        ~df["secondary_mode"].isin(valid_values) & ~df["secondary_mode"].isna()
+    )
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        invalid_values = df.loc[invalid_mask, "secondary_mode"].unique().tolist()
+        errors.append(
+            ValidationError(
+                column="secondary_mode",
+                row_index=invalid_indices[0] if len(invalid_indices) == 1 else None,
+                message=f"Invalid secondary_mode value(s): {invalid_values} at row(s) {invalid_indices[:5]}{'...' if len(invalid_indices) > 5 else ''}",
+            )
+        )
 
 
 def _check_inversion_values(
@@ -419,7 +450,11 @@ def _check_unrecognized_columns(
     if format_detected == "joined":
         recognized = JOINED_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
     elif format_detected == "split":
-        recognized = SPLIT_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
+        recognized = (
+            SPLIT_FORMAT_REQUIRED_COLUMNS
+            | SPLIT_FORMAT_OPTIONAL_COLUMNS
+            | OPTIONAL_COLUMNS
+        )
     elif format_detected == "rn":
         recognized = RN_FORMAT_REQUIRED_COLUMNS | OPTIONAL_COLUMNS
     else:
@@ -587,6 +622,9 @@ def validate_chord_df(
                 _check_degree_format(chord_df, null_chord_token, errors)
             else:
                 _check_alteration_values(
+                    chord_df, null_chord_token, null_alteration_char, errors
+                )
+                _check_secondary_mode_values(
                     chord_df, null_chord_token, null_alteration_char, errors
                 )
 
@@ -820,6 +858,7 @@ def merge_annotations(
     primary_alteration_col: str = "primary_alteration",
     secondary_degree_col: str = "secondary_degree",
     secondary_alteration_col: str = "secondary_alteration",
+    secondary_mode_col: str = "secondary_mode",
     inversion_col: str = "inversion",
     quality_col: str = "quality",
     include_key: bool = True,
@@ -898,6 +937,7 @@ def merge_annotations(
             primary_alteration_col=primary_alteration_col,
             secondary_degree_col=secondary_degree_col,
             secondary_alteration_col=secondary_alteration_col,
+            secondary_mode_col=secondary_mode_col,
         )
     df = split_degrees_to_single_degree(
         df,
@@ -907,6 +947,7 @@ def merge_annotations(
         primary_alteration_col=primary_alteration_col,
         secondary_degree_col=secondary_degree_col,
         secondary_alteration_col=secondary_alteration_col,
+        secondary_mode_col=secondary_mode_col,
         output_col="rn",
         inplace=True,
     )
@@ -1024,6 +1065,7 @@ def split_degrees_to_single_degree(
     primary_alteration_col: str = "primary_alteration",
     secondary_degree_col: str = "secondary_degree",
     secondary_alteration_col: str = "secondary_alteration",
+    secondary_mode_col: str = "secondary_mode",
     inversion_col: str | None = None,
     quality_col: str | None = None,
     null_alteration_char: str = "_",
@@ -1066,6 +1108,27 @@ def split_degrees_to_single_degree(
     5    #VIm64/bII
     6          bVIM
     Name: rn, dtype: object
+
+    With secondary_mode column:
+    >>> df2 = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... primary_degree,primary_alteration,secondary_degree,secondary_alteration,secondary_mode
+    ... I,_,I,_,_
+    ... V,_,V,_,m
+    ... V,_,V,_,M
+    ... VII,#,V,_,m
+    ... VI,b,I,_,_
+    ... '''
+    ...     )
+    ... )
+    >>> split_degrees_to_single_degree(df2)["degree"]
+    0          I
+    1       V/Vm
+    2       V/VM
+    3    #VII/Vm
+    4        bVI
+    Name: degree, dtype: object
     """
     if not inplace:
         df = df.copy()
@@ -1078,6 +1141,11 @@ def split_degrees_to_single_degree(
         + "/"
         + df[secondary_alteration_col]
         + df[secondary_degree_col]
+        + (
+            df[secondary_mode_col].fillna("")
+            if secondary_mode_col in df.columns
+            else ""
+        )
     )
     df[output_col] = df[output_col].str.replace(null_alteration_char, "")
 
@@ -1097,6 +1165,7 @@ def single_degree_to_split_degrees(
     primary_alteration_col: str = "primary_alteration",
     secondary_degree_col: str = "secondary_degree",
     secondary_alteration_col: str = "secondary_alteration",
+    secondary_mode_col: str = "secondary_mode",
     null_alteration_char: str = "_",
     null_chord_token: str = "na",
     inplace: bool = True,
@@ -1113,12 +1182,12 @@ def single_degree_to_split_degrees(
     ... '''
     ...     )
     ... )
-    >>> single_degree_to_split_degrees(df)
-      degree primary_degree primary_alteration secondary_degree secondary_alteration
-    0      I              I                  _                I                    _
-    1     IV             IV                  _                I                    _
-    2      V              V                  _                I                    _
-    3      I              I                  _                I                    _
+    >>> single_degree_to_split_degrees(df)  # doctest: +NORMALIZE_WHITESPACE
+      degree primary_degree primary_alteration secondary_degree secondary_alteration secondary_mode
+    0      I              I                  _                I                    _              _
+    1     IV             IV                  _                I                    _              _
+    2      V              V                  _                I                    _              _
+    3      I              I                  _                I                    _              _
 
     >>> df = pd.read_csv(
     ...     io.StringIO(
@@ -1133,14 +1202,35 @@ def single_degree_to_split_degrees(
     ... '''
     ...     )
     ... )
-    >>> single_degree_to_split_degrees(df)
-        degree primary_degree primary_alteration secondary_degree secondary_alteration
-    0        I              I                  _                I                    _
-    1    VII/V            VII                  _                V                    _
-    2   V/bVII              V                  _              VII                    b
-    3  #VI/bII             VI                  #               II                    b
-    4      bVI             VI                  b                I                    _
-    5       na             na                 na               na                   na
+    >>> single_degree_to_split_degrees(df)  # doctest: +NORMALIZE_WHITESPACE
+        degree primary_degree primary_alteration secondary_degree secondary_alteration secondary_mode
+    0        I              I                  _                I                    _              _
+    1    VII/V            VII                  _                V                    _              _
+    2   V/bVII              V                  _              VII                    b              _
+    3  #VI/bII             VI                  #               II                    b              _
+    4      bVI             VI                  b                I                    _              _
+    5       na             na                 na               na                   na             na
+
+    With secondary mode suffixes:
+    >>> df2 = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... degree
+    ... V/Vm
+    ... V/VM
+    ... VII/bIIm
+    ... I
+    ... na
+    ... '''
+    ...     )
+    ... )
+    >>> single_degree_to_split_degrees(df2)  # doctest: +NORMALIZE_WHITESPACE
+         degree primary_degree primary_alteration secondary_degree secondary_alteration secondary_mode
+    0      V/Vm              V                  _                V                    _              m
+    1      V/VM              V                  _                V                    _              M
+    2  VII/bIIm            VII                  _               II                    b              m
+    3         I              I                  _                I                    _              _
+    4        na             na                 na               na                   na             na
     """
     if not inplace:
         df = df.copy()
@@ -1167,12 +1257,19 @@ def single_degree_to_split_degrees(
         # There are no secondary degrees
         df[secondary_degree_col] = "I"
         df[secondary_alteration_col] = null_alteration_char
+        df[secondary_mode_col] = null_alteration_char
 
     else:
         secondary = (
             splits[1]
-            .str.extract(r"([b#]*)(.*)")
-            .rename(columns={0: secondary_alteration_col, 1: secondary_degree_col})
+            .str.extract(r"([b#]*)([IViv]+)([mM]?)")
+            .rename(
+                columns={
+                    0: secondary_alteration_col,
+                    1: secondary_degree_col,
+                    2: secondary_mode_col,
+                }
+            )
         )
 
         secondary[secondary_alteration_col] = (
@@ -1181,11 +1278,17 @@ def single_degree_to_split_degrees(
             .replace("", null_alteration_char)
         )
         secondary[secondary_degree_col] = secondary[secondary_degree_col].fillna("I")
+        secondary[secondary_mode_col] = (
+            secondary[secondary_mode_col]
+            .fillna(null_alteration_char)
+            .replace("", null_alteration_char)
+        )
 
         secondary.loc[null_mask, :] = null_chord_token
 
         df[secondary_degree_col] = secondary[secondary_degree_col]
         df[secondary_alteration_col] = secondary[secondary_alteration_col]
+        df[secondary_mode_col] = secondary[secondary_mode_col]
 
     return df
 
@@ -1245,7 +1348,16 @@ def extract_chord_df_from_music_df(
     2   C    3.0      V       M        0.0      4.0
     3   G    4.0      V       M        0.0      6.0
     """
+    import warnings
+
     columns = list(columns)
+    missing = [c for c in columns if c not in music_df.columns]
+    if missing:
+        warnings.warn(
+            f"Columns not found in music_df (skipping): {missing}",
+            stacklevel=2,
+        )
+        columns = [c for c in columns if c in music_df.columns]
     assert all(col in music_df.columns for col in columns), (
         f"music_df must have the following columns: {columns}"
     )
@@ -1360,9 +1472,20 @@ def label_music_df_with_chord_df(
     6  note   66.0    4.0      6.0   C      V       M        1.0
     7  note   67.0    6.0      8.0   G      V       M        0.0
     """
+    import warnings
+
+    columns_to_add = list(columns_to_add)
+    missing = [c for c in columns_to_add if c not in chord_df.columns]
+    if missing:
+        warnings.warn(
+            f"Columns not found in chord_df (skipping): {missing}",
+            stacklevel=2,
+        )
+        columns_to_add = [c for c in columns_to_add if c in chord_df.columns]
+
     out = pd.merge_asof(
         music_df.drop(columns=[c for c in columns_to_add if c in music_df.columns]),
-        chord_df[["onset"] + list(columns_to_add)],
+        chord_df[["onset"] + columns_to_add],
         on="onset",
         direction="backward",
     )
