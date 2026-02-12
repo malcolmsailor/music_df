@@ -36,7 +36,7 @@ SPLIT_FORMAT_REQUIRED_COLUMNS = frozenset(
         "inversion",
     }
 )
-OPTIONAL_COLUMNS = frozenset({"release", "chord_pcs"})
+OPTIONAL_COLUMNS = frozenset({"release", "chord_pcs", "secondary_mode"})
 
 RN_FORMAT_REQUIRED_COLUMNS = frozenset({"onset", "key", "rn"})
 
