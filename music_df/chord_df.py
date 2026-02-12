@@ -1,3 +1,22 @@
+"""chord_df: validation and conversion for three chord annotation formats.
+
+**Joined** — ``onset, key, degree, quality, inversion``
+    ``degree`` is a combined Roman-numeral string (e.g., ``"V/Vm"``).
+    Quality and inversion are separate columns.
+
+**Split** — ``onset, key, primary_degree, primary_alteration,
+    secondary_degree, secondary_alteration, quality, inversion``
+    (optional: ``secondary_mode``)
+    Decomposes the joined ``degree`` into parts.
+
+**RN** — ``onset, key, rn``
+    ``rn`` combines degree + quality + inversion figure in one string
+    (e.g., ``"VM6/bVII"``). ``key`` supports forward-fill.
+
+See ``notes/chord_df_formats.md`` for the full format reference, conversion
+paths, RN dialects (music21 vs rnbert), and known limitations.
+"""
+
 import io  # noqa: F401
 import re
 from dataclasses import dataclass, field
