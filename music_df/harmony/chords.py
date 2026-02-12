@@ -501,6 +501,7 @@ def tonicization_to_key(
     original_key: str,
     case_matters: bool = False,
     simplify_enharmonics: bool = True,
+    secondary_mode_override: str | None = None,
 ) -> str:
     """
     Given the secondary RN and the original key, return the key of the tonicization.
@@ -518,10 +519,14 @@ def tonicization_to_key(
         key (e.g., "Eb" rather than "D#"). See MAJOR_KEYS and MINOR_KEYS for the
         mapping.
 
+    Mode priority: explicit secondary_mode_override > case_matters > TONICIZATIONS table.
+
     Args:
         secondary_rn: The secondary Roman numeral.
         original_key: The original key.
         case_matters: Whether case of the secondary RN indicates mode.
+        secondary_mode_override: Explicit mode override ("M" or "m"). "_" and None
+            are ignored.
 
     >>> tonicization_to_key("ii", "C")
     'd'
@@ -548,7 +553,15 @@ def tonicization_to_key(
     >>> tonicization_to_key("#III", "C", simplify_enharmonics=False)
     'E#'
 
-
+    secondary_mode_override takes highest priority:
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="M")
+    'A'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="m")
+    'a'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="_")
+    'a'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override=None)
+    'a'
     """
     if secondary_rn == "I":
         return original_key
@@ -560,7 +573,9 @@ def tonicization_to_key(
         warnings.warn(f"Unrecognized secondary RN: {secondary_rn}")
         return original_key
 
-    if case_matters:
+    if secondary_mode_override in ("M", "m"):
+        secondary_mode = secondary_mode_override
+    elif case_matters:
         secondary_mode = MODES[secondary_rn.lstrip("#b")[0].isupper()]
 
     if simplify_enharmonics:
@@ -584,15 +599,19 @@ def tonicization_to_key(
 def get_tonicization_cache(
     case_matters: bool = False,
     simplify_enharmonics: bool = True,
-) -> CacheDict[tuple[str, str], str]:
+) -> CacheDict[tuple[str, str, str | None], str]:
     """
     >>> cache = get_tonicization_cache()
-    >>> cache[("V", "C")]
+    >>> cache[("V", "C", None)]
     'G'
+    >>> cache[("VI", "C", "M")]
+    'A'
+    >>> cache[("VI", "C", None)]
+    'a'
     """
-    tonicization_cache: CacheDict[tuple[str, str], str] = CacheDict(
-        lambda secondary_rn_and_original_key: tonicization_to_key(
-            *secondary_rn_and_original_key, case_matters, simplify_enharmonics
+    tonicization_cache: CacheDict[tuple[str, str, str | None], str] = CacheDict(
+        lambda key: tonicization_to_key(
+            key[0], key[1], case_matters, simplify_enharmonics, key[2]
         )
     )
     return tonicization_cache
