@@ -147,6 +147,14 @@ def get_rn_pitch_classes(
     >>> get_rn_pitch_classes("Im6", "c", rn_format="rnbert")
     [3, 7, 0]
 
+    >>> get_rn_pitch_classes("V/ii", "C")
+    [9, 1, 4]
+
+    >>> get_rn_pitch_classes("III/vi", "C")
+    [0, 4, 7]
+
+    >>> get_rn_pitch_classes("III/VI", "C")
+    [1, 5, 8]
     """
 
     key = MODE_TO_DEFAULT_KEY.get(mode_or_key, mode_or_key)  # type:ignore
@@ -201,6 +209,10 @@ def get_rn_pc_cache(
     '037'
     >>> rnbert_cache["IM/bII", "Bb"]
     'b36'
+    >>> rnbert_cache["IIIM/VM", "C"]
+    'b36'
+    >>> rnbert_cache["IIIM/Vm", "C"]
+    'a25'
 
 
     We can double-check that the caching is working by modifying the cached value
@@ -297,6 +309,40 @@ def get_key_pc_cache(
     return key_pc_cache
 
 
+def _translate_single_rnbert_part(part: str) -> str:
+    """Translate one atomic rnbert token (no ``/``) to music21 format."""
+    match part:
+        case "xaug665":
+            return "Ger65"
+        case "xaug643":
+            return "Fr43"
+    if part.startswith("xaug6"):
+        return "It6"
+
+    m = re.match(r"^([b#]*)([IV]+)(.*)", part)
+    if m is None:
+        if re.match(r"^[b#]*[iv]", part):
+            raise TypeError(
+                f"Mal-formed rnbert Roman numeral begins with lower-case: {part}"
+            )
+        return part
+
+    alteration, degree, remainder = m.groups()
+
+    if not remainder:
+        return alteration + degree
+
+    match remainder[0]:
+        case "M":
+            return alteration + degree.upper() + remainder[1:]
+        case "m":
+            return alteration + degree.lower() + remainder[1:]
+        case "o":
+            return alteration + degree.lower() + remainder
+        case _:
+            return alteration + degree + remainder
+
+
 def translate_rns(
     rn: str,
     src: Literal["rnbert", "music21"] = "rnbert",
@@ -326,6 +372,17 @@ def translate_rns(
     >>> translate_rns("xaug642")
     'It6'
 
+    >>> translate_rns("VM/VM")
+    'V/V'
+    >>> translate_rns("VM/Vm")
+    'V/v'
+    >>> translate_rns("IVm/bIIm")
+    'iv/bii'
+    >>> translate_rns("VM/V")
+    'V/V'
+    >>> translate_rns("bVIIM")
+    'bVII'
+
     >>> translate_rns("vM")
     Traceback (most recent call last):
     ...
@@ -334,36 +391,11 @@ def translate_rns(
 
     if src != "rnbert":
         raise NotImplementedError
-    else:
-        if dst != "music21":
-            raise NotImplementedError
+    if dst != "music21":
+        raise NotImplementedError
 
-        match rn:
-            case "xaug665":
-                return "Ger65"
-            case "xaug643":
-                return "Fr43"
-        if rn.startswith("xaug6"):
-            return "It6"
-
-        m = re.match(r"[IV]+", rn)
-        if m is None:
-            if src == "rnbert" and re.match(r"^[iv]", rn):
-                raise TypeError(
-                    f"Mal-formed rnbert Roman numeral begins with lower-case: {rn}"
-                )
-            else:
-                return rn
-        degree = m.group(0)
-        match rn[len(degree)]:
-            case "M":
-                return degree.upper() + rn[len(degree) + 1 :]
-            case "m":
-                return degree.lower() + rn[len(degree) + 1 :]
-            case "o":
-                return degree.lower() + rn[len(degree) :]
-            case _:
-                return rn
+    parts = rn.split("/")
+    return "/".join(_translate_single_rnbert_part(part) for part in parts)
 
 
 def get_rn_translation_cache(
@@ -469,6 +501,7 @@ def tonicization_to_key(
     original_key: str,
     case_matters: bool = False,
     simplify_enharmonics: bool = True,
+    secondary_mode_override: str | None = None,
 ) -> str:
     """
     Given the secondary RN and the original key, return the key of the tonicization.
@@ -486,10 +519,14 @@ def tonicization_to_key(
         key (e.g., "Eb" rather than "D#"). See MAJOR_KEYS and MINOR_KEYS for the
         mapping.
 
+    Mode priority: explicit secondary_mode_override > case_matters > TONICIZATIONS table.
+
     Args:
         secondary_rn: The secondary Roman numeral.
         original_key: The original key.
         case_matters: Whether case of the secondary RN indicates mode.
+        secondary_mode_override: Explicit mode override ("M" or "m"). "_" and None
+            are ignored.
 
     >>> tonicization_to_key("ii", "C")
     'd'
@@ -516,7 +553,15 @@ def tonicization_to_key(
     >>> tonicization_to_key("#III", "C", simplify_enharmonics=False)
     'E#'
 
-
+    secondary_mode_override takes highest priority:
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="M")
+    'A'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="m")
+    'a'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override="_")
+    'a'
+    >>> tonicization_to_key("VI", "C", secondary_mode_override=None)
+    'a'
     """
     if secondary_rn == "I":
         return original_key
@@ -528,7 +573,9 @@ def tonicization_to_key(
         warnings.warn(f"Unrecognized secondary RN: {secondary_rn}")
         return original_key
 
-    if case_matters:
+    if secondary_mode_override in ("M", "m"):
+        secondary_mode = secondary_mode_override
+    elif case_matters:
         secondary_mode = MODES[secondary_rn.lstrip("#b")[0].isupper()]
 
     if simplify_enharmonics:
@@ -552,15 +599,19 @@ def tonicization_to_key(
 def get_tonicization_cache(
     case_matters: bool = False,
     simplify_enharmonics: bool = True,
-) -> CacheDict[tuple[str, str], str]:
+) -> CacheDict[tuple[str, str, str | None], str]:
     """
     >>> cache = get_tonicization_cache()
-    >>> cache[("V", "C")]
+    >>> cache[("V", "C", None)]
     'G'
+    >>> cache[("VI", "C", "M")]
+    'A'
+    >>> cache[("VI", "C", None)]
+    'a'
     """
-    tonicization_cache: CacheDict[tuple[str, str], str] = CacheDict(
-        lambda secondary_rn_and_original_key: tonicization_to_key(
-            *secondary_rn_and_original_key, case_matters, simplify_enharmonics
+    tonicization_cache: CacheDict[tuple[str, str, str | None], str] = CacheDict(
+        lambda key: tonicization_to_key(
+            key[0], key[1], case_matters, simplify_enharmonics, key[2]
         )
     )
     return tonicization_cache

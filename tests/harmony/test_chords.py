@@ -41,6 +41,9 @@ TEST_CASES: list[tuple[dict, list[tuple[str, str, str]]]] = [
             ("Vm", "m", "7a2"),
             ("I6M", "C", "470"),
             ("I6M", "Eb", "7a3"),
+            # Secondary mode: III of G major vs III of G minor
+            ("IIIM/VM", "C", "b36"),
+            ("IIIM/Vm", "C", "a25"),
         ],
     ),
 ]

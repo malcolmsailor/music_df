@@ -5,6 +5,7 @@ import pytest
 
 from music_df.chord_df import (
     VALID_INVERSIONS,
+    VALID_SECONDARY_MODES,
     assert_valid_chord_df,
     validate_chord_df,
 )
@@ -734,3 +735,97 @@ class TestValidateChordDfChordPcs:
         result = validate_chord_df(df)
         assert not result.is_valid
         assert any("'chord_pcs' must be string type" in e.message for e in result.errors)
+
+
+class TestValidateChordDfSecondaryMode:
+    def _make_split_df(self, **overrides):
+        base = {
+            "onset": [0.0, 1.0],
+            "key": ["C", "C"],
+            "primary_degree": ["I", "V"],
+            "primary_alteration": ["_", "_"],
+            "secondary_degree": ["I", "V"],
+            "secondary_alteration": ["_", "_"],
+            "quality": ["M", "M"],
+            "inversion": [0, 0],
+        }
+        base.update(overrides)
+        return pd.DataFrame(base)
+
+    def test_valid_secondary_mode_values(self):
+        df = self._make_split_df(secondary_mode=["m", "M"])
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_secondary_mode_with_null_alteration_char(self):
+        df = self._make_split_df(secondary_mode=["_", "m"])
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_secondary_mode_with_null_chord_token(self):
+        df = self._make_split_df(secondary_mode=["na", "m"])
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_valid_secondary_mode_with_nan(self):
+        df = self._make_split_df(
+            secondary_mode=pd.array(["m", None], dtype="string")
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+
+    def test_invalid_secondary_mode_value(self):
+        df = self._make_split_df(secondary_mode=["m", "X"])
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("Invalid secondary_mode" in e.message for e in result.errors)
+
+    def test_invalid_secondary_mode_lowercase_major(self):
+        df = self._make_split_df(secondary_mode=["m", "major"])
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("Invalid secondary_mode" in e.message for e in result.errors)
+
+    def test_secondary_mode_not_required(self):
+        df = self._make_split_df()
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert result.format_detected == "split"
+
+    def test_secondary_mode_recognized_in_strict_mode(self):
+        df = self._make_split_df(secondary_mode=["m", "M"])
+        result = validate_chord_df(df, strict=True)
+        assert result.is_valid
+
+    def test_secondary_mode_type_checked(self):
+        df = self._make_split_df(secondary_mode=[1, 2])
+        result = validate_chord_df(df)
+        assert not result.is_valid
+        assert any("'secondary_mode' must be string type" in e.message for e in result.errors)
+
+    def test_secondary_mode_not_validated_for_joined_format(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0],
+                "key": ["C"],
+                "degree": ["V/Vm"],
+                "quality": ["M"],
+                "inversion": [0],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
+        assert result.format_detected == "joined"
+
+    def test_degree_regex_accepts_secondary_mode(self):
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0, 2.0],
+                "key": ["C", "C", "C"],
+                "degree": ["V/Vm", "V/VM", "VII/bIIm"],
+                "quality": ["M", "M", "d"],
+                "inversion": [0, 0, 0],
+            }
+        )
+        result = validate_chord_df(df)
+        assert result.is_valid
