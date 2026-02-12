@@ -308,12 +308,12 @@ def remove_long_tonicizations(
     ...         '''
     ... onset,degree,key
     ... 173,ii,F
-    ... 173.5,iv/V,F
-    ... 174.0,#viio64/V,F
+    ... 173.5,iv/v,F
+    ... 174.0,#viio64/v,F
     ... 174.5,v6,F
     ... 175.0,v6,F
-    ... 175.5,V6/V,F
-    ... 176.0,V6/V,F
+    ... 175.5,V6/v,F
+    ... 176.0,V6/v,F
     ... 176.5,v,F
     ... 170.0,v,F
     ... 177.5,IV,F
