@@ -9,18 +9,18 @@
 #   docker build -f scripts/Dockerfile.build-linux --platform linux/arm64 -t totable-builder-arm .
 #   docker run --rm -v $(pwd)/music_df/bin:/out totable-builder-arm
 
-FROM debian:bookworm-slim AS builder
+FROM alpine:3.20 AS builder
 
-RUN apt-get update && apt-get install -y \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache g++ musl-dev
 
 # Copy humlib sources (amalgamated version) and totable
 COPY scripts/humlib /humlib
 COPY scripts/totable.cpp /totable.cpp
 
-# Build - compile pugixml.cpp and humlib.cpp along with totable.cpp
-RUN g++ -O3 -std=c++11 -Wall \
+# Build statically linked against musl — no glibc dependency at runtime
+RUN g++ -O3 -std=c++11 -Wall -static \
+    -include cstdint \
+    -Wno-deprecated-declarations \
     -I/humlib \
     -o /totable \
     /totable.cpp \
@@ -39,6 +39,6 @@ FROM scratch AS export
 COPY --from=builder /totable-linux-* /
 
 # For running the container to extract the binary
-FROM debian:bookworm-slim AS runner
+FROM alpine:3.20 AS runner
 COPY --from=builder /totable-linux-* /
 CMD ["sh", "-c", "cp /totable-linux-* /out/"]
