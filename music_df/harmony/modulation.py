@@ -311,9 +311,8 @@ def remove_long_tonicizations(
     they only use a single slash and secondary RN. (E.g., we don't have RNs like
     "V/V/V".)
 
-    Note that we ALSO assume that all harmonies are de-repeated, i.e., that identical
-    harmonies (e.g., "I6") aren't repeated more than once, which can break some of
-    the behavior here.
+    Note that repeated harmonies (e.g., "V" followed by "V" with a different
+    inversion) are handled by de-repeating before expanding tonicizations.
 
     Args:
         chord_df: A dataframe containing either of the following sets of columns:
@@ -344,7 +343,39 @@ def remove_long_tonicizations(
         simplify_enharmonics: Whether to simplify enharmonic spellings of the key of
             the tonicization. Ignored if tonicization_cache is provided.
 
+    >>> no_repeat = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 0.0,V/V,C
+    ... 4.0,V,C
+    ... 8.0,V/V,C
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(no_repeat, max_tonicization_duration=4)
+       onset degree key
+    0    0.0      V   G
+    1    4.0      I   G
+    2    8.0      V   G
 
+    >>> yes_repeat = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,inversion,key
+    ... 0.0,V/V,0,C
+    ... 4.0,V,0,C
+    ... 6.0,V,1,C
+    ... 8.0,V/V,0,C
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(yes_repeat, max_tonicization_duration=4)
+       onset degree  inversion key
+    0    0.0      V          0   G
+    1    4.0      I          0   G
+    2    6.0      I          1   G
+    3    8.0      V          0   G
 
     >>> no_tonicizations = pd.read_csv(
     ...     io.StringIO(
@@ -680,9 +711,29 @@ def remove_long_tonicizations(
     # We fill the secondary_degree column with "I"
     chord_df["secondary_degree"] = chord_df["secondary_degree"].fillna("I")
 
-    chord_df = expand_tonicizations(
-        chord_df, quality_col="quality" if "quality" in chord_df.columns else None
+    # De-repeat for expand_tonicizations: consecutive rows with the same
+    # (primary_degree, secondary_degree, key) confuse the shift-based neighbor
+    # checks. We collapse them, expand, then map results back.
+    same_as_prev = (
+        (chord_df["primary_degree"] == chord_df["primary_degree"].shift(1))
+        & (chord_df["secondary_degree"] == chord_df["secondary_degree"].shift(1))
+        & (chord_df["key"] == chord_df["key"].shift(1))
     )
+    if "secondary_mode" in chord_df.columns:
+        same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(1)
+    first_of_group = ~same_as_prev
+    group_ids = first_of_group.cumsum() - 1
+
+    derepeated = chord_df.loc[first_of_group].copy().reset_index(drop=True)
+    derepeated = expand_tonicizations(
+        derepeated, quality_col="quality" if "quality" in derepeated.columns else None
+    )
+
+    cols_to_map = ["primary_degree", "secondary_degree"]
+    if "secondary_mode" in chord_df.columns:
+        cols_to_map.append("secondary_mode")
+    for col in cols_to_map:
+        chord_df[col] = group_ids.map(derepeated[col]).values
 
     tonicization_changes = (
         chord_df["secondary_degree"] != chord_df["secondary_degree"].shift(1)
