@@ -22,6 +22,43 @@ def get_mode(key):
     return "M" if key[0].isupper() else "m"
 
 
+def get_chromatic_key(key, float_pc=False):
+    """Convert a key string to chromatic representation (pitch-class + mode).
+
+    >>> get_chromatic_key("C")
+    '0M'
+    >>> get_chromatic_key("d")
+    '2m'
+    >>> get_chromatic_key("Cb")
+    '11M'
+    >>> get_chromatic_key("bb")
+    '10m'
+    >>> get_chromatic_key("D", float_pc=True)
+    '2.0M'
+    >>> get_chromatic_key("c###")
+    '3m'
+    >>> get_chromatic_key("Dbb")
+    '0M'
+    >>> import pandas as pd
+    >>> get_chromatic_key(pd.Series(["C", "d", "Eb"]))
+    0    0M
+    1    2m
+    2    3M
+    dtype: object
+    """
+    if isinstance(key, pd.Series):
+        return key.map(lambda k: get_chromatic_key(k, float_pc=float_pc))
+    mode = get_mode(key)
+    letter_i = "CDEFGAB".index(key[0].upper())
+    pc = [0, 2, 4, 5, 7, 9, 11][letter_i]
+    sharps = key[1:].count("#")
+    pc = (pc + sharps) % 12
+    flats = key[1:].count("b")
+    pc = (pc - flats) % 12
+    pc_str = str(float(pc)) if float_pc else str(pc)
+    return f"{pc_str}{mode}"
+
+
 def simplify_enharmonic_key(key):
     """
     >>> simplify_enharmonic_key("C")
@@ -74,17 +111,7 @@ def key_to_pc_and_mode(key: str):
     >>> key_to_pc_and_mode("c###")
     '3.0m'
     """
-    mode = get_mode(key)
-
-    # far from the most efficient way of doing this
-    letter_i = "CDEFGAB".index(key[0].upper())
-    pc = [0, 2, 4, 5, 7, 9, 11][letter_i]
-
-    sharps = key[1:].count("#")
-    pc = (pc + sharps) % 12
-    flats = key[1:].count("b")
-    pc = (pc - flats) % 12
-    return f"{float(pc)}{mode}"
+    return get_chromatic_key(key, float_pc=True)
 
 
 def key_to_sharps(key_str, minor_offset: float = 0.0):

@@ -25,6 +25,30 @@ ALPHABET = "fcgdaeb".upper()
 PERCUSSION_CHANNEL = 9
 
 
+def _transpose_pc_string(value, interval):
+    """Transpose a pitch-class string like ``"0M"`` or ``"10.0m"`` by *interval* mod 12.
+
+    Leading digits are parsed as the pitch class; everything after is a suffix
+    that is preserved unchanged.
+
+    >>> _transpose_pc_string("0M", 5)
+    '5M'
+    >>> _transpose_pc_string("10.0m", 5)
+    '3.0m'
+    >>> import math; math.isnan(_transpose_pc_string(float("nan"), 5))
+    True
+    """
+    if not isinstance(value, str):
+        return value
+    # Find boundary between leading digits and suffix
+    i = 0
+    while i < len(value) and value[i].isdigit():
+        i += 1
+    pc = int(value[:i])
+    suffix = value[i:]
+    return f"{(pc + interval) % 12}{suffix}"
+
+
 def chromatic_transpose(
     df: pd.DataFrame,
     interval: int,
@@ -35,11 +59,14 @@ def chromatic_transpose(
     """
     Transpose the pitches of a music_df by a given chromatic interval.
 
-    Note that this will change the "pitch" column but not any other columns that may
-    be pitch-related such as those that may indicate the spelling or key signature.
-
     Percussion notes (channel 9) are not transposed since MIDI percussion pitches
     represent drum instruments rather than actual pitches.
+
+    If ``df.attrs["pc_columns"]`` is set, those columns are also transposed mod 12.
+    Numeric columns use vectorized arithmetic; string columns (e.g., chromatic keys
+    like ``"0M"``) are split on the first non-digit character and the leading integer
+    is transposed mod 12 with the suffix preserved. The percussion mask is NOT applied
+    to pc_columns (consistent with ``transpose_to_key``).
 
     Args:
         df: a music_df
@@ -50,6 +77,18 @@ def chromatic_transpose(
 
     Returns:
         A new music_df with the pitches transposed by the given interval.
+
+    >>> df = pd.DataFrame({
+    ...     "pitch": [60, 62],
+    ...     "pc": [0, 2],
+    ...     "key": ["0M", "10.0m"],
+    ... })
+    >>> df.attrs["pc_columns"] = ("pc", "key")
+    >>> result = chromatic_transpose(df, 5, inplace=False, metadata=False)
+    >>> result["pc"].tolist()
+    [5, 7]
+    >>> result["key"].tolist()
+    ['5M', '3.0m']
     """
     out_df = df if inplace else df.copy()
     if "channel" in out_df.columns:
@@ -57,6 +96,13 @@ def chromatic_transpose(
         out_df.loc[non_perc_mask, "pitch"] += interval
     else:
         out_df.pitch += interval
+    for column in out_df.attrs.get("pc_columns", ()):
+        if pd.api.types.is_numeric_dtype(out_df[column]):
+            out_df[column] = (out_df[column] + interval) % 12
+        else:
+            out_df[column] = out_df[column].map(
+                functools.partial(_transpose_pc_string, interval=interval)
+            )
     if metadata:
         if "chromatic_transpose" in out_df.attrs:
             out_df.attrs["chromatic_transpose"] += interval

@@ -11,8 +11,11 @@ import symusic
 
 from music_df.conversions import read_midi_symusic, write_midi_symusic
 from music_df.conversions.symusic_conv import symusic_score_to_df
+import numpy as np
+
 from music_df.transpose import (
     PERCUSSION_CHANNEL,
+    _transpose_pc_string,
     chromatic_transpose,
     transpose_to_key,
 )
@@ -113,6 +116,57 @@ class TestChromaticTranspose:
         result = chromatic_transpose(df, interval=3, inplace=False, metadata=False)
 
         assert result["pitch"].tolist() == [63, 65, 67]
+
+
+class TestChromaticTransposePcColumns:
+    """Tests for pc_columns handling in chromatic_transpose()."""
+
+    def test_numeric_pc_columns(self):
+        """Numeric pc_columns should be transposed mod 12."""
+        df = pd.DataFrame({"pitch": [60, 62], "pc": [0, 11]})
+        df.attrs["pc_columns"] = ("pc",)
+
+        result = chromatic_transpose(df, interval=3, inplace=False, metadata=False)
+
+        assert result["pc"].tolist() == [3, 2]
+
+    def test_string_pc_columns(self):
+        """String pc_columns should split/transpose/rejoin correctly."""
+        df = pd.DataFrame({"pitch": [60, 62], "key": ["0M", "10.0m"]})
+        df.attrs["pc_columns"] = ("key",)
+
+        result = chromatic_transpose(df, interval=5, inplace=False, metadata=False)
+
+        assert result["key"].tolist() == ["5M", "3.0m"]
+
+    def test_string_pc_columns_nan(self):
+        """NaN values in string pc_columns should be passed through."""
+        df = pd.DataFrame({"pitch": [60, 62], "key": ["0M", float("nan")]})
+        df.attrs["pc_columns"] = ("key",)
+
+        result = chromatic_transpose(df, interval=5, inplace=False, metadata=False)
+
+        assert result["key"].iloc[0] == "5M"
+        assert pd.isna(result["key"].iloc[1])
+
+    def test_pc_columns_ignore_percussion_mask(self):
+        """pc_columns should NOT use the percussion mask."""
+        df = pd.DataFrame(
+            {
+                "pitch": [60, 36],
+                "channel": [0, PERCUSSION_CHANNEL],
+                "pc": [0, 0],
+            }
+        )
+        df.attrs["pc_columns"] = ("pc",)
+
+        result = chromatic_transpose(df, interval=5, inplace=False, metadata=False)
+
+        # pitch: melodic transposed, percussion unchanged
+        assert result.loc[0, "pitch"] == 65
+        assert result.loc[1, "pitch"] == 36
+        # pc: both rows transposed (percussion mask not applied)
+        assert result["pc"].tolist() == [5, 5]
 
 
 class TestTransposeToKey:

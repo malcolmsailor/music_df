@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git show:*)",
+      "Bash(git cat-file:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(python -m doctest:*)",
+      "Bash(venvon)",
+      "Bash(pytest:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:symusic.readthedocs.io)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/malcolm/google_drive/python/malmus/music_df/sounding_bass worktree list)",
+      "Bash(test:*)",
+      "Bash(docker build:*)",
+      "Bash(docker run:*)"
+    ]
+  }
+}
