@@ -252,6 +252,15 @@ class MusicXmlHandler(xml.sax.ContentHandler):
         )
         self._state_stack.pop()
 
+        # MusicXML defaults to 4/4 when no time signature is specified
+        if self._current_time_sig_dur is None:
+            default_ts = TimeSignature(
+                onset=Fraction(0), numer=4, denom=4
+            )
+            self._current_time_sig_dur = default_ts.quarter_duration
+            if not self._current_part_number:
+                self._time_sigs.append(default_ts)
+
         # It can occur that, due to rounding errors with complex tuplets, a measure
         #   might be somewhat too long, causing misalignment with the other parts and
         #   leading to a parsing failure. We simply check if the measure is within a

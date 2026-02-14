@@ -26,6 +26,16 @@ def test_parse():
         df = xml_parse(xml_file)
 
 
+def test_no_time_signature():
+    """MusicXML defaults to 4/4 when no time signature is specified."""
+    path = os.path.join(MODULE_DIR, "resources", "no_time_sig.xml")
+    df = xml_parse(path)
+    ts = df[df.type == "time_signature"]
+    assert len(ts) == 1
+    assert ts.iloc[0].other == {"numerator": 4, "denominator": 4}
+    assert ts.iloc[0].onset == 0
+
+
 def test_expand_repeats():
     # There is a dacapo in n13op130_06 which defeats my repeat parsing. Not
     #   sure if it is plausibly parseable.
