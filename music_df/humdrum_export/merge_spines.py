@@ -93,7 +93,13 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
             _init_measure()
             continue
         for i, token in enumerate(line.split("\t")):
-            assert token != "="
+            if token == "=":
+                raise ValueError(
+                    f"Line {line_i}: barline token '=' in column {i} but not "
+                    f"all columns are barlines. This usually means the input "
+                    f"spines have misaligned barlines (e.g. from a mid-measure "
+                    f"crop). Full line: {line!r}"
+                )
             if _is_note_token(token):
                 not_rests[i] = True
             measure[i].append(token)

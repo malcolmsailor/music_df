@@ -15,10 +15,15 @@ except ImportError as e:
 
 def run_minrhy(files: t.List[str]) -> int:
     assert files
-    out = sh.minrhy(*files)  # type:ignore
-    # TODO: (Malcolm 2024-03-04) remove
-    # print(out)
-    # breakpoint()
+    try:
+        out = sh.minrhy(*files)  # type:ignore
+    except sh.ErrorReturnCode as e:
+        raise RuntimeError(
+            f"minrhy failed on {len(files)} file(s). "
+            f"This may be caused by malformed kern files "
+            f"(e.g. from a mid-measure crop).\n"
+            f"stderr: {e.stderr.decode() if e.stderr else '(empty)'}"
+        ) from e
     m = re.search(r"^all:\t(?P<result>\d+)", out, re.MULTILINE)
     if not m:
         # this occurs if there is only one file; I guess we should just

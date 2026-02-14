@@ -69,6 +69,11 @@ def _add_time_sigs(df: pd.DataFrame) -> pd.DataFrame:
             "other": df[changes]["timesig"].apply(_timesig_str_to_other),
         }
     )
+    if len(df_changes) > 0:
+        df_changes.iloc[0, df_changes.columns.get_loc("onset")] = min(
+            0, df_changes.iloc[0]["onset"]
+        )
+
     df_changes.index = df[changes].index - 0.5
 
     result = pd.concat([df, df_changes]).sort_index().reset_index(drop=True)

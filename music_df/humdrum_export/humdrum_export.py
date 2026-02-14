@@ -10,9 +10,10 @@ from music_df.chord_df import label_music_df_with_chord_df, merge_annotations
 from music_df.humdrum_export.collate_spines import collate_spines
 from music_df.humdrum_export.color_df import ColorMapping, color_df
 from music_df.humdrum_export.constants import DEFAULT_COLOR_MAPPING, USER_SIGNIFIERS
-from music_df.humdrum_export.df_to_spines import df_to_spines
+from music_df.humdrum_export.df_to_spines import df_to_spines, kern_to_float_dur
 from music_df.humdrum_export.df_utils.spell_df import spell_df
 from music_df.humdrum_export.df_utils.split_df_by_pitch import split_df_by_pitch
+from music_df.humdrum_export.dur_to_kern import dur_to_kern
 from music_df.humdrum_export.merge_spines import merge_spines
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
@@ -148,6 +149,61 @@ def number_measures(humdrum_contents: str):
     return "\n".join(output_lines)
 
 
+def _align_pickup_durations(
+    spines: t.List[t.List[str]],
+) -> t.List[t.List[str]]:
+    """Prepend rests to spines with shorter pickups so all have equal duration.
+
+    When a DataFrame is cropped mid-measure, different parts may have different
+    amounts of content before the first barline. This causes barline
+    misalignment after collation (timebase + assemble), crashing merge_spines.
+    """
+    if len(spines) <= 1:
+        return spines
+
+    pickup_durs: t.List[float] = []
+    for spine in spines:
+        dur = 0.0
+        for token in spine:
+            if token == "=":
+                break
+            if token.startswith("*") or token.startswith("!"):
+                continue
+            # For chords like "4c 4e", duration comes from the first note
+            dur += kern_to_float_dur(token.split(" ")[0])
+        pickup_durs.append(dur)
+
+    max_dur = max(pickup_durs)
+    if max_dur == 0 or all(abs(d - max_dur) < 1e-9 for d in pickup_durs):
+        return spines
+
+    from metricker import Meter
+
+    meter = Meter("4/4")
+
+    aligned: t.List[t.List[str]] = []
+    for spine, pickup_dur in zip(spines, pickup_durs):
+        diff = max_dur - pickup_dur
+        if diff < 1e-9:
+            aligned.append(spine)
+            continue
+
+        kern_durs = dur_to_kern(diff, offset=0, meter=meter)
+        rest_tokens = [f"{k}r" for _, k in kern_durs]
+
+        # Insert rests after any leading metadata tokens (* or !)
+        insert_idx = 0
+        for token in spine:
+            if token.startswith("*") or token.startswith("!"):
+                insert_idx += 1
+            else:
+                break
+
+        aligned.append(spine[:insert_idx] + rest_tokens + spine[insert_idx:])
+
+    return aligned
+
+
 def df2hum(
     df: pd.DataFrame,
     # n_clefs: int = 2, # TODO
@@ -271,6 +327,7 @@ def df2hum(
         )
         if not spines:
             continue
+        spines = _align_pickup_durations(spines)
         with _get_temp_paths(len(spines)) as paths:
             for path, spine in zip(paths, spines):
                 _write_spine(spine, path)
