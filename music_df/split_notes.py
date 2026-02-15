@@ -88,6 +88,25 @@ def split_notes_at_barlines(
             while (bars_i < len(bars) - 1) and (bars.loc[bars_i + 1].onset < row.onset):
                 bars_i += 1
             temp_row = row.copy()
+            # Handle note starting before the first applicable bar's onset
+            bar_onset = bars.loc[bars_i].onset
+            if temp_row.onset < bar_onset < row.release:
+                overhang = True
+                truncated_row = temp_row.copy()
+                truncated_row.release = bar_onset
+                if (
+                    min_overhang_dur is None
+                    or truncated_row.release - truncated_row.onset
+                    >= min_overhang_dur
+                ):
+                    row_accumulator.append(truncated_row)
+                    temp_row.tie_to_prev = True
+                temp_row.onset = bar_onset
+                if (
+                    min_overhang_dur is None
+                    or temp_row.release - temp_row.onset >= min_overhang_dur
+                ):
+                    truncated_row.tie_to_next = True
             for final_bars_i in range(bars_i, len(bars)):
                 bar_release = bars.loc[final_bars_i].release
                 if row.release > bar_release:
