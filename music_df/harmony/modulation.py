@@ -722,6 +722,10 @@ def remove_long_tonicizations(
     if "secondary_mode" in chord_df.columns:
         same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(1)
     first_of_group = ~same_as_prev
+    # shift(1) produces NA for the first row; with PyArrow-backed dtypes,
+    # ~NA stays NA rather than becoming True, which breaks the subsequent
+    # astype(int).cumsum(). The first row is always the start of a group.
+    first_of_group.iloc[0] = True
     group_ids = first_of_group.astype(int).cumsum() - 1
 
     derepeated = chord_df.loc[first_of_group].copy().reset_index(drop=True)
