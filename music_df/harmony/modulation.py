@@ -722,7 +722,7 @@ def remove_long_tonicizations(
     if "secondary_mode" in chord_df.columns:
         same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(1)
     first_of_group = ~same_as_prev
-    group_ids = first_of_group.cumsum() - 1
+    group_ids = first_of_group.astype(int).cumsum() - 1
 
     derepeated = chord_df.loc[first_of_group].copy().reset_index(drop=True)
     derepeated = expand_tonicizations(
