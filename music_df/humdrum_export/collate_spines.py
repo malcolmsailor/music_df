@@ -34,63 +34,71 @@ def run_minrhy(files: t.List[str]) -> int:
     return out
 
 
-# def run_timebase(files: t.List[str], gcd: int) -> t.List[str]:
-#     tmp_paths = []
-#     for f in files:
-#         # with open(f) as inf:
-#         #     data = inf.read()
-#         result = sh.timebase("-t", str(gcd), f)  # type:ignore
-#         _, tmp_path = tempfile.mkstemp(suffix=".krn")
-#         with open(tmp_path, "w") as outf:
-#             outf.write(result)
-#         tmp_paths.append(tmp_path)
-#     return tmp_paths
-
-
-def run_timebase(files: t.List[str], gcd: int) -> t.List[str]:
-    tmp_paths = []
-    for f in files:
-        with open(f) as inf:
-            data = inf.read()
-        recips = re.findall(r"\d%(\d+)", data)
-        if recips:
-            # because `timebase`, being from the original humdrum toolkit, doesn't
-            #   understand the "%" notation (e.g., 2%3), we first use rscale to scale up
-            #   the file to the gcd of the recips (ensuring there will be no %), and
-            #   then afterwards scale it back
-            recip = math.gcd(*[int(r) for r in recips])
-
-            _, tmp_path = tempfile.mkstemp(suffix=".krn")
-            rscale1_result = sh.rscale("-f", f"1/{recip}", f)  # type:ignore
-            with open(tmp_path, "w") as outf:
-                outf.write(rscale1_result)
-            timebase_result = sh.timebase(  # type:ignore
-                "-t", str(gcd), tmp_path
-            )
-            with open(tmp_path, "w") as outf:
-                outf.write(timebase_result)
-            rscale2_result = sh.rscale("-f", f"{recip}", tmp_path)  # type:ignore
-            with open(tmp_path, "w") as outf:
-                outf.write(rscale2_result)
-            tmp_paths.append(tmp_path)
-        else:
-            result = sh.timebase("-t", str(gcd), f)  # type:ignore
-            _, tmp_path = tempfile.mkstemp(suffix=".krn")
-            with open(tmp_path, "w") as outf:
-                outf.write(result)
-            tmp_paths.append(tmp_path)
-    return tmp_paths
-
-
 def _clean_up(tmp_paths):
     for f in tmp_paths:
         os.remove(f)
 
 
+def _collect_recips(files: t.List[str]) -> int | None:
+    """Return the GCD of all % recip denominators across files, or None."""
+    all_recips = []
+    for f in files:
+        with open(f) as inf:
+            data = inf.read()
+        all_recips.extend(int(r) for r in re.findall(r"\d%(\d+)", data))
+    return math.gcd(*all_recips) if all_recips else None
+
+
+def _rscale_files(files: t.List[str], factor: str) -> t.List[str]:
+    """rscale each file, returning paths to new temp files."""
+    tmp_paths = []
+    for f in files:
+        _, tmp_path = tempfile.mkstemp(suffix=".krn")
+        result = sh.rscale("-f", factor, f)  # type:ignore
+        with open(tmp_path, "w") as outf:
+            outf.write(str(result))
+        tmp_paths.append(tmp_path)
+    return tmp_paths
+
+
 def collate_spines(files: t.List[str]):
-    gcd = run_minrhy(files)
-    tmp_paths = run_timebase(files, gcd)
-    # rid strips null records (lines consisting only of ".")
-    result = sh.rid("-d", _in=sh.assemble(*tmp_paths))  # type:ignore
-    _clean_up(tmp_paths)
-    return result
+    # The humdrum toolkit (minrhy, timebase) doesn't understand the "%"
+    # notation for irrational durations (e.g., 8%9 for a 9/8 rest). We
+    # rscale ALL files up front to remove %, run the standard pipeline,
+    # then rscale the result back. The rscale must be global (applied to
+    # all files, not just those containing %) so that all files end up on
+    # the same timebase grid.
+    global_recip = _collect_recips(files)
+
+    if global_recip is not None:
+        scaled_files = _rscale_files(files, f"1/{global_recip}")
+        work_files = scaled_files
+    else:
+        scaled_files = None
+        work_files = files
+
+    try:
+        gcd = run_minrhy(work_files)
+        tb_paths = []
+        for f in work_files:
+            result = sh.timebase("-t", str(gcd), f)  # type:ignore
+            _, tmp_path = tempfile.mkstemp(suffix=".krn")
+            with open(tmp_path, "w") as outf:
+                outf.write(str(result))
+            tb_paths.append(tmp_path)
+
+        # rid strips null records (lines consisting only of ".")
+        result = sh.rid("-d", _in=sh.assemble(*tb_paths))  # type:ignore
+        _clean_up(tb_paths)
+    finally:
+        if scaled_files is not None:
+            _clean_up(scaled_files)
+
+    if global_recip is not None:
+        _, tmp_path = tempfile.mkstemp(suffix=".krn")
+        with open(tmp_path, "w") as outf:
+            outf.write(str(result))
+        result = sh.rscale("-f", str(global_recip), tmp_path)  # type:ignore
+        os.remove(tmp_path)
+
+    return str(result)
