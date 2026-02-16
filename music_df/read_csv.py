@@ -94,4 +94,6 @@ def read_csv(
         df.loc[df.color.isna(), "color"] = ""
     if quantize_tpq is not None:
         df = quantize_df(df, quantize_tpq)
+    if isinstance(path, str):
+        df.attrs["score_name"] = path
     return df

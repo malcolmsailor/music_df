@@ -139,11 +139,11 @@ def test_df_to_midi():
     df = df[df.type == "note"].reset_index(drop=True)
     df2 = df2[df2.type == "note"].reset_index(drop=True)
     df.drop(
-        columns=["filename", "other", "type", "instrument", "label"],
+        columns=["other", "type", "instrument", "label"],
         inplace=True,
         errors="ignore",
     )
-    df2.drop(columns=["filename", "other", "type"], inplace=True, errors="ignore")
+    df2.drop(columns=["other", "type"], inplace=True, errors="ignore")
     df = sort_df(df)
     df2 = sort_df(df2)
 
@@ -186,11 +186,10 @@ def test_notes_only():
     assert len(df_all) >= len(df_notes)
 
 
-def test_display_name():
-    """Test display_name parameter."""
-    custom_name = "custom_name.mid"
-    df = midi_to_table(PALMID, display_name=custom_name)
-    assert (df["filename"] == custom_name).all()
+def test_score_name():
+    """Test that score_name is set in df.attrs."""
+    df = midi_to_table(PALMID)
+    assert df.attrs["score_name"] == PALMID
 
 
 def test_deprecated_overlapping_notes_warning():
@@ -251,7 +250,7 @@ if __name__ == "__main__":
     test_time_type_fraction()
     test_time_type_int()
     test_notes_only()
-    test_display_name()
+    test_score_name()
     test_deprecated_overlapping_notes_warning()
     test_deprecated_pb_tup_dict_warning()
     test_df_to_midi_with_ts()

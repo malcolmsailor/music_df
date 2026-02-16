@@ -72,11 +72,10 @@ def test_round_trip_symusic():
         os.remove(temp_path)
 
 
-def test_display_name():
-    """Test that display_name parameter works correctly."""
-    custom_name = "custom_filename.mid"
-    df = read_midi_symusic(PALMID, display_name=custom_name)
-    assert (df["filename"] == custom_name).all()
+def test_score_name():
+    """Test that score_name is set in df.attrs."""
+    df = read_midi_symusic(PALMID)
+    assert df.attrs["score_name"] == PALMID
 
 
 def test_notes_only_flag():
@@ -115,7 +114,7 @@ if __name__ == "__main__":
     test_read_midi_symusic_fraction_time()
     test_read_midi_symusic_int_time()
     test_round_trip_symusic()
-    test_display_name()
+    test_score_name()
     test_notes_only_flag()
     test_time_signature_extraction()
     test_tempo_extraction()

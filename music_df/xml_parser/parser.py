@@ -988,6 +988,7 @@ def parse_xml(fp, sort=True, expand_repeats: RepeatOptions = "yes", warn: bool =
     handler = MusicXmlHandler(expand_repeats=expand_repeats)
     xml.sax.parse(fp, handler)
     df = handler.get_df(sort=sort, warn=warn)
+    df.attrs["score_name"] = fp
     return df
 
 
@@ -1057,11 +1058,13 @@ def parse(
     """
     try:
         if path.endswith(".mscx") or path.endswith(".mscz"):
-            return parse_musescore(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
-        if path.endswith(".mxl"):
-            return parse_mxl(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
+            df = parse_musescore(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
+        elif path.endswith(".mxl"):
+            df = parse_mxl(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
         else:
-            return parse_xml(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
+            df = parse_xml(path, sort=sort, expand_repeats=expand_repeats, warn=warn)
+        df.attrs["score_name"] = path
+        return df
     except FileNotFoundError:
         raise
     except Exception as e:

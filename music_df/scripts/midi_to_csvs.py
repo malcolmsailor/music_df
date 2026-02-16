@@ -71,7 +71,6 @@ def do_midi_file(midi_file, config, output_list, error_file_list):
 
         music_df = read_midi(midi_file)
         music_df = music_df[music_df.type.isin(config.event_types)]
-        music_df = music_df.drop("filename", axis=1)
         if config.release_delta:
             music_df["release"] = music_df["release"] + config.release_delta
         if config.quantize_tpq:

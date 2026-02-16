@@ -7,7 +7,6 @@ which is faster and handles edge cases (overlapping notes, etc.) internally.
 
 import csv
 import fractions
-import os
 import re
 import warnings
 from typing import Optional, Tuple, Type, Union
@@ -31,7 +30,6 @@ def midi_to_table(
     max_denominator: int = 8192,
     overlapping_notes: str = "end_all",
     pb_tup_dict: Optional[dict] = None,
-    display_name: str | None = None,
     notes_only: bool = False,
     warn_for_orphan_note_offs: bool = False,
     warn_for_orphan_note_ons: bool = False,
@@ -58,8 +56,6 @@ def midi_to_table(
             This parameter is ignored.
         pb_tup_dict: DEPRECATED - Custom pitch-bend mapping is no longer supported.
             This parameter is ignored.
-        display_name: the value of the "filename" column in the returned dataframe. If
-            not passed, uses in_midi_fname.
         notes_only: If True, only include note events.
         warn_for_orphan_note_offs: DEPRECATED - symusic handles this internally.
             This parameter is ignored.
@@ -108,21 +104,19 @@ def midi_to_table(
             stacklevel=2,
         )
 
-    if display_name is None:
-        display_name = os.path.basename(in_midi_fname)
-
     try:
         score = symusic.Score(in_midi_fname)
     except Exception as exc:
         raise MidiError(f"unable to read file {in_midi_fname}") from exc
 
-    return symusic_score_to_df(
+    df = symusic_score_to_df(
         score,
         time_type=time_type,
         max_denominator=max_denominator,
-        display_name=display_name,
         notes_only=notes_only,
     )
+    df.attrs["score_name"] = in_midi_fname
+    return df
 
 
 def midi_to_csv(in_midi_fname, out_csv_fname, *args, **kwargs):

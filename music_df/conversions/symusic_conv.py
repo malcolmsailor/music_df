@@ -16,7 +16,6 @@ def symusic_score_to_df(
     score: symusic.Score,
     time_type: Type = float,
     max_denominator: int = 8192,
-    display_name: str | None = None,
     notes_only: bool = False,
 ) -> pd.DataFrame:
     """Convert a symusic Score to a music_df DataFrame.
@@ -26,11 +25,10 @@ def symusic_score_to_df(
         time_type: The numeric type for time values. Default is float.
             Use fractions.Fraction for exact timing, or int for raw ticks.
         max_denominator: Maximum denominator when time_type is fractions.Fraction.
-        display_name: Value for the "filename" column. If None, uses empty string.
         notes_only: If True, only include note events (no tempos, time signatures, etc.).
 
     Returns:
-        A DataFrame with columns: filename, type, onset, release, track, channel,
+        A DataFrame with columns: type, onset, release, track, channel,
         pitch, velocity, other.
 
     Note:
@@ -39,9 +37,6 @@ def symusic_score_to_df(
         those notes silently dropped. This can occur with some percussion-only
         files where drum hits are treated as one-shots.
     """
-    if display_name is None:
-        display_name = ""
-
     ticks_per_quarter = score.ticks_per_quarter
 
     def _get_time(tick_time: int):
@@ -61,7 +56,6 @@ def symusic_score_to_df(
         for note in track.notes:
             rows.append(
                 {
-                    "filename": display_name,
                     "type": "note",
                     "onset": _get_time(note.time),
                     "release": _get_time(note.time + note.duration),
@@ -78,7 +72,6 @@ def symusic_score_to_df(
         for tempo in score.tempos:
             rows.append(
                 {
-                    "filename": display_name,
                     "type": "tempo",
                     "onset": _get_time(tempo.time),
                     "release": None,
@@ -99,7 +92,6 @@ def symusic_score_to_df(
                 )
             rows.append(
                 {
-                    "filename": display_name,
                     "type": "time_signature",
                     "onset": _get_time(ts.time),
                     "release": None,
@@ -115,7 +107,6 @@ def symusic_score_to_df(
         for ks in score.key_signatures:
             rows.append(
                 {
-                    "filename": display_name,
                     "type": "key_signature",
                     "onset": _get_time(ks.time),
                     "release": None,
@@ -131,7 +122,6 @@ def symusic_score_to_df(
         for marker in score.markers:
             rows.append(
                 {
-                    "filename": display_name,
                     "type": "marker",
                     "onset": _get_time(marker.time),
                     "release": None,
@@ -148,7 +138,7 @@ def symusic_score_to_df(
             if track.program is not None:
                 rows.append(
                     {
-                        "filename": display_name,
+    
                         "type": "program_change",
                         "onset": _get_time(0),
                         "release": None,
@@ -164,7 +154,7 @@ def symusic_score_to_df(
             for cc in track.controls:
                 rows.append(
                     {
-                        "filename": display_name,
+    
                         "type": "control_change",
                         "onset": _get_time(cc.time),
                         "release": None,
@@ -180,7 +170,7 @@ def symusic_score_to_df(
             for pb in track.pitch_bends:
                 rows.append(
                     {
-                        "filename": display_name,
+    
                         "type": "pitchwheel",
                         "onset": _get_time(pb.time),
                         "release": None,
@@ -195,7 +185,6 @@ def symusic_score_to_df(
     if not rows:
         return pd.DataFrame(
             columns=[
-                "filename",
                 "type",
                 "onset",
                 "release",
@@ -337,7 +326,6 @@ def read_midi_symusic(
     midi_path: str,
     time_type: Type = float,
     max_denominator: int = 8192,
-    display_name: str | None = None,
     notes_only: bool = False,
 ) -> pd.DataFrame:
     """Read a MIDI file and return a music_df DataFrame using symusic.
@@ -349,12 +337,12 @@ def read_midi_symusic(
         time_type: The numeric type for time values. Default is float.
             Use fractions.Fraction for exact timing, or int for raw ticks.
         max_denominator: Maximum denominator when time_type is fractions.Fraction.
-        display_name: Value for the "filename" column. If None, uses the basename.
         notes_only: If True, only include note events.
 
     Returns:
-        A DataFrame with columns: filename, type, onset, release, track, channel,
-        pitch, velocity, other.
+        A DataFrame with columns: type, onset, release, track, channel,
+        pitch, velocity, other. The source path is stored in
+        df.attrs["score_name"].
 
     Note:
         symusic creates Note objects by pairing note_on with note_off events.
@@ -362,19 +350,15 @@ def read_midi_symusic(
         those notes silently dropped. This can occur with some percussion-only
         files where drum hits are treated as one-shots.
     """
-    import os
-
-    if display_name is None:
-        display_name = os.path.basename(midi_path)
-
     score = symusic.Score(midi_path)
-    return symusic_score_to_df(
+    df = symusic_score_to_df(
         score,
         time_type=time_type,
         max_denominator=max_denominator,
-        display_name=display_name,
         notes_only=notes_only,
     )
+    df.attrs["score_name"] = midi_path
+    return df
 
 
 def write_midi_symusic(
