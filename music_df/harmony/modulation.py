@@ -1,5 +1,4 @@
 import io  # noqa: F401
-import logging
 
 import numpy as np
 import pandas as pd
@@ -711,6 +710,8 @@ def remove_long_tonicizations(
 
     # We fill the secondary_degree column with "I"
     chord_df["secondary_degree"] = chord_df["secondary_degree"].fillna("I")
+    if "secondary_mode" in chord_df.columns:
+        chord_df["secondary_mode"] = chord_df["secondary_mode"].fillna("_")
 
     # De-repeat for expand_tonicizations: consecutive rows with the same
     # (primary_degree, secondary_degree, key) confuse the shift-based neighbor
@@ -727,28 +728,6 @@ def remove_long_tonicizations(
     # ~NA stays NA rather than becoming True, which breaks the subsequent
     # astype(int).cumsum(). The first row is always the start of a group.
     first_of_group.iloc[0] = True
-    na_mask = first_of_group.isna()
-    if na_mask.any():
-        na_indices = na_mask[na_mask].index.tolist()
-        logger = logging.getLogger(__name__)
-        logger.warning(
-            "NAs in first_of_group at indices %s (dtype=%s). "
-            "Source column NAs: primary_degree=%d, secondary_degree=%d, key=%d%s",
-            na_indices,
-            first_of_group.dtype,
-            chord_df["primary_degree"].isna().sum(),
-            chord_df["secondary_degree"].isna().sum(),
-            chord_df["key"].isna().sum(),
-            (
-                f", secondary_mode={chord_df['secondary_mode'].isna().sum()}"
-                if "secondary_mode" in chord_df.columns
-                else ""
-            ),
-        )
-        logger.warning(
-            "Rows with NA in first_of_group:\n%s",
-            chord_df.loc[na_indices],
-        )
     group_ids = first_of_group.astype(int).cumsum() - 1
 
     derepeated = chord_df.loc[first_of_group].copy().reset_index(drop=True)
