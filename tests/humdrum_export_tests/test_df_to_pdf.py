@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 import numpy as np
 
@@ -15,6 +16,16 @@ CSV_PATH_WITH_GRACE = os.path.join(
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
+
+
+def test_read_csv_without_index_column():
+    """read_csv should work for CSVs saved with index=False (no unnamed index column)."""
+    df_with_index = read_csv(CSV_PATH)
+    with tempfile.NamedTemporaryFile(suffix=".csv", mode="w", delete=False) as f:
+        df_with_index.to_csv(f.name, index=False)
+        df_without_index = read_csv(f.name)
+    os.unlink(f.name)
+    assert "onset" in df_without_index.columns
 
 
 def test_df_to_pdf_no_color():

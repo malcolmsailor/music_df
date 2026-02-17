@@ -1452,6 +1452,7 @@ def label_music_df_with_chord_df(
     chord_df: pd.DataFrame,
     columns_to_add: Iterable[str] = ("key", "degree", "quality", "inversion"),
     null_chord_token: str = "na",
+    unmatched: Literal["backfill", "drop"] = "backfill",
 ) -> pd.DataFrame:
     """
     >>> music_df = pd.read_csv(
@@ -1490,6 +1491,39 @@ def label_music_df_with_chord_df(
     5   bar    NaN    4.0      8.0  na     na      na        NaN
     6  note   66.0    4.0      6.0   C      V       M        1.0
     7  note   67.0    6.0      8.0   G      V       M        0.0
+
+    Notes before the first chord annotation get backfilled by default:
+
+    >>> late_chord_df = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,key,degree,quality,inversion
+    ... 3.0,C,V,M,1.0
+    ... 5.0,G,V,M,0.0
+    ... 7.0,G,I,M,0.0
+    ... '''
+    ...     )
+    ... )
+    >>> label_music_df_with_chord_df(music_df, late_chord_df)
+       type  pitch  onset  release key degree quality  inversion
+    0   bar    NaN    0.0      4.0  na     na      na        NaN
+    1  note   60.0    0.0      1.0   C      V       M        1.0
+    2  note   64.0    1.0      2.0   C      V       M        1.0
+    3  note   62.0    2.0      3.0   C      V       M        1.0
+    4  note   67.0    3.0      4.0   C      V       M        1.0
+    5   bar    NaN    4.0      8.0  na     na      na        NaN
+    6  note   66.0    4.0      6.0   C      V       M        1.0
+    7  note   67.0    6.0      8.0   G      V       M        0.0
+
+    With ``unmatched="drop"``, those notes are removed instead:
+
+    >>> label_music_df_with_chord_df(music_df, late_chord_df, unmatched="drop")
+       type  pitch  onset  release key degree quality  inversion
+    0   bar    NaN    0.0      4.0  na     na      na        NaN
+    1  note   67.0    3.0      4.0   C      V       M        1.0
+    2   bar    NaN    4.0      8.0  na     na      na        NaN
+    3  note   66.0    4.0      6.0   C      V       M        1.0
+    4  note   67.0    6.0      8.0   G      V       M        0.0
     """
     import warnings
 
@@ -1508,6 +1542,17 @@ def label_music_df_with_chord_df(
         on="onset",
         direction="backward",
     )
+
+    note_mask = out["type"] == "note"
+    unmatched_mask = note_mask & out[columns_to_add[0]].isna()
+    if unmatched_mask.any():
+        if unmatched == "backfill":
+            first_chord = chord_df[columns_to_add].iloc[0]
+            for col in columns_to_add:
+                out.loc[unmatched_mask, col] = first_chord[col]
+        elif unmatched == "drop":
+            out = out[~unmatched_mask].reset_index(drop=True)
+
     nonnote_mask = out["type"] != "note"
     for col in columns_to_add:
         if out[col].dtype == "object":

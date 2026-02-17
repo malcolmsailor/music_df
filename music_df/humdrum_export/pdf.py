@@ -48,8 +48,11 @@ else:
         release_type=fraction_to_float,
     ) -> pd.DataFrame:
         df = pd.read_csv(
-            path, converters={"onset": onset_type, "release": release_type}, index_col=0
+            path, converters={"onset": onset_type, "release": release_type}
         )
+        unnamed_cols = [c for c in df.columns if c.startswith("Unnamed:")]
+        if unnamed_cols:
+            df = df.drop(columns=unnamed_cols)
         df.loc[df.type != "note", "release"] = float("nan")
         if "other" in df.columns:
             df.loc[df.type == "time_signature", "other"] = df.loc[

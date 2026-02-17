@@ -77,9 +77,11 @@ def read_csv(
     df = pd.read_csv(
         path,
         converters=column_converters,
-        index_col=0,
         dtype=column_dtypes,
     )
+    unnamed_cols = [c for c in df.columns if c.startswith("Unnamed:")]
+    if unnamed_cols:
+        df = df.drop(columns=unnamed_cols)
 
     # df["onset"] = [onset_type(o) for o in df.onset]
     # df.loc[df.type == "note", "release"] = [

@@ -129,6 +129,11 @@ else:
         >>> note = pd.Series({"pitch": 58, "onset": 2.0, "release": 4.0, "label": "hi"})
         >>> get_kern_notes(note, 2.0, threefour, speller, label_name="label")
         ([0, 1.0], ['[4B-', '4B-]'], ['hi', 'hi'])
+
+        Zero-duration notes are treated as grace notes:
+        >>> note = pd.Series({"pitch": 60, "onset": 2.0, "release": 2.0})
+        >>> get_kern_notes(note, 2.0, fourfour, speller)
+        ([0], ['qc'], None)
         """
         if "humdrum_spelling" in note.index:
             spelled = note.humdrum_spelling
@@ -136,6 +141,8 @@ else:
             spelled = speller(note.pitch)  # type:ignore
         labels = None
         dur = note.release - note.onset
+        if dur == 0:
+            return [0], [f"q{spelled}"], labels
         offsets, notes = _get_kern_notes_sub(
             spelled,
             dur,
@@ -503,8 +510,8 @@ else:
                                 this_measure_labels.append(text_token)
                             assert len(this_measure_labels) == len(this_measure_tokens)
 
-            prev_onset = row.onset
             if row.type == "note":
+                prev_onset = row.onset
                 prev_release: float = row.release
 
         if this_measure_tokens:
