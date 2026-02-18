@@ -4,7 +4,7 @@ from typing import Any
 import pandas as pd
 
 from music_df.add_feature import infer_barlines
-from music_df.utils.search import get_idx_to_item_geq
+from music_df.utils.search import get_idx_to_item_geq, get_idx_to_item_leq
 
 LOGGER = logging.getLogger(__name__)
 
@@ -229,3 +229,141 @@ def crop_df(
         end_i = int(end_i)
         music_df = music_df.loc[:end_i]
     return music_df
+
+
+def get_context_bars(
+    music_df: pd.DataFrame,
+    target_onset: float,
+    n_before: int = 1,
+    n_after: int = 1,
+) -> pd.DataFrame:
+    """
+    Extract a window of bars around a target onset.
+
+    Returns a slice of ``music_df`` spanning ``n_before`` bars before and
+    ``n_after`` bars after the bar that contains ``target_onset``, with
+    barline and time-signature context prepended (matching ``crop_df``
+    conventions).
+
+    Args:
+        music_df: sorted music DataFrame (see ``music_df.sort_df``).
+        target_onset: the onset around which to center the window.
+        n_before: number of bars to include before the target bar.
+        n_after: number of bars to include after the target bar.
+
+    Raises:
+        ValueError: if no bar rows exist and none can be inferred.
+
+    >>> music_df = pd.DataFrame(
+    ...     {
+    ...         "onset": [0.0, 0, 1, 2, 4, 5, 6, 8, 8, 9, 10, 11, 12, 13],
+    ...         "release": [
+    ...             None,
+    ...             4.0,
+    ...             4.0,
+    ...             3.0,
+    ...             8.0,
+    ...             8,
+    ...             7,
+    ...             None,
+    ...             11,
+    ...             11,
+    ...             10.5,
+    ...             14,
+    ...             14,
+    ...             13.5,
+    ...         ],
+    ...         "type": ["time_signature", "bar", "note", "note", "bar", "note", "note"]
+    ...         * 2,
+    ...     }
+    ... )
+
+    Middle bar (onset 4) with 1 bar before and after:
+    >>> get_context_bars(music_df, 5.0, n_before=1, n_after=1)
+        onset  release            type
+    0     0.0      NaN  time_signature
+    1     0.0      4.0             bar
+    2     1.0      4.0            note
+    3     2.0      3.0            note
+    4     4.0      8.0             bar
+    5     5.0      8.0            note
+    6     6.0      7.0            note
+    7     8.0      NaN  time_signature
+    8     8.0     11.0             bar
+    9     9.0     11.0            note
+    10   10.0     10.5            note
+
+    Target at first bar with large n_before (clamped):
+    >>> get_context_bars(music_df, 1.0, n_before=10, n_after=0)
+       onset  release            type
+    0    0.0      NaN  time_signature
+    1    0.0      4.0             bar
+    2    1.0      4.0            note
+    3    2.0      3.0            note
+
+    Target at last bar with large n_after (clamped):
+    >>> get_context_bars(music_df, 12.0, n_before=0, n_after=10)
+        onset  release            type
+    7    11.0      NaN  time_signature
+    11   11.0     14.0             bar
+    12   12.0     14.0            note
+    13   13.0     13.5            note
+
+    Single bar (n_before=0, n_after=0):
+    >>> get_context_bars(music_df, 5.0, n_before=0, n_after=0)
+       onset  release            type
+    0    4.0      NaN  time_signature
+    4    4.0      8.0             bar
+    5    5.0      8.0            note
+    6    6.0      7.0            note
+
+    Target exactly at bar boundary:
+    >>> get_context_bars(music_df, 8.0, n_before=0, n_after=1)
+        onset  release            type
+    7     8.0      NaN  time_signature
+    8     8.0     11.0             bar
+    9     9.0     11.0            note
+    10   10.0     10.5            note
+    11   11.0     14.0             bar
+    12   12.0     14.0            note
+    13   13.0     13.5            note
+    """
+    if "bar" not in music_df["type"].values:
+        music_df = infer_barlines(music_df)
+
+    bar_rows = music_df[music_df["type"] == "bar"]
+    if bar_rows.empty:
+        raise ValueError("No bar rows found in music_df")
+    bar_onsets = bar_rows["onset"].values
+
+    target_bar_pos = get_idx_to_item_leq(
+        bar_onsets, target_onset, return_first_if_larger=True
+    )
+
+    start_bar_pos = max(0, target_bar_pos - n_before)
+    end_bar_pos = min(len(bar_onsets) - 1, target_bar_pos + n_after)
+
+    start_df_idx = bar_rows.index[start_bar_pos]
+
+    if end_bar_pos + 1 < len(bar_onsets):
+        next_bar_onset = bar_onsets[end_bar_pos + 1]
+        next_bar_loc = get_idx_to_item_geq(music_df.onset.values, next_bar_onset)
+        end_df_idx = music_df.index[next_bar_loc - 1]
+    else:
+        end_df_idx = music_df.index[-1]
+
+    result = music_df.loc[start_df_idx:end_df_idx]
+
+    first_bar_onset = bar_onsets[start_bar_pos]
+    try:
+        prev_time_sig = last_time_signature_before(music_df, start_df_idx)
+        if prev_time_sig.onset != first_bar_onset:
+            prev_time_sig = prev_time_sig.copy()
+            prev_time_sig["onset"] = first_bar_onset
+        result = pd.concat(
+            [prev_time_sig.to_frame().T.astype(result.dtypes), result]
+        )
+    except ValueError:
+        pass
+
+    return result
