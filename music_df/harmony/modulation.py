@@ -344,39 +344,26 @@ def remove_long_tonicizations(
         simplify_enharmonics: Whether to simplify enharmonic spellings of the key of
             the tonicization. Ignored if tonicization_cache is provided.
 
-
     >>> test_case = pd.read_csv(
     ...     io.StringIO(
     ...         '''
     ... chord_pcs,onset,release,inversion,key,quality,primary_degree,primary_alteration,secondary_degree,secondary_alteration,secondary_mode
     ... 590,374.0,375.0,0.0,F,M,I,_,I,_,
-    ... a25,376.0,377.0,0.0,F,M,IV,_,I,_,
-    ... 905,377.0,378.0,1.0,F,M,I,_,I,_,
-    ... 590,378.0,379.0,0.0,F,M,I,_,I,_,
-    ... a25,380.0,381.0,0.0,F,M,IV,_,I,_,
-    ... 905,381.0,382.0,1.0,F,M,I,_,I,_,
-    ... 047,382.0,385.0,0.0,F,M,V,_,I,_,
-    ... 803,386.0,387.0,0.0,F,M,I,_,III,b,M
-    ... 158,388.0,389.0,0.0,F,M,IV,_,III,b,M
-    ... 038,389.0,390.0,1.0,F,M,I,_,III,b,M
-    ... 803,390.0,391.0,0.0,F,M,I,_,III,b,M
-    ... 158,392.0,393.0,0.0,F,M,IV,_,III,b,M
     ... 038,393.0,394.0,1.0,F,M,I,_,III,b,M
     ... 37a,394.0,397.0,0.0,F,M,V,_,III,b,M
-    ... b36,398.0,399.0,0.0,F,M,I,_,IV,#,M
-    ... 48b,400.0,401.0,0.0,F,M,IV,_,IV,#,M
-    ... 36b,401.0,402.0,1.0,F,M,I,_,IV,#,M
-    ... b36,402.0,403.0,0.0,F,M,I,_,IV,#,M
-    ... 48b,404.0,405.0,0.0,F,M,IV,_,IV,#,M
     ... 36b,405.0,406.0,1.0,F,M,I,_,IV,#,M
     ... 6a1,406.0,409.0,0.0,F,M,V,_,IV,#,M
-    ... b369,410.0,413.0,0.0,F,Mm7,V,_,VII,_,M
-    ... 269,414.0,415.0,0.0,F,M,I,_,VI,_,M
-    ... 914,416.0,417.0,0.0,F,M,V,_,VI,_,M
     ... '''
     ...     )
     ... )
     >>> remove_long_tonicizations(test_case, max_tonicization_num_chords=1)
+      chord_pcs  onset  release  inversion key quality primary_degree primary_alteration secondary_degree secondary_alteration secondary_mode degree
+    0       590  374.0    375.0        0.0   F       M              I                  _                I                    _              _      I
+    1       038  393.0    394.0        1.0  Ab       M              I                  _                I                    -              _      I
+    2       37a  394.0    397.0        0.0  Ab       M              V                  _                I                    -              _      V
+    3       36b  405.0    406.0        1.0   B       M              I                  _                I                    -              _      I
+    4       6a1  406.0    409.0        0.0   B       M              V                  _                I                    -              _      V
+
     >>> no_repeat = pd.read_csv(
     ...     io.StringIO(
     ...         '''
@@ -759,6 +746,11 @@ def remove_long_tonicizations(
         same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(
             1
         )
+    if "secondary_alteration" in chord_df.columns:
+        same_as_prev &= (
+            chord_df["secondary_alteration"]
+            == chord_df["secondary_alteration"].shift(1)
+        )
     first_of_group = ~same_as_prev
     # shift(1) produces NA for the first row; with PyArrow-backed dtypes,
     # ~NA stays NA rather than becoming True, which breaks the subsequent
@@ -774,12 +766,19 @@ def remove_long_tonicizations(
     cols_to_map = ["primary_degree", "secondary_degree"]
     if "secondary_mode" in chord_df.columns:
         cols_to_map.append("secondary_mode")
+    if "secondary_alteration" in chord_df.columns:
+        cols_to_map.append("secondary_alteration")
     for col in cols_to_map:
         chord_df[col] = group_ids.map(derepeated[col]).values
 
     tonicization_changes = (
         chord_df["secondary_degree"] != chord_df["secondary_degree"].shift(1)
     ) | (chord_df["key"] != chord_df["key"].shift(1))
+    if "secondary_alteration" in chord_df.columns:
+        tonicization_changes |= (
+            chord_df["secondary_alteration"]
+            != chord_df["secondary_alteration"].shift(1)
+        )
 
     indices = tonicization_changes.index[tonicization_changes].tolist()
     indices.append(len(chord_df))
@@ -804,11 +803,18 @@ def remove_long_tonicizations(
             sm = chord_df.iloc[start_i]["secondary_mode"]
             if sm in ("M", "m"):
                 secondary_mode = sm
+        full_tonicization = tonicization
+        if "secondary_alteration" in chord_df.columns:
+            alt = chord_df.iloc[start_i]["secondary_alteration"]
+            if pd.notna(alt) and alt not in ("_", "-", ""):
+                full_tonicization = alt + tonicization
         new_key = get_tonicized_key(
-            tonicization, chord_df.iloc[start_i]["key"], secondary_mode
+            full_tonicization, chord_df.iloc[start_i]["key"], secondary_mode
         )
         chord_df.loc[start_i : end_i - 1, "key"] = new_key
         chord_df.loc[start_i : end_i - 1, "secondary_degree"] = "I"
+        if "secondary_alteration" in chord_df.columns:
+            chord_df.loc[start_i : end_i - 1, "secondary_alteration"] = "-"
         if "secondary_mode" in chord_df.columns:
             chord_df.loc[start_i : end_i - 1, "secondary_mode"] = "_"
 

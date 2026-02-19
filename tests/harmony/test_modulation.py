@@ -281,3 +281,80 @@ onset,release,chord_pcs,primary_degree,secondary_degree,secondary_mode,inversion
         # Row 0: "vi" moved to secondary → lowercase → mode "m"
         assert result.loc[0, "secondary_mode"] == "m"
         assert result.loc[0, "secondary_degree"] == "vi"
+
+
+class TestSecondaryAlteration:
+    """Tests for secondary_alteration support in remove_long_tonicizations."""
+
+    def test_secondary_alteration_incorporated_in_key(self):
+        """secondary_alteration='b' with secondary_degree='III' in key F
+        should tonicize to Ab, not A."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,secondary_degree,secondary_alteration,key
+0.0,I,I,_,F
+1.0,I,III,b,F
+2.0,V,III,b,F
+3.0,I,I,_,F
+"""
+            ),
+            dtype={"secondary_alteration": str},
+        )
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        assert result.loc[1, "key"] == "Ab"
+        assert result.loc[2, "key"] == "Ab"
+        assert result.loc[1, "secondary_degree"] == "I"
+        assert result.loc[2, "secondary_degree"] == "I"
+        assert result.loc[1, "secondary_alteration"] == "-"
+        assert result.loc[2, "secondary_alteration"] == "-"
+
+    def test_sharp_secondary_alteration(self):
+        """secondary_alteration='#' with secondary_degree='IV' in key F
+        should tonicize to B, not Bb."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,secondary_degree,secondary_alteration,secondary_mode,key
+0.0,I,I,_,_,F
+1.0,I,IV,#,M,F
+2.0,V,IV,#,M,F
+3.0,I,I,_,_,F
+"""
+            ),
+            dtype={"secondary_alteration": str},
+        )
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        assert result.loc[1, "key"] == "B"
+        assert result.loc[2, "key"] == "B"
+        assert result.loc[1, "secondary_alteration"] == "-"
+
+    def test_different_alterations_not_collapsed(self):
+        """Adjacent rows with same secondary_degree but different
+        secondary_alteration should not be collapsed together."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,secondary_degree,secondary_alteration,key
+0.0,V,III,b,F
+1.0,IV,III,b,F
+2.0,V,III,#,F
+3.0,IV,III,#,F
+4.0,I,I,_,F
+"""
+            ),
+            dtype={"secondary_alteration": str},
+        )
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        # bIII and #III should be treated as different tonicizations
+        # bIII in F → Ab; #III in F → Bb (III=A, #=A#→Bb)
+        assert result.loc[0, "key"] == "Ab"
+        assert result.loc[1, "key"] == "Ab"
+        assert result.loc[2, "key"] == "Bb"
+        assert result.loc[3, "key"] == "Bb"
