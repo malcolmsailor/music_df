@@ -238,6 +238,32 @@ onset,primary_degree,secondary_degree,secondary_mode,key
         assert result.loc[1, "secondary_mode"] == "M"
         assert result.loc[1, "degree"] == "V/VM"
 
+    def test_nested_secondary_across_modulation(self):
+        """When removing a short modulation, nested secondary degrees should
+        be resolved in the inner key then expressed relative to the outer key.
+
+        #VII/VIm in Eb is Bo7 (B diminished 7th targeting C minor).
+        In F minor, C is the 5th degree, so this should become #VII/V, not
+        #VII/#V.
+        """
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,release,chord_pcs,primary_degree,secondary_degree,secondary_mode,inversion,key,quality
+45.0,46.0,47a1,#VII,I,_,0.0,f,o7
+46.0,47.0,58b2,#VII,VI,m,2.0,Eb,o7
+47.0,48.0,047,V,I,_,0.0,f,M
+"""
+            ),
+        )
+        result = remove_short_modulations(
+            chord_df, min_modulation_num_chords=2
+        )
+        assert result.loc[1, "secondary_degree"] == "V"
+        assert result.loc[1, "primary_degree"] == "#VII"
+        assert result.loc[1, "key"] == "f"
+        assert result.loc[1, "degree"] == "#VII/VM"
+
     def test_expand_tonicizations_sets_secondary_mode(self):
         """expand_tonicizations should set secondary_mode based on case
         of the degree being moved to secondary position."""

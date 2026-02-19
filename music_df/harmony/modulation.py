@@ -6,6 +6,7 @@ import pandas as pd
 from music_df.harmony.chords import (
     CacheDict,
     handle_nested_secondary_rns,
+    rn_to_spelled_pitch,
     spelled_pitch_to_rn,
     tonicization_to_key,
 )
@@ -722,7 +723,9 @@ def remove_long_tonicizations(
         & (chord_df["key"] == chord_df["key"].shift(1))
     )
     if "secondary_mode" in chord_df.columns:
-        same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(1)
+        same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(
+            1
+        )
     first_of_group = ~same_as_prev
     # shift(1) produces NA for the first row; with PyArrow-backed dtypes,
     # ~NA stays NA rather than becoming True, which breaks the subsequent
@@ -887,9 +890,6 @@ def remove_short_modulations(
     key.
 
 
-
-
-
     >>> modulation_with_tonicization = pd.read_csv(
     ...     io.StringIO(
     ...         '''
@@ -1013,15 +1013,16 @@ def remove_short_modulations(
         else:
             return spelled_pitch_to_rn_cache[(inner_key, outer_key, inner_key_mode)]
 
-    def nested_handler(row: pd.Series, secondary_degree: str):
-        if handle_nested_secondary_rns_cache is None:
-            return handle_nested_secondary_rns(
-                row["secondary_degree"] + "/" + secondary_degree, row["key"]
-            )
-        else:
-            return handle_nested_secondary_rns_cache[
-                (row["secondary_degree"] + "/" + secondary_degree, row["key"])
-            ]
+    def nested_handler(row: pd.Series, outer_key: str):
+        # Resolve the inner secondary degree to a pitch, then express
+        # relative to the outer key. We can't just concatenate
+        # row["secondary_degree"] + "/" + secondary_degree and use
+        # handle_nested_secondary_rns because the two parts live in
+        # different reference frames (inner key vs outer key).
+        inner_pitch = rn_to_spelled_pitch(row["secondary_degree"], row["key"])
+        if spelled_pitch_to_rn_cache is not None:
+            return spelled_pitch_to_rn_cache[(inner_pitch, outer_key, "M")]
+        return spelled_pitch_to_rn(inner_pitch, outer_key, "M")
 
     def remove_modulation_if_possible(start_i: int, end_i: int):
         if start_i == 0:
@@ -1042,7 +1043,7 @@ def remove_short_modulations(
         nested_secondary_index = nested_secondary_mask.index[nested_secondary_mask]
         chord_df.loc[nested_secondary_index, "secondary_degree"] = chord_df.loc[
             nested_secondary_index
-        ].apply(lambda row: nested_handler(row, secondary_degree), axis=1)
+        ].apply(lambda row: nested_handler(row, outer_key), axis=1)
 
         if "secondary_mode" in chord_df.columns:
             # For nested secondaries, derive mode from case of the collapsed result
