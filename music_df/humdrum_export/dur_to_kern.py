@@ -19,6 +19,10 @@ else:
         Fraction(1 * 2**i, (2 * 2**i - 1)) for i in range(1, MAX_DEPTH)
     ]
     ALLOWED_ERROR = 0.002
+    # Finest subdivision used in the divmod decomposition loop; covers all
+    # standard subdivisions (triplets through 32nd-note triplets, regular
+    # values through 64th notes).
+    SNAP_GRID = 96
     INV_ALLOWED_ERROR = 1 - ALLOWED_ERROR
 
     class KernDurError(Exception):
@@ -233,17 +237,17 @@ else:
         >>> dur_to_kern(9.25, 0.5, "9/8")
         [(0.5, '8'), (0.5, '8'), (1.5, '4.'), (1.5, '4.'), (4.5, '8%9'), (0.75, '8.')]
         >>> dur_to_kern(0.3333, 0.0, "4/4")
-        [(0.3333, '12')]
+        [(0.3333333333333333, '12')]
         >>> dur_to_kern(0.1666, 0.0, "4/4")
-        [(0.1666, '24')]
+        [(0.16666666666666666, '24')]
         >>> dur_to_kern(0.1667, 0.3333, "2/4")
-        [(0.16670000000000001, '24')]
+        [(0.16666666666666666, '24')]
         >>> dur_to_kern(0.1667, 1.6667, "2/4")
-        [(0.16670000000000007, '24')]
+        [(0.16666666666666666, '24')]
         >>> dur_to_kern(0.1667, 1.75, "2/4")
-        [(0.16670000000000007, '24')]
+        [(0.16666666666666666, '24')]
         >>> dur_to_kern(0.1670000000000016, 1.5, "2/4")
-        [(0.1670000000000016, '24')]
+        [(0.16666666666666666, '24')]
 
         Following used to give a recursion error, fixed by `split_fives_hack()`
         >>> dur_to_kern(5.0, 6.0, "6/4")
@@ -251,6 +255,8 @@ else:
         """
         if isinstance(meter, str):
             meter = Meter(meter)
+        inp = round(float(inp) * SNAP_GRID) / SNAP_GRID
+        offset = round(float(offset) * SNAP_GRID) / SNAP_GRID
         split_durs = meter.split_at_metric_strong_points(
             [_Dur(offset, offset + inp)], min_split_dur=0.5  # type:ignore
         )
@@ -262,7 +268,10 @@ else:
         # Hack
         split_durs = split_durs[:-1] + split_fives_hack(split_durs[-1])
 
-        durs = [float(dur.release - dur.onset) for dur in split_durs]
+        durs = [
+            round(float(dur.release - dur.onset) * SNAP_GRID) / SNAP_GRID
+            for dur in split_durs
+        ]
         # It's possible these will be different
         output_durs = []
         output_kern_durs = []

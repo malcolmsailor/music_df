@@ -344,6 +344,39 @@ def remove_long_tonicizations(
         simplify_enharmonics: Whether to simplify enharmonic spellings of the key of
             the tonicization. Ignored if tonicization_cache is provided.
 
+
+    >>> test_case = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... chord_pcs,onset,release,inversion,key,quality,primary_degree,primary_alteration,secondary_degree,secondary_alteration,secondary_mode
+    ... 590,374.0,375.0,0.0,F,M,I,_,I,_,
+    ... a25,376.0,377.0,0.0,F,M,IV,_,I,_,
+    ... 905,377.0,378.0,1.0,F,M,I,_,I,_,
+    ... 590,378.0,379.0,0.0,F,M,I,_,I,_,
+    ... a25,380.0,381.0,0.0,F,M,IV,_,I,_,
+    ... 905,381.0,382.0,1.0,F,M,I,_,I,_,
+    ... 047,382.0,385.0,0.0,F,M,V,_,I,_,
+    ... 803,386.0,387.0,0.0,F,M,I,_,III,b,M
+    ... 158,388.0,389.0,0.0,F,M,IV,_,III,b,M
+    ... 038,389.0,390.0,1.0,F,M,I,_,III,b,M
+    ... 803,390.0,391.0,0.0,F,M,I,_,III,b,M
+    ... 158,392.0,393.0,0.0,F,M,IV,_,III,b,M
+    ... 038,393.0,394.0,1.0,F,M,I,_,III,b,M
+    ... 37a,394.0,397.0,0.0,F,M,V,_,III,b,M
+    ... b36,398.0,399.0,0.0,F,M,I,_,IV,#,M
+    ... 48b,400.0,401.0,0.0,F,M,IV,_,IV,#,M
+    ... 36b,401.0,402.0,1.0,F,M,I,_,IV,#,M
+    ... b36,402.0,403.0,0.0,F,M,I,_,IV,#,M
+    ... 48b,404.0,405.0,0.0,F,M,IV,_,IV,#,M
+    ... 36b,405.0,406.0,1.0,F,M,I,_,IV,#,M
+    ... 6a1,406.0,409.0,0.0,F,M,V,_,IV,#,M
+    ... b369,410.0,413.0,0.0,F,Mm7,V,_,VII,_,M
+    ... 269,414.0,415.0,0.0,F,M,I,_,VI,_,M
+    ... 914,416.0,417.0,0.0,F,M,V,_,VI,_,M
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(test_case, max_tonicization_num_chords=1)
     >>> no_repeat = pd.read_csv(
     ...     io.StringIO(
     ...         '''

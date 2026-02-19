@@ -346,7 +346,7 @@ else:
                 handle_rest(
                     measure_start,
                     row.onset,
-                    0.0,
+                    measure_start,
                     meter,
                     this_measure_tokens,
                     (
