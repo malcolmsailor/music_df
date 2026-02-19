@@ -10,6 +10,7 @@ from music_df.harmony.chords import (
     spelled_pitch_to_rn,
     tonicization_to_key,
 )
+from music_df.keys import get_key_sharps_interval
 
 
 def assert_range_index(df: pd.DataFrame):
@@ -1131,6 +1132,238 @@ def remove_short_modulations(
                 or end_i - start_i <= max_removal_num_chords
             ):
                 remove_modulation_if_possible(start_i, end_i)
+
+    replace_spurious_tonics(chord_df, inplace=True)
+
+    if not had_secondary_mode and "secondary_mode" in chord_df.columns:
+        chord_df = chord_df.drop(columns=["secondary_mode"])
+
+    chord_df["degree"] = _reconstruct_degree_column(chord_df)
+
+    if not had_split_columns:
+        chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
+
+    return chord_df
+
+
+def remove_phantom_keys(
+    chord_df: pd.DataFrame,
+    inplace: bool = False,
+    tonicization_cache: CacheDict[tuple[str, str, str | None], str] | None = None,
+    spelled_pitch_to_rn_cache: CacheDict[tuple[str, str, str], str] | None = None,
+    case_matters: bool = False,
+    simplify_enharmonics: bool = True,
+) -> pd.DataFrame:
+    """Remove phantom keys by absorbing them into the nearest neighbor.
+
+    After removing tonicizations or short modulations, some key segments may
+    have every chord tonicized (secondary_degree != "I"/"i"). These "phantom"
+    keys are absorbed into the nearest neighboring key on the circle of fifths.
+    When a phantom region contains multiple distinct tonicized keys, the function
+    finds an optimal contiguous split point assigning blocks to the preceding
+    or following neighbor.
+
+    >>> absorbed_into_following = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 0.0,I,C
+    ... 1.0,V/IV,D
+    ... 2.0,I,G
+    ... '''
+    ...     )
+    ... )
+    >>> remove_phantom_keys(absorbed_into_following)
+       onset degree key
+    0    0.0      I   C
+    1    1.0      V   G
+    2    2.0      I   G
+
+    >>> absorbed_into_preceding = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 0.0,I,C
+    ... 1.0,V/IV,G
+    ... 2.0,ii/IV,G
+    ... 3.0,I,A
+    ... '''
+    ...     )
+    ... )
+    >>> remove_phantom_keys(absorbed_into_preceding)
+       onset degree key
+    0    0.0      I   C
+    1    1.0      V   C
+    2    2.0     ii   C
+    3    3.0      I   A
+
+    >>> not_phantom = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 0.0,I,C
+    ... 1.0,V/V,G
+    ... 2.0,IV,G
+    ... 3.0,I,D
+    ... '''
+    ...     )
+    ... )
+    >>> remove_phantom_keys(not_phantom)
+       onset degree key
+    0    0.0      I   C
+    1    1.0    V/V   G
+    2    2.0     IV   G
+    3    3.0      I   D
+    """
+    if not inplace:
+        chord_df = chord_df.copy()
+
+    assert_range_index(chord_df)
+
+    split_columns = ["primary_degree", "secondary_degree", "key", "onset"]
+    joined_columns = ["onset", "degree", "key"]
+    had_secondary_mode = "secondary_mode" in chord_df.columns
+    if all(k in chord_df.columns for k in split_columns):
+        had_split_columns = True
+    elif all(k in chord_df.columns for k in joined_columns):
+        had_split_columns = False
+        chord_df = split_degree_into_primary_and_secondary(chord_df)
+    else:
+        raise ValueError(
+            f"chord_df must have columns {split_columns} or {joined_columns}"
+        )
+
+    chord_df["key"] = chord_df["key"].ffill()
+    chord_df["secondary_degree"] = chord_df["secondary_degree"].fillna("I")
+    if "secondary_mode" in chord_df.columns:
+        chord_df["secondary_mode"] = chord_df["secondary_mode"].fillna("_")
+
+    # Identify key segments
+    key_changes = chord_df["key"] != chord_df["key"].shift(1)
+    change_indices = key_changes.index[key_changes].tolist()
+    change_indices.append(len(chord_df))
+
+    segments = []
+    for start_i, end_i in zip(change_indices[:-1], change_indices[1:]):
+        key = chord_df.loc[start_i, "key"]
+        segments.append((start_i, end_i, key))
+
+    # Classify: phantom if no chord has secondary_degree "I" or "i"
+    is_phantom = []
+    for start_i, end_i, _key in segments:
+        sec_deg = chord_df.loc[start_i : end_i - 1, "secondary_degree"]
+        is_phantom.append(not sec_deg.isin(["I", "i"]).any())
+
+    def _get_tonicized_key(secondary_degree, key, secondary_mode=None):
+        if tonicization_cache is None:
+            return tonicization_to_key(
+                secondary_degree,
+                key,
+                case_matters,
+                simplify_enharmonics,
+                secondary_mode,
+            )
+        return tonicization_cache[(secondary_degree, key, secondary_mode)]
+
+    def _get_rn(tk_pitch, neighbor_key, tk_mode):
+        if spelled_pitch_to_rn_cache is None:
+            return spelled_pitch_to_rn(tk_pitch, neighbor_key, tk_mode)
+        return spelled_pitch_to_rn_cache[(tk_pitch, neighbor_key, tk_mode)]
+
+    # Process consecutive phantom regions
+    i = 0
+    while i < len(segments):
+        if not is_phantom[i]:
+            i += 1
+            continue
+
+        # Find extent of consecutive phantom segments
+        j = i
+        while j < len(segments) and is_phantom[j]:
+            j += 1
+
+        prev_key = segments[i - 1][2] if i > 0 else None
+        next_key = segments[j][2] if j < len(segments) else None
+
+        if prev_key is None and next_key is None:
+            i = j
+            continue
+
+        region_start = segments[i][0]
+        region_end = segments[j - 1][1]
+
+        # Compute tonicized key for each chord
+        tonicized_keys = []
+        for idx in range(region_start, region_end):
+            sec_deg = chord_df.loc[idx, "secondary_degree"]
+            chord_key = chord_df.loc[idx, "key"]
+            sec_mode = None
+            if "secondary_mode" in chord_df.columns:
+                sm = chord_df.loc[idx, "secondary_mode"]
+                if sm in ("M", "m"):
+                    sec_mode = sm
+            tonicized_keys.append(_get_tonicized_key(sec_deg, chord_key, sec_mode))
+
+        # Group into blocks of consecutive same tonicized key
+        blocks = []  # (block_start_idx, block_end_idx, tonicized_key)
+        block_start = 0
+        for k in range(1, len(tonicized_keys)):
+            if tonicized_keys[k] != tonicized_keys[k - 1]:
+                blocks.append(
+                    (
+                        region_start + block_start,
+                        region_start + k,
+                        tonicized_keys[block_start],
+                    )
+                )
+                block_start = k
+        blocks.append(
+            (
+                region_start + block_start,
+                region_end,
+                tonicized_keys[block_start],
+            )
+        )
+
+        # Find optimal split: k blocks to preceding, rest to following.
+        # Minimize total cost = sum(n_chords * circle-of-fifths distance).
+        # Ties prefer preceding (larger k) via <=.
+        if prev_key is None:
+            split_k = 0
+        elif next_key is None:
+            split_k = len(blocks)
+        else:
+            best_cost = float("inf")
+            best_k = 0
+            for k in range(len(blocks) + 1):
+                cost = 0
+                for bi in range(k):
+                    n = blocks[bi][1] - blocks[bi][0]
+                    cost += n * abs(get_key_sharps_interval(prev_key, blocks[bi][2]))
+                for bi in range(k, len(blocks)):
+                    n = blocks[bi][1] - blocks[bi][0]
+                    cost += n * abs(get_key_sharps_interval(next_key, blocks[bi][2]))
+                if cost <= best_cost:
+                    best_cost = cost
+                    best_k = k
+            split_k = best_k
+
+        # Re-express secondary degrees relative to the assigned neighbor
+        for bi, (blk_start, blk_end, tk) in enumerate(blocks):
+            neighbor_key = prev_key if bi < split_k else next_key
+            tk_pitch = tk[0].upper() + tk[1:]
+            tk_mode = "M" if tk[0].isupper() else "m"
+            new_sec = _get_rn(tk_pitch, neighbor_key, tk_mode)
+            mode = tk_mode
+            if new_sec in ("I", "i"):
+                mode = "_"
+
+            chord_df.loc[blk_start : blk_end - 1, "secondary_degree"] = new_sec
+            if "secondary_mode" in chord_df.columns:
+                chord_df.loc[blk_start : blk_end - 1, "secondary_mode"] = mode
+            chord_df.loc[blk_start : blk_end - 1, "key"] = neighbor_key
+
+        i = j
 
     replace_spurious_tonics(chord_df, inplace=True)
 

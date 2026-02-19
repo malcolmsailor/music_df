@@ -4,6 +4,7 @@ import pandas as pd
 
 from music_df.harmony.modulation import (
     remove_long_tonicizations,
+    remove_phantom_keys,
     remove_short_modulations,
     split_degree_into_primary_and_secondary,
 )
@@ -358,3 +359,182 @@ onset,primary_degree,secondary_degree,secondary_alteration,key
         assert result.loc[1, "key"] == "Ab"
         assert result.loc[2, "key"] == "Bb"
         assert result.loc[3, "key"] == "Bb"
+
+class TestRemovePhantomKeys:
+    """Tests for remove_phantom_keys."""
+
+    def test_absorbed_into_following_key(self):
+        """C → D(V/IV) → G: IV of D = G, dist(C,G)=1, dist(G,G)=0 → all to G."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,C
+1.0,V/IV,D
+2.0,I,G
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert result.loc[1, "key"] == "G"
+        assert result.loc[1, "degree"] == "V"
+        assert list(result["key"]) == ["C", "G", "G"]
+
+    def test_absorbed_into_preceding_key(self):
+        """C → G(V/IV, ii/IV) → A: IV of G = C, dist(C,C)=0, dist(A,C)=3 → all to C."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,C
+1.0,V/IV,G
+2.0,ii/IV,G
+3.0,I,A
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["C", "C", "C", "A"]
+        assert result.loc[1, "degree"] == "V"
+        assert result.loc[2, "degree"] == "ii"
+
+    def test_different_degree_and_spurious_tonic(self):
+        """C → D(V/VI, I/VI) → A: VI of D = b, dist(A,b)=1 < dist(C,b)=2.
+
+        After absorbing into A: V/ii and I/ii → replace_spurious_tonics → ii.
+        """
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,C
+1.0,V/VI,D
+2.0,I/VI,D
+3.0,I,A
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["C", "A", "A", "A"]
+        assert result.loc[1, "degree"] == "V/ii"
+        # I/ii → spurious tonic → ii
+        assert result.loc[2, "degree"] == "ii"
+
+    def test_at_beginning(self):
+        """D(V/IV, ii/IV) → G: only following neighbor G. IV of D = G → becomes I."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,V/IV,D
+1.0,ii/IV,D
+2.0,I,G
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["G", "G", "G"]
+        assert result.loc[0, "degree"] == "V"
+        assert result.loc[1, "degree"] == "ii"
+
+    def test_at_end(self):
+        """C → D(V/VI, ii/VI): only preceding neighbor C. VI of D = b → vii in C."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,C
+1.0,V/VI,D
+2.0,ii/VI,D
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["C", "C", "C"]
+        assert result.loc[1, "degree"] == "V/vii"
+        assert result.loc[2, "degree"] == "ii/vii"
+
+    def test_split_needed(self):
+        """Ab → Bb(V/IV, ii/IV, V/V) → C: IV=Eb→Ab (dist 1), V=F→C (dist 1)."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,Ab
+1.0,V/IV,Bb
+2.0,ii/IV,Bb
+3.0,V/V,Bb
+4.0,I,C
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["Ab", "Ab", "Ab", "C", "C"]
+        # Eb expressed in Ab = V
+        assert result.loc[1, "degree"] == "V/V"
+        assert result.loc[2, "degree"] == "ii/V"
+        # F expressed in C = IV
+        assert result.loc[3, "degree"] == "V/IV"
+
+    def test_not_all_tonicization_unchanged(self):
+        """C → G(V/V, IV) → D: G has non-tonicized IV → not phantom, unchanged."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,C
+1.0,V/V,G
+2.0,IV,G
+3.0,I,D
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["C", "G", "G", "D"]
+        assert result.loc[1, "degree"] == "V/V"
+        assert result.loc[2, "degree"] == "IV"
+
+    def test_mode_mismatch(self):
+        """C → D(V/V) → G: V of D = A major. In G, A = II but needs "M" suffix.
+
+        The default mode for II in G would be minor (a), but A major requires
+        an explicit mode override via secondary_mode.
+        """
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,secondary_degree,secondary_mode,key
+0.0,I,I,_,C
+1.0,V,V,_,D
+2.0,I,I,_,G
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert result.loc[1, "key"] == "G"
+        assert result.loc[1, "secondary_degree"] == "II"
+        assert result.loc[1, "secondary_mode"] == "M"
+        assert result.loc[1, "degree"] == "V/IIM"
+
+    def test_modular_distance(self):
+        """B → Gb(V/V, ii/V) → C: V of Gb = Db, dist(B,Db)=2, dist(C,Db)=5.
+
+        Db is closer to B than C on the circle of fifths (going the short way
+        around, using mod-12 arithmetic). Both chords should be assigned to B.
+        """
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,B
+1.0,V/V,Gb
+2.0,ii/V,Gb
+3.0,I,C
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["B", "B", "B", "C"]
+        # Db in B major gives bbIII (Db is a diminished 3rd above B)
+        assert result.loc[1, "degree"] == "V/bbIII"
+        assert result.loc[2, "degree"] == "ii/bbIII"
