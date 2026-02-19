@@ -128,7 +128,7 @@ else:
         ([0, 1.0], ['[4B-', '4B-]'], None)
         >>> note = pd.Series({"pitch": 58, "onset": 2.0, "release": 4.0, "label": "hi"})
         >>> get_kern_notes(note, 2.0, threefour, speller, label_name="label")
-        ([0, 1.0], ['[4B-', '4B-]'], ['hi', 'hi'])
+        ([0, 1.0], ['[4B-', '4B-]'], ['hi', ''])
 
         Zero-duration notes are treated as grace notes:
         >>> note = pd.Series({"pitch": 60, "onset": 2.0, "release": 2.0})
@@ -163,7 +163,7 @@ else:
                 #   the code below expects to find a label for every note.
                 labels = ["" for _ in notes]
             else:
-                labels = [label for _ in notes]
+                labels = [label] + ["" for _ in notes[1:]]
 
         if nth_note_label_col:
             nth_note_label = note[nth_note_label_col]

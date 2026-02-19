@@ -14,6 +14,7 @@ from music_df.sort_df import sort_df
 def split_notes_at_barlines(
     df: pd.DataFrame,
     min_overhang_dur: float | None = None,
+    clear_on_split: list[str] | None = None,
 ):
     """
     >>> csv_table = '''
@@ -76,6 +77,12 @@ def split_notes_at_barlines(
     """
     if df.loc[df.type == "bar", "release"].isna().any():
         df = add_bar_durs(df)
+    if "tie_to_next" not in df.columns:
+        df = df.copy()
+        df["tie_to_next"] = False
+    if "tie_to_prev" not in df.columns:
+        df = df.copy()
+        df["tie_to_prev"] = False
     bars = df[df.type == "bar"].reset_index()
     bars_i = 0
     row_accumulator = []
@@ -101,6 +108,10 @@ def split_notes_at_barlines(
                 ):
                     row_accumulator.append(truncated_row)
                     temp_row.tie_to_prev = True
+                    if clear_on_split:
+                        for col in clear_on_split:
+                            if col in temp_row.index:
+                                temp_row[col] = ""
                 temp_row.onset = bar_onset
                 if (
                     min_overhang_dur is None
@@ -120,6 +131,10 @@ def split_notes_at_barlines(
                     ):
                         row_accumulator.append(truncated_row)
                         temp_row.tie_to_prev = True
+                        if clear_on_split:
+                            for col in clear_on_split:
+                                if col in temp_row.index:
+                                    temp_row[col] = ""
 
                     temp_row.onset = bar_release
                     if (

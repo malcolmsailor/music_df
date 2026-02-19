@@ -76,7 +76,7 @@ def percent_pc_match(
     total_duration = durations.sum()
     if total_duration == 0:
         return float("nan")
-    return (matches * durations).sum() / total_duration
+    return float((matches * durations).sum() / total_duration)
 
 
 def label_pc_matches(

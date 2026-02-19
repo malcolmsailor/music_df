@@ -250,7 +250,9 @@ def df2hum(
         df = quantize_df(df, tpq=quantize)
     df = add_bar_durs(df)
     df = split_notes_at_barlines(
-        df, min_overhang_dur=(1 / 16) if quantize is None else (1 / quantize)
+        df,
+        min_overhang_dur=(1 / 16) if quantize is None else (1 / quantize),
+        clear_on_split=[label_col] if label_col is not None else None,
     )
 
     if number_every_nth_note:
