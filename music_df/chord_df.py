@@ -1561,3 +1561,129 @@ def label_music_df_with_chord_df(
             out.loc[nonnote_mask, col] = float("nan")
 
     return out
+
+
+def compare_chords(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    cols: list[str] | None = None,
+) -> int:
+    """Count rows that differ between two chord DataFrames of the same length.
+
+    Parameters
+    ----------
+    df1, df2 : pd.DataFrame
+        Chord DataFrames to compare.
+    cols : list[str] | None
+        Columns to compare. If None, auto-detected from format present in
+        *both* DataFrames (joined then split, falling back to whatever columns
+        from those sets are present in both).
+
+    Returns
+    -------
+    int
+        Number of rows where any compared column differs.
+
+    >>> df1 = pd.DataFrame(
+    ...     {"onset": [0.0, 1.0], "key": ["C", "C"],
+    ...      "degree": ["I", "V"], "quality": ["M", "M"], "inversion": [0, 0]}
+    ... )
+    >>> compare_chords(df1, df1)
+    0
+    >>> df2 = df1.copy()
+    >>> df2.loc[1, "degree"] = "IV"
+    >>> compare_chords(df1, df2)
+    1
+    """
+    assert len(df1) == len(df2), (
+        f"DataFrames must have the same length, got {len(df1)} and {len(df2)}"
+    )
+    if cols is None:
+        cols = _auto_compare_cols(df1, df2)
+    assert len(cols) > 0, "No columns to compare"
+    missing1 = [c for c in cols if c not in df1.columns]
+    missing2 = [c for c in cols if c not in df2.columns]
+    assert not missing1, f"Columns missing from df1: {missing1}"
+    assert not missing2, f"Columns missing from df2: {missing2}"
+
+    diff = (df1[cols].reset_index(drop=True) != df2[cols].reset_index(drop=True)).any(
+        axis=1
+    )
+    return int(diff.sum())
+
+
+def _auto_compare_cols(df1: pd.DataFrame, df2: pd.DataFrame) -> list[str]:
+    """Pick comparison columns based on format present in both DataFrames."""
+    cols1 = set(df1.columns)
+    cols2 = set(df2.columns)
+
+    joined_candidates = JOINED_FORMAT_REQUIRED_COLUMNS - {"onset"}
+    if joined_candidates <= cols1 and joined_candidates <= cols2:
+        return sorted(joined_candidates)
+
+    split_candidates = SPLIT_FORMAT_REQUIRED_COLUMNS - {"onset"}
+    if split_candidates <= cols1 and split_candidates <= cols2:
+        extra = (
+            {"secondary_mode"} if "secondary_mode" in cols1 & cols2 else set()
+        )
+        return sorted(split_candidates | extra)
+
+    # Fallback: any columns from either format set present in both
+    all_candidates = (joined_candidates | split_candidates) & cols1 & cols2
+    return sorted(all_candidates)
+
+
+def compare_keys(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+) -> dict[str, int]:
+    """Compare key regions between two chord DataFrames.
+
+    A "key region" is a maximal run of consecutive rows sharing the same key
+    (after forward-fill).  Boundaries from *both* DataFrames are unified so
+    that within each unified region both keys are constant.
+
+    Parameters
+    ----------
+    df1, df2 : pd.DataFrame
+        Chord DataFrames with a ``key`` column.
+
+    Returns
+    -------
+    dict
+        ``{"n_rows": int, "n_regions": int}`` — number of rows and unified
+        regions where the key differs.
+
+    >>> df1 = pd.DataFrame({"key": ["C", "", "", "G", ""]})
+    >>> df2 = pd.DataFrame({"key": ["C", "", "", "G", ""]})
+    >>> compare_keys(df1, df2)
+    {'n_rows': 0, 'n_regions': 0}
+    >>> df3 = pd.DataFrame({"key": ["C", "", "F", "", ""]})
+    >>> compare_keys(df1, df3)
+    {'n_rows': 3, 'n_regions': 2}
+    """
+    assert len(df1) == len(df2), (
+        f"DataFrames must have the same length, got {len(df1)} and {len(df2)}"
+    )
+    assert "key" in df1.columns, "df1 must have a 'key' column"
+    assert "key" in df2.columns, "df2 must have a 'key' column"
+
+    key1 = df1["key"].replace("", np.nan).ffill()
+    key2 = df2["key"].replace("", np.nan).ffill()
+
+    row_differs = key1.reset_index(drop=True) != key2.reset_index(drop=True)
+    n_rows = int(row_differs.sum())
+
+    # Unified region boundaries: wherever *either* series changes
+    change1 = key1.reset_index(drop=True) != key1.reset_index(drop=True).shift(1)
+    change2 = key2.reset_index(drop=True) != key2.reset_index(drop=True).shift(1)
+    boundary = change1 | change2
+    # First row always starts a region
+    boundary.iloc[0] = True
+    region_id = boundary.cumsum()
+
+    # Within each region both keys are constant, so just check one row per region
+    region_differs = row_differs.groupby(region_id).first()
+    n_regions = int(region_differs.sum())
+
+    return {"n_rows": n_rows, "n_regions": n_regions}
