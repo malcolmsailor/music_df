@@ -1,8 +1,10 @@
 import io  # noqa: F401
+import warnings
 
 import numpy as np
 import pandas as pd
 
+from music_df.chord_df import single_degree_to_split_degrees
 from music_df.harmony.chords import (
     CacheDict,
     handle_nested_secondary_rns,
@@ -23,6 +25,23 @@ def assert_range_index(df: pd.DataFrame):
     assert df.index.start == 0
     assert df.index.stop == len(df)
     assert df.index.step == 1
+
+
+def _split_alteration(rn: str) -> tuple[str, str]:
+    """Split 'bVII' -> ('b', 'VII'). No alteration -> ('_', 'VII')."""
+    n = len(rn) - len(rn.lstrip("#b"))
+    return (rn[:n] or "_", rn[n:])
+
+
+def _warn_if_lowercase_degrees(df, cols=("primary_degree", "secondary_degree")):
+    for col in cols:
+        if col in df.columns and df[col].str.contains(r"[a-wy-z]", na=False).any():
+            warnings.warn(
+                f"Column '{col}' contains lowercase roman numerals. "
+                "Use uppercase degrees with quality/secondary_mode columns instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
 
 
 def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
@@ -49,178 +68,211 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... vi,i,C
-    ... V,vi,C
-    ... vi,i,C
-    ... ii,vi,C
-    ... V,vi,C
-    ... vi,i,C
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... VI,I,_,m,C
+    ... V,VI,m,M,C
+    ... VI,I,_,m,C
+    ... II,VI,m,m,C
+    ... V,VI,m,M,C
+    ... VI,I,_,m,C
     ... '''
     ...     )
     ... )
-    >>> expand_tonicizations(df)
-      primary_degree secondary_degree key
-    0              i               vi   C
-    1              V               vi   C
-    2              i               vi   C
-    3             ii               vi   C
-    4              V               vi   C
-    5              i               vi   C
+    >>> expand_tonicizations(df, quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0              I               VI              m       m   C
+    1              V               VI              m       M   C
+    2              I               VI              m       m   C
+    3             II               VI              m       m   C
+    4              V               VI              m       M   C
+    5              I               VI              m       m   C
 
     Across key-change
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... vi,i,C
-    ... V,vi,G
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... VI,I,_,m,C
+    ... V,VI,m,M,G
     ... '''
     ...     )
     ... )
-    >>> expand_tonicizations(df)
-      primary_degree secondary_degree key
-    0             vi                i   C
-    1              V               vi   G
+    >>> expand_tonicizations(df, quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0             VI                I              _       m   C
+    1              V               VI              m       M   G
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... IV,ii,Ab
-    ... ii,I,c
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... IV,II,m,M,Ab
+    ... II,I,_,m,c
     ... '''
     ...     )
     ... )
-    >>> expand_tonicizations(df)
-      primary_degree secondary_degree key
-    0             IV               ii  Ab
-    1             ii                I   c
+    >>> expand_tonicizations(df, quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0             IV               II              m       M  Ab
+    1             II                I              _       m   c
 
+    Mode-aware matching: quality "m" matches secondary_mode "m",
+    quality "M" matches secondary_mode "M"
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... vi,i,C
-    ... V,vi,C
-    ... vi,i,C
-    ... ii,VI,C
-    ... V,VI,C
-    ... VI,i,C
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... VI,I,_,m,C
+    ... V,VI,m,M,C
+    ... VI,I,_,m,C
+    ... IV,I,_,M,C
+    ... V,VI,M,M,C
+    ... VI,I,_,M,C
     ... '''
     ...     )
     ... )
-    >>> expand_tonicizations(df)
-      primary_degree secondary_degree key
-    0              i               vi   C
-    1              V               vi   C
-    2              i               vi   C
-    3             ii               VI   C
-    4              V               VI   C
-    5              I               VI   C
+    >>> expand_tonicizations(df, quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0              I               VI              m       m   C
+    1              V               VI              m       M   C
+    2              I               VI              m       m   C
+    3             IV                I              _       M   C
+    4              V               VI              M       M   C
+    5              I               VI              M       M   C
 
+    Mode mismatch prevents expansion: quality "m" != secondary_mode "M"
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... vi,i,C
-    ... V,VI,C
-    ... vi,i,C
-    ... ii,VI,C
-    ... V,VI,C
-    ... VI,i,C
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... VI,I,_,m,C
+    ... V,VI,M,M,C
+    ... VI,I,_,m,C
+    ... II,VI,M,m,C
+    ... V,VI,M,M,C
+    ... VI,I,_,M,C
     ... '''
     ...     )
     ... )
-    >>> expand_tonicizations(df)
-      primary_degree secondary_degree key
-    0             vi                i   C
-    1              V               VI   C
-    2             vi                i   C
-    3             ii               VI   C
-    4              V               VI   C
-    5              I               VI   C
+    >>> expand_tonicizations(df, quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0             VI                I              _       m   C
+    1              V               VI              M       M   C
+    2             VI                I              _       m   C
+    3             II               VI              M       m   C
+    4              V               VI              M       M   C
+    5              I               VI              M       M   C
 
     Dominant chord behavior
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key
-    ... V,V,Ab
-    ... V,I,Ab
-    ... V,V,Ab
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... V,V,M,M,Ab
+    ... V,I,_,M,Ab
+    ... V,V,M,M,Ab
     ... '''
     ...     )
     ... )
 
     When V is preceded and followed by tonicization, it is expanded
-    >>> expand_tonicizations(df.copy())
-      primary_degree secondary_degree key
-    0              V                V  Ab
-    1              I                V  Ab
-    2              V                V  Ab
+    >>> expand_tonicizations(df.copy(), quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0              V                V              M       M  Ab
+    1              I                V              M       M  Ab
+    2              V                V              M       M  Ab
 
     When V is only preceded or only followed by tonicization, it is not expanded
-    >>> expand_tonicizations(df.iloc[1:].copy())
-      primary_degree secondary_degree key
-    1              V                I  Ab
-    2              V                V  Ab
-    >>> expand_tonicizations(df.iloc[:-1].copy())
-      primary_degree secondary_degree key
-    0              V                V  Ab
-    1              V                I  Ab
+    >>> expand_tonicizations(df.iloc[1:].copy(), quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    1              V                I              _       M  Ab
+    2              V                V              M       M  Ab
+    >>> expand_tonicizations(df.iloc[:-1].copy(), quality_col="quality")
+      primary_degree secondary_degree secondary_mode quality key
+    0              V                V              M       M  Ab
+    1              V                I              _       M  Ab
 
     >>> df = pd.read_csv(
     ...     io.StringIO(
     ...         '''
-    ... primary_degree,secondary_degree,key,quality
-    ... V,V,Ab,M
-    ... V,I,Ab,Mm7
-    ... V,V,Ab,M
-    ... V,I,Ab,aug6
-    ... V,V,Ab,M
-    ... V,I,Ab,o
-    ... V,V,Ab,M
-    ... V,I,Ab,+
-    ... V,V,Ab,M
+    ... primary_degree,secondary_degree,secondary_mode,quality,key
+    ... V,V,M,M,Ab
+    ... V,I,_,Mm7,Ab
+    ... V,V,M,M,Ab
+    ... V,I,_,aug6,Ab
+    ... V,V,M,M,Ab
+    ... V,I,_,o,Ab
+    ... V,V,M,M,Ab
+    ... V,I,_,+,Ab
+    ... V,V,M,M,Ab
     ... '''
     ...     )
     ... )
     >>> expand_tonicizations(df, quality_col="quality")
-      primary_degree secondary_degree key quality
-    0              V                V  Ab       M
-    1              V                I  Ab     Mm7
-    2              V                V  Ab       M
-    3              V                I  Ab    aug6
-    4              V                V  Ab       M
-    5              V                I  Ab       o
-    6              V                V  Ab       M
-    7              V                I  Ab       +
-    8              V                V  Ab       M
+      primary_degree secondary_degree secondary_mode quality key
+    0              V                V              M       M  Ab
+    1              V                I              _     Mm7  Ab
+    2              V                V              M       M  Ab
+    3              V                I              _    aug6  Ab
+    4              V                V              M       M  Ab
+    5              V                I              _       o  Ab
+    6              V                V              M       M  Ab
+    7              V                I              _       +  Ab
+    8              V                V              M       M  Ab
     """
+
+    _warn_if_lowercase_degrees(df)
+
+    _ALT_SENTINELS = {"_", "-", ""}
+
+    def _alts_match(shift_n):
+        if (
+            "primary_alteration" not in df.columns
+            or "secondary_alteration" not in df.columns
+        ):
+            return True
+        return df["primary_alteration"].isin(_ALT_SENTINELS) & df[
+            "secondary_alteration"
+        ].shift(shift_n).isin(_ALT_SENTINELS) | (
+            df["primary_alteration"] == df["secondary_alteration"].shift(shift_n)
+        )
+
+    def _modes_match(shift_n):
+        if quality_col is None or "secondary_mode" not in df.columns:
+            return True
+        quality_mode = df[quality_col].map({"M": "M", "m": "m"})
+        return quality_mode == df["secondary_mode"].shift(shift_n)
 
     non_dominant_mask = (
         (df["primary_degree"] != "V")
-        & (df["secondary_degree"].isin(["i", "I"]))
+        & (df["secondary_degree"] == "I")
         & (
             (
                 (df["primary_degree"] == df["secondary_degree"].shift(-1))
                 & (df["key"] == df["key"].shift(-1))
+                & _alts_match(-1)
+                & _modes_match(-1)
             )
             | (
                 (df["primary_degree"] == df["secondary_degree"].shift(1))
                 & (df["key"] == df["key"].shift(1))
+                & _alts_match(1)
+                & _modes_match(1)
             )
         )
     )
 
     dominant_mask = (
         (df["primary_degree"] == "V")
-        & (df["secondary_degree"].isin(["i", "I"]))
+        & (df["secondary_degree"] == "I")
         & (
             (df["primary_degree"] == df["secondary_degree"].shift(-1))
             & (df["key"] == df["key"].shift(-1))
+            & _alts_match(-1)
+            & _modes_match(-1)
             & (df["primary_degree"] == df["secondary_degree"].shift(1))
             & (df["key"] == df["key"].shift(1))
+            & _alts_match(1)
+            & _modes_match(1)
         )
     )
 
@@ -230,19 +282,26 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
 
     def _apply_mask(mask):
         df.loc[mask, "secondary_degree"] = df.loc[mask, "primary_degree"]
-        lower_case_indices = df.loc[mask].index[
-            df.loc[mask, "primary_degree"].str.slice(start=-1).str.islower()
-        ]
 
         if "secondary_mode" in df.columns:
-            upper_case_indices = df.loc[mask].index[
-                df.loc[mask, "primary_degree"].str.slice(start=-1).str.isupper()
-            ]
-            df.loc[lower_case_indices, "secondary_mode"] = "m"
-            df.loc[upper_case_indices, "secondary_mode"] = "M"
+            if quality_col is not None:
+                quality_mode = df.loc[mask, quality_col].map({"M": "M", "m": "m"})
+                df.loc[mask, "secondary_mode"] = quality_mode
+            else:
+                upper_idx = df.loc[mask].index[
+                    df.loc[mask, "primary_degree"].str[-1].str.isupper()
+                ]
+                lower_idx = df.loc[mask].index[
+                    df.loc[mask, "primary_degree"].str[-1].str.islower()
+                ]
+                df.loc[upper_idx, "secondary_mode"] = "M"
+                df.loc[lower_idx, "secondary_mode"] = "m"
+
+        if "primary_alteration" in df.columns and "secondary_alteration" in df.columns:
+            df.loc[mask, "secondary_alteration"] = df.loc[mask, "primary_alteration"]
+            df.loc[mask, "primary_alteration"] = "_"
 
         df.loc[mask, "primary_degree"] = "I"
-        df.loc[lower_case_indices, "primary_degree"] = "i"
 
     _apply_mask(non_dominant_mask)
     _apply_mask(dominant_mask)
@@ -250,49 +309,43 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     return df
 
 
-def split_degree_into_primary_and_secondary(
-    chord_df: pd.DataFrame,
-    degree_col: str = "degree",
-    primary_degree_col: str = "primary_degree",
-    secondary_degree_col: str = "secondary_degree",
-    secondary_mode_col: str = "secondary_mode",
-    inplace: bool = True,
-):
-    """
-    >>> df = pd.DataFrame({"degree": ["I", "V/VI", "V/VIM", "V/vim", "IV"]})
-    >>> split_degree_into_primary_and_secondary(df)  # doctest: +NORMALIZE_WHITESPACE
-      degree primary_degree secondary_degree secondary_mode
-    0      I              I                I              _
-    1   V/VI              V               VI              _
-    2  V/VIM              V               VI              M
-    3  V/vim              V               vi              m
-    4     IV             IV                I              _
-    """
-    if not inplace:
-        chord_df = chord_df.copy()
-
-    split_result = chord_df[degree_col].str.split("/", n=1, expand=True)
-    if split_result.shape[1] == 2:
-        chord_df[primary_degree_col] = split_result[0]
-        # Extract secondary degree and optional mode suffix
-        secondary_parts = split_result[1].str.extract(r"^([b#]*[IViv]+)([mM]?)$")
-        chord_df[secondary_degree_col] = secondary_parts[0].fillna("I")
-        chord_df[secondary_mode_col] = secondary_parts[1].fillna("_").replace("", "_")
-    else:
-        chord_df[primary_degree_col] = split_result[0]
-        chord_df[secondary_degree_col] = "I"
-        chord_df[secondary_mode_col] = "_"
-
-    return chord_df
-
 
 def _reconstruct_degree_column(chord_df: pd.DataFrame) -> pd.Series:
-    secondary_with_slash = "/" + chord_df["secondary_degree"]
+    _ALT_SENTINELS = {"_", "-"}
+
+    def _alt_col(col_name):
+        if col_name in chord_df.columns:
+            return chord_df[col_name].replace(list(_ALT_SENTINELS), "")
+        return ""
+
+    primary = _alt_col("primary_alteration") + chord_df["primary_degree"]
+
+    secondary_with_slash = (
+        "/" + _alt_col("secondary_alteration") + chord_df["secondary_degree"]
+    )
     if "secondary_mode" in chord_df.columns:
         mode_suffix = chord_df["secondary_mode"].fillna("_").replace("_", "")
         secondary_with_slash = secondary_with_slash + mode_suffix
-    secondary_with_slash = secondary_with_slash.replace("/I", "")
-    return chord_df["primary_degree"] + secondary_with_slash
+
+    # Build a mask of rows where the secondary part is redundant ("/I" in the
+    # current key's mode) and should be stripped.
+    is_I = chord_df["secondary_degree"] == "I"
+    if "secondary_alteration" in chord_df.columns:
+        is_I = is_I & chord_df["secondary_alteration"].isin(_ALT_SENTINELS)
+
+    if "key" in chord_df.columns and "secondary_mode" in chord_df.columns:
+        key_mode = chord_df["key"].str[0].map(
+            lambda c: "M" if c.isupper() else "m"
+        )
+        mode_val = chord_df["secondary_mode"].fillna("_")
+        strip_mask = is_I & ((mode_val == "_") | (mode_val == key_mode))
+    elif "key" in chord_df.columns:
+        strip_mask = is_I
+    else:
+        strip_mask = is_I
+
+    secondary_with_slash = secondary_with_slash.where(~strip_mask, "")
+    return primary + secondary_with_slash
 
 
 def remove_long_tonicizations(
@@ -467,9 +520,9 @@ def remove_long_tonicizations(
     ...         '''
     ... onset,degree,key
     ... 0.0,I,bb
-    ... 1.0,ii/iv,bb
-    ... 2.0,V/iv,bb
-    ... 3.0,ii/III,eb
+    ... 1.0,II/IV,bb
+    ... 2.0,V/IV,bb
+    ... 3.0,II/III,eb
     ... 4.0,V/III,eb
     ... 5.0,I,eb
     ... '''
@@ -480,9 +533,9 @@ def remove_long_tonicizations(
     ... )
        onset degree key
     0    0.0      I  bb
-    1    1.0     ii  eb
+    1    1.0     II  eb
     2    2.0      V  eb
-    3    3.0     ii  Gb
+    3    3.0     II  Gb
     4    4.0      V  Gb
     5    5.0      I  eb
 
@@ -491,10 +544,10 @@ def remove_long_tonicizations(
     ...         '''
     ... onset,degree,key
     ... 0.0,V/V,C
-    ... 1.0,viio/V,C
+    ... 1.0,VIIo/V,C
     ... 2.0,I,C
-    ... 3.0,iv/ii,C
-    ... 4.0,V/ii,C
+    ... 3.0,IV/II,C
+    ... 4.0,V/II,C
     ... '''
     ...     )
     ... )
@@ -503,9 +556,9 @@ def remove_long_tonicizations(
     ... )
        onset degree key
     0    0.0      V   G
-    1    1.0   viio   G
+    1    1.0   VIIo   G
     2    2.0      I   C
-    3    3.0     iv   d
+    3    3.0     IV   d
     4    4.0      V   d
 
     >>> single_chord_tonicization = pd.read_csv(
@@ -629,9 +682,9 @@ def remove_long_tonicizations(
     ...         '''
     ... onset,degree,key
     ... 0.0,I,C
-    ... 1.0,ii/V,C
+    ... 1.0,II/V,C
     ... 1.125,V/V,C
-    ... 1.25,ii/V,C
+    ... 1.25,II/V,C
     ... 1.375,V/V,C
     ... 1.5,V,C
     ... '''
@@ -640,9 +693,9 @@ def remove_long_tonicizations(
     >>> remove_long_tonicizations(multiple_brief_chords, max_tonicization_num_chords=1)
        onset degree key
     0  0.000      I   C
-    1  1.000     ii   G
+    1  1.000     II   G
     2  1.125      V   G
-    3  1.250     ii   G
+    3  1.250     II   G
     4  1.375      V   G
     5  1.500      V   C
     >>> remove_long_tonicizations(
@@ -652,9 +705,9 @@ def remove_long_tonicizations(
     ... )
        onset degree key
     0  0.000      I   C
-    1  1.000   ii/V   C
+    1  1.000   II/V   C
     2  1.125    V/V   C
-    3  1.250   ii/V   C
+    3  1.250   II/V   C
     4  1.375    V/V   C
     5  1.500      V   C
 
@@ -693,6 +746,8 @@ def remove_long_tonicizations(
 
 
     """
+    _warn_if_lowercase_degrees(chord_df)
+
     assert (
         max_tonicization_duration is not None or max_tonicization_num_chords is not None
     )
@@ -719,7 +774,7 @@ def remove_long_tonicizations(
         had_split_columns = True
     elif all(k in chord_df.columns for k in joined_columns):
         had_split_columns = False
-        chord_df = split_degree_into_primary_and_secondary(chord_df)
+        chord_df = single_degree_to_split_degrees(chord_df)
     else:
         raise ValueError(
             f"chord_df must have columns {split_columns} or {joined_columns}"
@@ -865,7 +920,15 @@ def remove_long_tonicizations(
     chord_df["degree"] = _reconstruct_degree_column(chord_df)
 
     if not had_split_columns:
-        chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
+        chord_df = chord_df.drop(
+            columns=[
+                "primary_degree",
+                "secondary_degree",
+                "primary_alteration",
+                "secondary_alteration",
+            ],
+            errors="ignore",
+        )
 
     return chord_df
 
@@ -905,8 +968,16 @@ def replace_spurious_tonics(chord_df: pd.DataFrame, inplace: bool = False):
     )
     chord_df.loc[spurious_tonic_mask, "primary_degree"] = chord_df.loc[
         spurious_tonic_mask, "secondary_degree"
-    ]
+    ].str.upper()
     chord_df.loc[spurious_tonic_mask, "secondary_degree"] = "I"
+    if (
+        "secondary_alteration" in chord_df.columns
+        and "primary_alteration" in chord_df.columns
+    ):
+        chord_df.loc[spurious_tonic_mask, "primary_alteration"] = chord_df.loc[
+            spurious_tonic_mask, "secondary_alteration"
+        ]
+        chord_df.loc[spurious_tonic_mask, "secondary_alteration"] = "_"
     if "secondary_mode" in chord_df.columns:
         chord_df.loc[spurious_tonic_mask, "secondary_mode"] = "_"
 
@@ -973,7 +1044,7 @@ def remove_short_modulations(
     ... onset,degree,key
     ... 0.0,I,Ab
     ... 1.0,I,C
-    ... 1.25,viio6,C
+    ... 1.25,VIIo6,C
     ... 1.5,I,C
     ... 2.0,I,Ab
     ... '''
@@ -983,7 +1054,7 @@ def remove_short_modulations(
        onset     degree key
     0   0.00          I  Ab
     1   1.00        III  Ab
-    2   1.25  viio6/III  Ab
+    2   1.25  VIIo6/III  Ab
     3   1.50        III  Ab
     4   2.00          I  Ab
 
@@ -1005,6 +1076,8 @@ def remove_short_modulations(
     2    2.0      I   G
 
     """
+    _warn_if_lowercase_degrees(chord_df)
+
     assert (
         min_modulation_duration is not None or min_modulation_num_chords is not None
     ), (
@@ -1033,7 +1106,7 @@ def remove_short_modulations(
         had_split_columns = True
     elif all(k in chord_df.columns for k in joined_columns):
         had_split_columns = False
-        chord_df = split_degree_into_primary_and_secondary(chord_df)
+        chord_df = single_degree_to_split_degrees(chord_df)
     else:
         raise ValueError(
             f"chord_df must have columns {split_columns} or {joined_columns}"
@@ -1059,7 +1132,12 @@ def remove_short_modulations(
         # row["secondary_degree"] + "/" + secondary_degree and use
         # handle_nested_secondary_rns because the two parts live in
         # different reference frames (inner key vs outer key).
-        inner_pitch = rn_to_spelled_pitch(row["secondary_degree"], row["key"])
+        sec_deg = row["secondary_degree"]
+        if "secondary_alteration" in row.index:
+            alt = row["secondary_alteration"]
+            if alt not in ("_", "-", ""):
+                sec_deg = alt + sec_deg
+        inner_pitch = rn_to_spelled_pitch(sec_deg, row["key"])
         if spelled_pitch_to_rn_cache is not None:
             return spelled_pitch_to_rn_cache[(inner_pitch, outer_key, "M")]
         return spelled_pitch_to_rn(inner_pitch, outer_key, "M")
@@ -1081,20 +1159,27 @@ def remove_short_modulations(
             chord_df.loc[start_i : end_i - 1, "secondary_degree"] != "I"
         )
         nested_secondary_index = nested_secondary_mask.index[nested_secondary_mask]
-        chord_df.loc[nested_secondary_index, "secondary_degree"] = chord_df.loc[
-            nested_secondary_index
-        ].apply(lambda row: nested_handler(row, outer_key), axis=1)
-
-        if "secondary_mode" in chord_df.columns:
-            # For nested secondaries, derive mode from case of the collapsed result
-            for idx in nested_secondary_index:
-                collapsed = chord_df.loc[idx, "secondary_degree"]
-                collapsed_mode = "M" if collapsed.lstrip("#b")[-1].isupper() else "m"
-                chord_df.loc[idx, "secondary_mode"] = collapsed_mode
+        if len(nested_secondary_index) > 0:
+            nested_results = chord_df.loc[nested_secondary_index].apply(
+                lambda row: nested_handler(row, outer_key), axis=1
+            )
+            for idx, rn in nested_results.items():
+                alt, bare = _split_alteration(rn)
+                if "secondary_mode" in chord_df.columns:
+                    collapsed_mode = "M" if bare[-1].isupper() else "m"
+                    chord_df.loc[idx, "secondary_mode"] = collapsed_mode
+                bare = bare.upper()
+                chord_df.loc[idx, "secondary_degree"] = bare
+                if "secondary_alteration" in chord_df.columns:
+                    chord_df.loc[idx, "secondary_alteration"] = alt
 
         # Handle simple secondary RNs
         simple_secondary_index = nested_secondary_mask.index[~nested_secondary_mask]
-        chord_df.loc[simple_secondary_index, "secondary_degree"] = secondary_degree
+        sec_alt, sec_bare = _split_alteration(secondary_degree)
+        sec_bare = sec_bare.upper()
+        chord_df.loc[simple_secondary_index, "secondary_degree"] = sec_bare
+        if "secondary_alteration" in chord_df.columns:
+            chord_df.loc[simple_secondary_index, "secondary_alteration"] = sec_alt
 
         if "secondary_mode" in chord_df.columns:
             chord_df.loc[simple_secondary_index, "secondary_mode"] = inner_key_mode
@@ -1141,7 +1226,15 @@ def remove_short_modulations(
     chord_df["degree"] = _reconstruct_degree_column(chord_df)
 
     if not had_split_columns:
-        chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
+        chord_df = chord_df.drop(
+            columns=[
+                "primary_degree",
+                "secondary_degree",
+                "primary_alteration",
+                "secondary_alteration",
+            ],
+            errors="ignore",
+        )
 
     return chord_df
 
@@ -1185,7 +1278,7 @@ def remove_phantom_keys(
     ... onset,degree,key
     ... 0.0,I,C
     ... 1.0,V/IV,G
-    ... 2.0,ii/IV,G
+    ... 2.0,II/IV,G
     ... 3.0,I,A
     ... '''
     ...     )
@@ -1194,7 +1287,7 @@ def remove_phantom_keys(
        onset degree key
     0    0.0      I   C
     1    1.0      V   C
-    2    2.0     ii   C
+    2    2.0     II   C
     3    3.0      I   A
 
     >>> not_phantom = pd.read_csv(
@@ -1215,6 +1308,8 @@ def remove_phantom_keys(
     2    2.0     IV   G
     3    3.0      I   D
     """
+    _warn_if_lowercase_degrees(chord_df)
+
     if not inplace:
         chord_df = chord_df.copy()
 
@@ -1227,7 +1322,7 @@ def remove_phantom_keys(
         had_split_columns = True
     elif all(k in chord_df.columns for k in joined_columns):
         had_split_columns = False
-        chord_df = split_degree_into_primary_and_secondary(chord_df)
+        chord_df = single_degree_to_split_degrees(chord_df)
     else:
         raise ValueError(
             f"chord_df must have columns {split_columns} or {joined_columns}"
@@ -1248,11 +1343,11 @@ def remove_phantom_keys(
         key = chord_df.loc[start_i, "key"]
         segments.append((start_i, end_i, key))
 
-    # Classify: phantom if no chord has secondary_degree "I" or "i"
+    # Classify: phantom if no chord has secondary_degree "I"
     is_phantom = []
     for start_i, end_i, _key in segments:
         sec_deg = chord_df.loc[start_i : end_i - 1, "secondary_degree"]
-        is_phantom.append(not sec_deg.isin(["I", "i"]).any())
+        is_phantom.append(not (sec_deg == "I").any())
 
     def _get_tonicized_key(secondary_degree, key, secondary_mode=None):
         if tonicization_cache is None:
@@ -1354,11 +1449,18 @@ def remove_phantom_keys(
             tk_pitch = tk[0].upper() + tk[1:]
             tk_mode = "M" if tk[0].isupper() else "m"
             new_sec = _get_rn(tk_pitch, neighbor_key, tk_mode)
+            new_sec_alt, new_sec_bare = _split_alteration(new_sec)
+            new_sec_bare = new_sec_bare.upper()
             mode = tk_mode
-            if new_sec in ("I", "i"):
+            if new_sec_bare == "I":
                 mode = "_"
+                new_sec_alt = "_"
 
-            chord_df.loc[blk_start : blk_end - 1, "secondary_degree"] = new_sec
+            chord_df.loc[blk_start : blk_end - 1, "secondary_degree"] = new_sec_bare
+            if "secondary_alteration" in chord_df.columns:
+                chord_df.loc[blk_start : blk_end - 1, "secondary_alteration"] = (
+                    new_sec_alt
+                )
             if "secondary_mode" in chord_df.columns:
                 chord_df.loc[blk_start : blk_end - 1, "secondary_mode"] = mode
             chord_df.loc[blk_start : blk_end - 1, "key"] = neighbor_key
@@ -1373,7 +1475,15 @@ def remove_phantom_keys(
     chord_df["degree"] = _reconstruct_degree_column(chord_df)
 
     if not had_split_columns:
-        chord_df = chord_df.drop(columns=["primary_degree", "secondary_degree"])
+        chord_df = chord_df.drop(
+            columns=[
+                "primary_degree",
+                "secondary_degree",
+                "primary_alteration",
+                "secondary_alteration",
+            ],
+            errors="ignore",
+        )
 
     return chord_df
 
@@ -1406,22 +1516,22 @@ def tonicization_census(
     ... 5,6.0,V/V,C
     ... 6,7.0,I/V,C
     ... 7,8.0,V/V,C
-    ... 8,9.0,V/vi,C
-    ... 9,10.0,I/vi,C
+    ... 8,9.0,V/VI,C
+    ... 9,10.0,I/VI,C
     ... '''
     ...     )
     ... )
     >>> tonicization_census(df)
        chord_df_index  onset secondary_degree  n_chords  duration
     1               2    1.0                V         7       7.0
-    2               9    8.0               vi         2       2.0
+    2               9    8.0               VI         2       2.0
     >>> tonicization_census(df.drop(columns=["release"]), last_chord_duration=4.0)
        chord_df_index  onset secondary_degree  n_chords  duration
     1               2    1.0                V         7       7.0
-    2               9    8.0               vi         2       5.0
+    2               9    8.0               VI         2       5.0
     """
     if secondary_degree_col not in chord_df.columns:
-        chord_df = split_degree_into_primary_and_secondary(
+        chord_df = single_degree_to_split_degrees(
             chord_df,
             degree_col=degree_col,
             primary_degree_col=primary_degree_col,
@@ -1430,6 +1540,11 @@ def tonicization_census(
     tonicization_changes = (
         chord_df[secondary_degree_col] != chord_df[secondary_degree_col].shift(1)
     ) | (chord_df[key_col] != chord_df[key_col].shift(1))
+    if "secondary_alteration" in chord_df.columns:
+        tonicization_changes |= (
+            chord_df["secondary_alteration"]
+            != chord_df["secondary_alteration"].shift(1)
+        )
 
     changes_df = pd.DataFrame(
         chord_df.loc[tonicization_changes, ["onset", secondary_degree_col]]

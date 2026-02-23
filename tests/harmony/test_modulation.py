@@ -3,10 +3,11 @@ import io
 import pandas as pd
 
 from music_df.harmony.modulation import (
+    _reconstruct_degree_column,
     remove_long_tonicizations,
     remove_phantom_keys,
     remove_short_modulations,
-    split_degree_into_primary_and_secondary,
+    replace_spurious_tonics,
 )
 
 
@@ -206,18 +207,6 @@ onset,primary_degree,secondary_degree,secondary_mode,key
         assert result.loc[1, "secondary_degree"] == "I"
         assert result.loc[1, "secondary_mode"] == "_"
 
-    def test_split_degree_extracts_mode(self):
-        """split_degree_into_primary_and_secondary should extract mode
-        suffixes from the secondary degree."""
-        df = pd.DataFrame({"degree": ["V/VIM", "V/vim", "V/VI", "I"]})
-        result = split_degree_into_primary_and_secondary(df, inplace=False)
-        assert result.loc[0, "secondary_mode"] == "M"
-        assert result.loc[1, "secondary_mode"] == "m"
-        assert result.loc[2, "secondary_mode"] == "_"
-        assert result.loc[3, "secondary_mode"] == "_"
-        assert result.loc[0, "secondary_degree"] == "VI"
-        assert result.loc[1, "secondary_degree"] == "vi"
-
     def test_remove_short_modulations_sets_secondary_mode(self):
         """When converting a modulation to a tonicization,
         secondary_mode should be set based on the inner key mode."""
@@ -266,22 +255,23 @@ onset,release,chord_pcs,primary_degree,secondary_degree,secondary_mode,inversion
         assert result.loc[1, "degree"] == "#VII/VM"
 
     def test_expand_tonicizations_sets_secondary_mode(self):
-        """expand_tonicizations should set secondary_mode based on case
+        """expand_tonicizations should set secondary_mode based on quality
         of the degree being moved to secondary position."""
         from music_df.harmony.modulation import expand_tonicizations
 
         df = pd.DataFrame(
             {
-                "primary_degree": ["vi", "V", "vi"],
-                "secondary_degree": ["I", "vi", "I"],
+                "primary_degree": ["VI", "V", "VI"],
+                "secondary_degree": ["I", "VI", "I"],
                 "secondary_mode": ["_", "m", "_"],
+                "quality": ["m", "M", "m"],
                 "key": ["C", "C", "C"],
             }
         )
-        result = expand_tonicizations(df)
-        # Row 0: "vi" moved to secondary → lowercase → mode "m"
+        result = expand_tonicizations(df, quality_col="quality")
+        # Row 0: quality "m" → secondary_mode "m"
         assert result.loc[0, "secondary_mode"] == "m"
-        assert result.loc[0, "secondary_degree"] == "vi"
+        assert result.loc[0, "secondary_degree"] == "VI"
 
 
 class TestSecondaryAlteration:
@@ -388,7 +378,7 @@ onset,degree,key
 onset,degree,key
 0.0,I,C
 1.0,V/IV,G
-2.0,ii/IV,G
+2.0,II/IV,G
 3.0,I,A
 """
             )
@@ -396,12 +386,12 @@ onset,degree,key
         result = remove_phantom_keys(chord_df)
         assert list(result["key"]) == ["C", "C", "C", "A"]
         assert result.loc[1, "degree"] == "V"
-        assert result.loc[2, "degree"] == "ii"
+        assert result.loc[2, "degree"] == "II"
 
     def test_different_degree_and_spurious_tonic(self):
         """C → D(V/VI, I/VI) → A: VI of D = b, dist(A,b)=1 < dist(C,b)=2.
 
-        After absorbing into A: V/ii and I/ii → replace_spurious_tonics → ii.
+        After absorbing into A: V/ii and I/ii → replace_spurious_tonics → II.
         """
         chord_df = pd.read_csv(
             io.StringIO(
@@ -416,9 +406,9 @@ onset,degree,key
         )
         result = remove_phantom_keys(chord_df)
         assert list(result["key"]) == ["C", "A", "A", "A"]
-        assert result.loc[1, "degree"] == "V/ii"
-        # I/ii → spurious tonic → ii
-        assert result.loc[2, "degree"] == "ii"
+        assert result.loc[1, "degree"] == "V/II"
+        # I/II → spurious tonic → II (uppercased: primary degrees are uppercase)
+        assert result.loc[2, "degree"] == "II"
 
     def test_at_beginning(self):
         """D(V/IV, ii/IV) → G: only following neighbor G. IV of D = G → becomes I."""
@@ -427,7 +417,7 @@ onset,degree,key
                 """
 onset,degree,key
 0.0,V/IV,D
-1.0,ii/IV,D
+1.0,II/IV,D
 2.0,I,G
 """
             )
@@ -435,24 +425,24 @@ onset,degree,key
         result = remove_phantom_keys(chord_df)
         assert list(result["key"]) == ["G", "G", "G"]
         assert result.loc[0, "degree"] == "V"
-        assert result.loc[1, "degree"] == "ii"
+        assert result.loc[1, "degree"] == "II"
 
     def test_at_end(self):
-        """C → D(V/VI, ii/VI): only preceding neighbor C. VI of D = b → vii in C."""
+        """C → D(V/VI, II/VI): only preceding neighbor C. VI of D = b → VII in C."""
         chord_df = pd.read_csv(
             io.StringIO(
                 """
 onset,degree,key
 0.0,I,C
 1.0,V/VI,D
-2.0,ii/VI,D
+2.0,II/VI,D
 """
             )
         )
         result = remove_phantom_keys(chord_df)
         assert list(result["key"]) == ["C", "C", "C"]
-        assert result.loc[1, "degree"] == "V/vii"
-        assert result.loc[2, "degree"] == "ii/vii"
+        assert result.loc[1, "degree"] == "V/VII"
+        assert result.loc[2, "degree"] == "II/VII"
 
     def test_split_needed(self):
         """Ab → Bb(V/IV, ii/IV, V/V) → C: IV=Eb→Ab (dist 1), V=F→C (dist 1)."""
@@ -462,7 +452,7 @@ onset,degree,key
 onset,degree,key
 0.0,I,Ab
 1.0,V/IV,Bb
-2.0,ii/IV,Bb
+2.0,II/IV,Bb
 3.0,V/V,Bb
 4.0,I,C
 """
@@ -472,7 +462,7 @@ onset,degree,key
         assert list(result["key"]) == ["Ab", "Ab", "Ab", "C", "C"]
         # Eb expressed in Ab = V
         assert result.loc[1, "degree"] == "V/V"
-        assert result.loc[2, "degree"] == "ii/V"
+        assert result.loc[2, "degree"] == "II/V"
         # F expressed in C = IV
         assert result.loc[3, "degree"] == "V/IV"
 
@@ -528,7 +518,7 @@ onset,primary_degree,secondary_degree,secondary_mode,key
 onset,degree,key
 0.0,I,B
 1.0,V/V,Gb
-2.0,ii/V,Gb
+2.0,II/V,Gb
 3.0,I,C
 """
             )
@@ -537,4 +527,177 @@ onset,degree,key
         assert list(result["key"]) == ["B", "B", "B", "C"]
         # Db in B major gives bbIII (Db is a diminished 3rd above B)
         assert result.loc[1, "degree"] == "V/bbIII"
-        assert result.loc[2, "degree"] == "ii/bbIII"
+        assert result.loc[2, "degree"] == "II/bbIII"
+
+
+class TestReconstructDegreeColumn:
+    """Tests for bugs in _reconstruct_degree_column."""
+
+    def test_primary_alteration_preserved(self):
+        """primary_alteration should be prepended to primary_degree."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["II", "VII", "VI", "IV"],
+                "primary_alteration": ["b", "#", "b", "#"],
+                "secondary_degree": ["I", "I", "I", "I"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["bII", "#VII", "bVI", "#IV"]
+
+    def test_primary_alteration_sentinel_ignored(self):
+        """primary_alteration '_' (null sentinel) should not appear in output."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["V", "I"],
+                "primary_alteration": ["_", "_"],
+                "secondary_degree": ["I", "I"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["V", "I"]
+
+    def test_secondary_alteration_preserved(self):
+        """secondary_alteration should be prepended to secondary_degree."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["V", "IV"],
+                "primary_alteration": ["_", "_"],
+                "secondary_degree": ["II", "VII"],
+                "secondary_alteration": ["b", "#"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["V/bII", "IV/#VII"]
+
+    def test_redundant_mode_suffix_stripped_major_key(self):
+        """'/IM' in a major key is redundant (tonic forced major = already major)
+        and should be stripped. '/Im' in a major key is meaningful (parallel minor)
+        and should be kept."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "V", "V"],
+                "secondary_degree": ["I", "I", "I"],
+                "secondary_mode": ["M", "m", "_"],
+                "key": ["C", "C", "C"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["I", "V/Im", "V"]
+
+    def test_redundant_mode_suffix_stripped_minor_key(self):
+        """'/Im' in a minor key is redundant (tonic forced minor = already minor)
+        and should be stripped. '/IM' in a minor key is meaningful (parallel major)
+        and should be kept."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "V", "V"],
+                "secondary_degree": ["I", "I", "I"],
+                "secondary_mode": ["m", "M", "_"],
+                "key": ["c", "c", "c"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["I", "V/IM", "V"]
+
+    def test_all_three_bugs_together(self):
+        """Reproducer from the bug report exercising all three issues at once."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["II", "VII", "V", "I"],
+                "primary_alteration": ["b", "#", "_", "_"],
+                "secondary_degree": ["I", "I", "II", "I"],
+                "secondary_alteration": ["_", "_", "b", "_"],
+                "secondary_mode": ["_", "_", "M", "M"],
+                "key": ["C", "C", "C", "C"],
+            }
+        )
+        result = _reconstruct_degree_column(df)
+        assert result.tolist() == ["bII", "#VII", "V/bIIM", "I"]
+
+
+class TestJoinedFormatWithAlterations:
+    """Tests for joined-format input (degree column) containing altered secondary degrees.
+
+    These regression tests verify that the canonical split (single_degree_to_split_degrees)
+    correctly separates alterations and that downstream functions handle them properly.
+    """
+
+    def test_remove_long_tonicizations_with_flat_secondary(self):
+        """V/bIII in Db should tonicize to Fb (= E)."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,key
+0.0,I,Db
+1.0,V/bIII,Db
+2.0,IV/bIII,Db
+3.0,I,Db
+"""
+            )
+        )
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        assert result.loc[1, "key"] == "E"
+        assert result.loc[2, "key"] == "E"
+        assert result.loc[1, "degree"] == "V"
+        assert result.loc[2, "degree"] == "IV"
+
+    def test_tonicization_census_distinguishes_alterations(self):
+        """V/bVI and V/#VI should count as separate tonicizations."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,release,degree,key
+0.0,1.0,I,C
+1.0,2.0,V/bVI,C
+2.0,3.0,IV/bVI,C
+3.0,4.0,V/#VI,C
+4.0,5.0,IV/#VI,C
+5.0,6.0,I,C
+"""
+            )
+        )
+        from music_df.harmony.modulation import tonicization_census
+
+        result = tonicization_census(chord_df)
+        assert len(result) == 2
+        # Check they are counted separately
+        assert result.iloc[0]["n_chords"] == 2
+        assert result.iloc[1]["n_chords"] == 2
+
+
+class TestReplaceSpuriousTonicsAlterations:
+    """Tests for alteration/case bugs in replace_spurious_tonics."""
+
+    def test_secondary_alteration_moved_to_primary(self):
+        """When I/bV becomes V, secondary_alteration 'b' should move to
+        primary_alteration."""
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0],
+                "primary_degree": ["I", "I"],
+                "primary_alteration": ["_", "_"],
+                "secondary_degree": ["I", "V"],
+                "secondary_alteration": ["_", "b"],
+                "key": ["C", "C"],
+            }
+        )
+        result = replace_spurious_tonics(df)
+        assert result.loc[1, "primary_degree"] == "V"
+        assert result.loc[1, "primary_alteration"] == "b"
+        assert result.loc[1, "secondary_alteration"] == "_"
+
+    def test_spurious_tonic_replacement(self):
+        """When I/V is replaced, primary_degree should become V."""
+        df = pd.DataFrame(
+            {
+                "onset": [0.0, 1.0],
+                "primary_degree": ["I", "I"],
+                "secondary_degree": ["I", "V"],
+                "key": ["C", "C"],
+            }
+        )
+        result = replace_spurious_tonics(df)
+        assert result.loc[1, "primary_degree"] == "V"
