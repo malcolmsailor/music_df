@@ -83,6 +83,9 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
     n_spines = lines[0].count("\t") + 1
     measures = []
     measure = defaultdict(list)
+    # Preserve the barline token (e.g. "=" or "=438") from each measure boundary
+    barline_tokens: t.List[str] = []
+    current_barline = "="
 
     # not_rests indicates whether each spine contains notes (i.e., not only
     #   rests) within each measure. It is re-initialized by _init_measure().
@@ -90,10 +93,13 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
 
     for line_i, line in enumerate(lines):
         if line.startswith("="):
+            # Grab the barline token from the first spine (e.g. "=438")
+            current_barline = line.split("\t")[0]
+            barline_tokens.append(current_barline)
             _init_measure()
             continue
         for i, token in enumerate(line.split("\t")):
-            if token == "=":
+            if token.startswith("="):
                 raise ValueError(
                     f"Line {line_i}: barline token '=' in column {i} but not "
                     f"all columns are barlines. This usually means the input "
@@ -110,7 +116,7 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
 
     out = []
     n_spines = len(measures[0])
-    for measure in measures:
+    for measure_i, measure in enumerate(measures):
         _sort_measure_spines(measure)
         delta = len(measure) - n_spines
         if delta > 0:
@@ -124,7 +130,8 @@ def merge_spines(humdrum_contents: str) -> t.List[str]:
             for d in range(-delta):
                 out.append("\t".join(["*"] * (n_spines - 2 - d) + ["*v", "*v"]))
         n_spines = len(measure)
-        out.append("\t".join(["="] * n_spines))
+        barline = barline_tokens[measure_i - 1] if measure_i > 0 and measure_i - 1 < len(barline_tokens) else "="
+        out.append("\t".join([barline] * n_spines))
         for row in list(map(list, zip(*measure))):
             out.append("\t".join(row))
     # The first row is a spurious barline that we don't in fact want

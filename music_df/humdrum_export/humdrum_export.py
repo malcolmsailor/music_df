@@ -167,7 +167,7 @@ def _align_pickup_durations(
     for spine in spines:
         dur = 0.0
         for token in spine:
-            if token == "=":
+            if token.startswith("="):
                 break
             if token.startswith("*") or token.startswith("!"):
                 continue

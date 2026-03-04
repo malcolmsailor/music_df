@@ -415,6 +415,50 @@ def _count_group_ids(chord_df: pd.DataFrame) -> pd.Series:
     return result
 
 
+def _is_dominant_tonic_oscillation(chord_df, start_i, end_i):
+    """Check if a tonicization span consists only of tonic (I) and dominant-function chords.
+
+    Major: tonic = I, dominant = V or VII (no alteration)
+    Minor: tonic = I, dominant = V or #VII
+    """
+    span = chord_df.iloc[start_i:end_i]
+
+    # Need at least 3 chords for a back-and-forth pattern
+    if len(span) < 3:
+        return False
+
+    is_minor = span.iloc[0]["key"][0].islower()
+    if "secondary_mode" in chord_df.columns:
+        sm = span.iloc[0]["secondary_mode"]
+        if sm == "m":
+            is_minor = True
+        elif sm == "M":
+            is_minor = False
+
+    has_tonic = False
+    has_dominant = False
+
+    for _, row in span.iterrows():
+        deg = row["primary_degree"]
+        alt = ""
+        if "primary_alteration" in chord_df.columns:
+            a = row["primary_alteration"]
+            if pd.notna(a) and a not in ("_", ""):
+                alt = a
+
+        if deg == "I" and alt == "":
+            has_tonic = True
+        elif deg == "V" and alt == "":
+            has_dominant = True
+        elif deg == "VII" and not is_minor and alt == "":
+            has_dominant = True
+        elif deg == "VII" and is_minor and alt == "#":
+            has_dominant = True
+        else:
+            return False
+    return has_tonic and has_dominant
+
+
 def remove_long_tonicizations(
     chord_df: pd.DataFrame,
     inplace: bool = False,
@@ -425,6 +469,7 @@ def remove_long_tonicizations(
     tonicization_cache: CacheDict[tuple[str, str, str | None], str] | None = None,
     case_matters: bool = False,
     simplify_enharmonics: bool = True,
+    ignore_dominant_tonic_oscillations: bool = True,
 ) -> pd.DataFrame:
     """
     Remove long tonicizations from a chord dataframe.
@@ -677,7 +722,29 @@ def remove_long_tonicizations(
     8     7.0    V/V   C
     9     8.0      V   C
     10    9.0      I   C
+
+    Dominant-tonic oscillations are skipped by default, so num_chords=6
+    keeps the V/V tonicization (same as num_chords=9):
     >>> remove_long_tonicizations(chord_df, max_tonicization_num_chords=6)
+        onset degree key
+    0     0.0      I   C
+    1     0.5      V   C
+    2     1.0    V/V   C
+    3     2.0      V   C
+    4     3.0    V/V   C
+    5     4.0      V   C
+    6     5.0    V/V   C
+    7     6.0      V   C
+    8     7.0    V/V   C
+    9     8.0      V   C
+    10    9.0      I   C
+
+    With ignore_dominant_tonic_oscillations=False, the old behavior applies:
+    >>> remove_long_tonicizations(
+    ...     chord_df,
+    ...     max_tonicization_num_chords=6,
+    ...     ignore_dominant_tonic_oscillations=False,
+    ... )
         onset degree key
     0     0.0      I   C
     1     0.5      V   C
@@ -859,6 +926,45 @@ def remove_long_tonicizations(
     2    2.0              V                I     Mm7   G      V
     3    3.0              I                I       M   C      I
 
+    Dominant-tonic oscillations (V-I or VII-I alternations) are skipped
+    by default, even when the run count exceeds max_tonicization_num_chords:
+    >>> oscillation = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,key
+    ... 0.0,I,C
+    ... 1.0,V/V,C
+    ... 2.0,V,C
+    ... 3.0,V/V,C
+    ... 4.0,V,C
+    ... 5.0,V/V,C
+    ... 6.0,I,C
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(oscillation, max_tonicization_num_chords=1)
+       onset degree key
+    0    0.0      I   C
+    1    1.0    V/V   C
+    2    2.0      V   C
+    3    3.0    V/V   C
+    4    4.0      V   C
+    5    5.0    V/V   C
+    6    6.0      I   C
+    >>> remove_long_tonicizations(
+    ...     oscillation,
+    ...     max_tonicization_num_chords=1,
+    ...     ignore_dominant_tonic_oscillations=False,
+    ... )
+       onset degree key
+    0    0.0      I   C
+    1    1.0      V   G
+    2    2.0      I   G
+    3    3.0      V   G
+    4    4.0      I   G
+    5    5.0      V   G
+    6    6.0      I   C
+
     """
     _warn_if_lowercase_degrees(chord_df)
 
@@ -992,9 +1098,15 @@ def remove_long_tonicizations(
 
         n_distinct = count_group_ids.iloc[start_i:end_i].nunique()
 
+        is_oscillation = (
+            ignore_dominant_tonic_oscillations
+            and _is_dominant_tonic_oscillation(chord_df, start_i, end_i)
+        )
+
         if (
             max_tonicization_num_chords is not None
             and n_distinct > max_tonicization_num_chords
+            and not is_oscillation
         ):
             if (
                 min_removal_duration is None

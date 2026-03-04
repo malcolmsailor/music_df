@@ -91,9 +91,9 @@ class TestSecondaryMode:
                 """
 onset,primary_degree,secondary_degree,secondary_mode,key
 0.0,I,I,_,C
-1.0,V,VI,M,C
+1.0,IV,VI,M,C
 2.0,I,VI,M,C
-3.0,V,VI,M,C
+3.0,IV,VI,M,C
 4.0,I,I,_,C
 """
             )
@@ -248,9 +248,7 @@ onset,release,chord_pcs,primary_degree,secondary_degree,secondary_mode,inversion
 """
             ),
         )
-        result = remove_short_modulations(
-            chord_df, min_modulation_num_chords=2
-        )
+        result = remove_short_modulations(chord_df, min_modulation_num_chords=2)
         assert result.loc[1, "secondary_degree"] == "V"
         assert result.loc[1, "primary_degree"] == "#VII"
         assert result.loc[1, "key"] == "f"
@@ -294,9 +292,7 @@ onset,primary_degree,secondary_degree,secondary_alteration,key
             ),
             dtype={"secondary_alteration": str},
         )
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         assert result.loc[1, "key"] == "Ab"
         assert result.loc[2, "key"] == "Ab"
         assert result.loc[1, "secondary_degree"] == "I"
@@ -319,9 +315,7 @@ onset,primary_degree,secondary_degree,secondary_alteration,secondary_mode,key
             ),
             dtype={"secondary_alteration": str},
         )
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         assert result.loc[1, "key"] == "B"
         assert result.loc[2, "key"] == "B"
         assert result.loc[1, "secondary_alteration"] == "-"
@@ -342,15 +336,14 @@ onset,primary_degree,secondary_degree,secondary_alteration,key
             ),
             dtype={"secondary_alteration": str},
         )
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         # bIII and #III should be treated as different tonicizations
         # bIII in F → Ab; #III in F → Bb (III=A, #=A#→Bb)
         assert result.loc[0, "key"] == "Ab"
         assert result.loc[1, "key"] == "Ab"
         assert result.loc[2, "key"] == "Bb"
         assert result.loc[3, "key"] == "Bb"
+
 
 class TestRemovePhantomKeys:
     """Tests for remove_phantom_keys."""
@@ -638,9 +631,7 @@ onset,degree,key
 """
             )
         )
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         assert result.loc[1, "key"] == "E"
         assert result.loc[2, "key"] == "E"
         assert result.loc[1, "degree"] == "V"
@@ -726,16 +717,12 @@ onset,degree,inversion,key
             )
         )
         # 1 distinct chord <= 2 → kept as tonicization
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=2
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=2)
         assert result.loc[1, "degree"] == "V/V"
         assert result.loc[1, "key"] == "C"
 
         # 1 distinct chord > 0 → removed
-        result2 = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=0
-        )
+        result2 = remove_long_tonicizations(chord_df, max_tonicization_num_chords=0)
         assert result2.loc[1, "key"] == "G"
         assert result2.loc[2, "key"] == "G"
         assert result2.loc[3, "key"] == "G"
@@ -756,15 +743,11 @@ onset,degree,inversion,key
             )
         )
         # 2 distinct chords <= 2 → kept
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=2
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=2)
         assert result.loc[1, "degree"] == "V/V"
 
         # 2 distinct chords > 1 → removed
-        result2 = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result2 = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         assert result2.loc[1, "key"] == "G"
 
     def test_quality_aware_derepeat(self):
@@ -781,9 +764,7 @@ onset,primary_degree,secondary_degree,quality,key
 """
             )
         )
-        result = remove_long_tonicizations(
-            chord_df, max_tonicization_num_chords=1
-        )
+        result = remove_long_tonicizations(chord_df, max_tonicization_num_chords=1)
         # 2 distinct chords (M vs Mm7) > 1 → should be removed
         assert result.loc[1, "key"] == "G"
         assert result.loc[2, "key"] == "G"
@@ -804,9 +785,7 @@ onset,degree,inversion,key
             )
         )
         # 1 distinct chord < 2 → removed
-        result = remove_short_modulations(
-            chord_df, min_modulation_num_chords=2
-        )
+        result = remove_short_modulations(chord_df, min_modulation_num_chords=2)
         assert result.loc[1, "key"] == "C"
         assert result.loc[2, "key"] == "C"
         assert result.loc[3, "key"] == "C"
@@ -826,9 +805,7 @@ onset,degree,inversion,key
             )
         )
         # 2 distinct chords >= 2 → kept
-        result = remove_short_modulations(
-            chord_df, min_modulation_num_chords=2
-        )
+        result = remove_short_modulations(chord_df, min_modulation_num_chords=2)
         assert result.loc[1, "key"] == "G"
         assert result.loc[2, "key"] == "G"
 
