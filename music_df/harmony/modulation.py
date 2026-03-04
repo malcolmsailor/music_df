@@ -1615,6 +1615,10 @@ def remove_phantom_keys(
         tonicized_keys = []
         for idx in range(region_start, region_end):
             sec_deg = chord_df.loc[idx, "secondary_degree"]
+            if "secondary_alteration" in chord_df.columns:
+                alt = chord_df.loc[idx, "secondary_alteration"]
+                if pd.notna(alt) and alt not in ("_", "-", ""):
+                    sec_deg = alt + sec_deg
             chord_key = chord_df.loc[idx, "key"]
             sec_mode = None
             if "secondary_mode" in chord_df.columns:

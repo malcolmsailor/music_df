@@ -501,6 +501,31 @@ onset,primary_degree,secondary_degree,secondary_mode,key
         assert result.loc[1, "secondary_mode"] == "M"
         assert result.loc[1, "degree"] == "V/IIM"
 
+    def test_secondary_alteration_included_in_tonicized_key(self):
+        """secondary_alteration must be prepended when computing tonicized keys.
+
+        F → G(V/bIII, VII/bVII, V/bIII) → F: without the 'b' alteration,
+        bIII of G (Bb) is miscomputed as III of G (B), giving #IV instead of IV
+        relative to F.
+        """
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,primary_alteration,secondary_degree,secondary_alteration,secondary_mode,key
+0.0,I,_,I,_,_,F
+1.0,V,_,III,b,M,G
+2.0,VII,_,VII,b,M,G
+3.0,V,_,III,b,M,G
+4.0,I,_,I,_,_,F
+"""
+            )
+        )
+        result = remove_phantom_keys(chord_df)
+        assert list(result["key"]) == ["F", "F", "F", "F", "F"]
+        assert result.loc[1, "degree"] == "V/IVM"
+        assert result.loc[2, "degree"] == "VII"
+        assert result.loc[3, "degree"] == "V/IVM"
+
     def test_modular_distance(self):
         """B → Gb(V/V, ii/V) → C: V of Gb = Db, dist(B,Db)=2, dist(C,Db)=5.
 
