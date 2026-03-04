@@ -3,6 +3,8 @@ import io
 import pandas as pd
 
 from music_df.harmony.modulation import (
+    _count_group_ids,
+    _harmony_group_ids,
     _reconstruct_degree_column,
     remove_long_tonicizations,
     remove_phantom_keys,
@@ -853,3 +855,73 @@ onset,degree,inversion,key
             max_removal_num_chords=1,
         )
         assert result.loc[1, "key"] == "C"
+
+
+class TestPcSetSubsumption:
+    """Tests for _count_group_ids using pitch-class set subsumption."""
+
+    def test_major_to_mm7_merges(self):
+        """M {0,4,7} ⊂ Mm7 {0,4,7,a} in same key → 1 group."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "I"],
+                "secondary_degree": ["I", "I"],
+                "key": ["C", "C"],
+                "chord_pcs": ["047", "047a"],
+            }
+        )
+        result = _count_group_ids(df)
+        assert result.tolist() == [0, 0]
+
+    def test_mm7_to_major_merges(self):
+        """Mm7 → M also merges (superset ⊇ subset)."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "I"],
+                "secondary_degree": ["I", "I"],
+                "key": ["C", "C"],
+                "chord_pcs": ["047a", "047"],
+            }
+        )
+        result = _count_group_ids(df)
+        assert result.tolist() == [0, 0]
+
+    def test_mm7_to_major_to_m7_breaks(self):
+        """Mm7 {0,4,7,a} propagates; M7 {0,4,7,b} is not a subset of
+        {0,4,7,a} nor vice-versa → new group."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["V", "V", "I"],
+                "secondary_degree": ["I", "I", "I"],
+                "key": ["C", "C", "C"],
+                "chord_pcs": ["047a", "047", "047b"],
+            }
+        )
+        result = _count_group_ids(df)
+        assert result.tolist() == [0, 0, 1]
+
+    def test_different_keys_new_group(self):
+        """Same PCs but different key → new group."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "I"],
+                "secondary_degree": ["I", "I"],
+                "key": ["C", "G"],
+                "chord_pcs": ["047", "047"],
+            }
+        )
+        result = _count_group_ids(df)
+        assert result.tolist() == [0, 1]
+
+    def test_fallback_without_chord_pcs(self):
+        """Without chord_pcs column, falls back to _harmony_group_ids."""
+        df = pd.DataFrame(
+            {
+                "primary_degree": ["I", "V", "V"],
+                "secondary_degree": ["I", "I", "I"],
+                "key": ["C", "C", "C"],
+            }
+        )
+        result = _count_group_ids(df)
+        expected = _harmony_group_ids(df)
+        assert result.tolist() == expected.tolist()

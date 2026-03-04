@@ -351,6 +351,7 @@ def _reconstruct_degree_column(chord_df: pd.DataFrame) -> pd.Series:
 def _harmony_group_ids(chord_df: pd.DataFrame) -> pd.Series:
     """Assign integer group IDs to consecutive runs of identical harmonies.
 
+    Used for de-repeating (label-based comparison before expand_tonicizations).
     Compares all harmony-relevant columns, intentionally excluding ``inversion``
     so that different inversions of the same chord belong to the same group.
     """
@@ -366,6 +367,52 @@ def _harmony_group_ids(chord_df: pd.DataFrame) -> pd.Series:
     # ~NA stays NA rather than becoming True. The first row is always a group start.
     first_of_group.iloc[0] = True
     return first_of_group.astype(int).cumsum() - 1
+
+
+def _count_group_ids(chord_df: pd.DataFrame) -> pd.Series:
+    """Assign group IDs using pitch-class set subsumption when ``chord_pcs``
+    is available, falling back to :func:`_harmony_group_ids` otherwise.
+
+    Two adjacent chords in the same key are considered the same harmony if
+    either chord's PC set is a subset of the other's (e.g., M {0,4,7} ⊂ Mm7
+    {0,4,7,a}). When merged, the **superset** is propagated so that later
+    comparisons use the richer chord.
+    """
+    if "chord_pcs" not in chord_df.columns:
+        return _harmony_group_ids(chord_df)
+
+    group_ids = []
+    group_id = 0
+    propagated_pcs: frozenset[str] = frozenset()
+    prev_key = None
+
+    for i, row in enumerate(chord_df.itertuples()):
+        current_pcs = frozenset(row.chord_pcs)
+        current_key = row.key
+
+        if i == 0:
+            group_ids.append(group_id)
+            propagated_pcs = current_pcs
+            prev_key = current_key
+            continue
+
+        if current_key != prev_key:
+            group_id += 1
+            propagated_pcs = current_pcs
+        elif current_pcs <= propagated_pcs or propagated_pcs <= current_pcs:
+            # Subsumption in either direction; propagate the superset
+            propagated_pcs = propagated_pcs | current_pcs
+        else:
+            group_id += 1
+            propagated_pcs = current_pcs
+
+        prev_key = current_key
+        group_ids.append(group_id)
+
+    result = pd.Series(group_ids, index=chord_df.index)
+    assert result.dtype == int
+    assert result.iloc[0] == 0
+    return result
 
 
 def remove_long_tonicizations(
@@ -877,9 +924,9 @@ def remove_long_tonicizations(
     for col in cols_to_map:
         chord_df[col] = group_ids.map(derepeated[col]).values
 
-    # Post-expansion group IDs for inversion-aware counting: different
-    # inversions of the same chord count as one distinct harmony.
-    count_group_ids = _harmony_group_ids(chord_df)
+    # Post-expansion group IDs for counting: uses PC-set subsumption when
+    # chord_pcs is available, otherwise label-based comparison.
+    count_group_ids = _count_group_ids(chord_df)
 
     tonicization_changes = (
         chord_df["secondary_degree"] != chord_df["secondary_degree"].shift(1)
@@ -1173,9 +1220,9 @@ def remove_short_modulations(
 
     chord_df["key"] = chord_df["key"].ffill()
 
-    # Inversion-aware counting: different inversions of the same chord
-    # count as one distinct harmony.
-    count_group_ids = _harmony_group_ids(chord_df)
+    # Counting: uses PC-set subsumption when chord_pcs is available,
+    # otherwise label-based comparison.
+    count_group_ids = _count_group_ids(chord_df)
 
     key_changes = chord_df["key"] != chord_df["key"].shift(1)
     indices = key_changes.index[key_changes].tolist()
