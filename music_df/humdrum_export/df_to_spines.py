@@ -396,8 +396,10 @@ else:
                 prev_release: float = row.onset
             if row.type == "bar":
                 measure_start = row.onset
+                bar_num = getattr(row, "bar_number", None)
+                barline = f"={int(bar_num)}" if pd.notna(bar_num) else "="
                 this_measure_tokens.append(
-                    (row.onset, TOKEN_ORDER["bar"], kern_barline())
+                    (row.onset, TOKEN_ORDER["bar"], barline)
                 )
                 if label_col is not None or nth_note_label_col is not None:
                     # We need to append a dummy value so we can zip tokens and labels

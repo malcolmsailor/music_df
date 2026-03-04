@@ -139,9 +139,11 @@ def number_measures(humdrum_contents: str):
             output_lines.append(line)
             continue
 
-        assert bar_tokens == ["="] * len(bar_tokens), (
-            "bar numbers etc. are not implemented"
-        )
+        # If bars already have numbers, preserve them
+        if bar_tokens[0] != "=":
+            output_lines.append(line)
+            bar_n = int(bar_tokens[0].lstrip("=")) + 1
+            continue
 
         numbered_bars = "\t".join([f"={bar_n}"] * len(bar_tokens))
         output_lines.append(numbered_bars)
