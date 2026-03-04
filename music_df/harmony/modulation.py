@@ -348,6 +348,26 @@ def _reconstruct_degree_column(chord_df: pd.DataFrame) -> pd.Series:
     return primary + secondary_with_slash
 
 
+def _harmony_group_ids(chord_df: pd.DataFrame) -> pd.Series:
+    """Assign integer group IDs to consecutive runs of identical harmonies.
+
+    Compares all harmony-relevant columns, intentionally excluding ``inversion``
+    so that different inversions of the same chord belong to the same group.
+    """
+    cols = ["primary_degree", "secondary_degree", "key"]
+    optional = ["primary_alteration", "secondary_alteration", "secondary_mode", "quality"]
+    cols += [c for c in optional if c in chord_df.columns]
+
+    same_as_prev = pd.Series(True, index=chord_df.index)
+    for col in cols:
+        same_as_prev &= chord_df[col] == chord_df[col].shift(1)
+    first_of_group = ~same_as_prev
+    # shift(1) produces NA for the first row; with PyArrow-backed dtypes,
+    # ~NA stays NA rather than becoming True. The first row is always a group start.
+    first_of_group.iloc[0] = True
+    return first_of_group.astype(int).cumsum() - 1
+
+
 def remove_long_tonicizations(
     chord_df: pd.DataFrame,
     inplace: bool = False,
@@ -382,15 +402,15 @@ def remove_long_tonicizations(
         min_removal_duration: If provided, a tonicization must have at least this
             duration to be removed. This argument must be <= max_tonicization_duration
             if both are provided.
-        max_tonicization_num_chords: The maximum number of chords in a tonicization.
-            At least one of max_tonicization_duration or max_tonicization_num_chords
-            must be provided. Note that repetitions of the same chord count as multiple
-            chords. (If you wish for a different behavior, you should remove chord
-            repetitions in advance.)
+        max_tonicization_num_chords: The maximum number of distinct chords in a
+            tonicization. At least one of max_tonicization_duration or
+            max_tonicization_num_chords must be provided. Different inversions of
+            the same chord count as one; consecutive identical harmonies are
+            de-repeated before counting.
         min_removal_num_chords: If provided, a tonicization must have at least this
-            number of consecutive chords to be removed. Concerning chord repetitions,
-            see the note above about max_tonicization_num_chords. This argument must be
-            <= max_tonicization_num_chords if both are provided.
+            number of distinct chords to be removed. Counting follows the same
+            inversion-aware rules as max_tonicization_num_chords. This argument
+            must be <= max_tonicization_num_chords if both are provided.
         tonicization_cache: A cache for tonicizations to save compute if running
             this function many times.
         case_matters: Whether to consider case when determining the key of the
@@ -724,6 +744,12 @@ def remove_long_tonicizations(
     ... )
     >>> remove_long_tonicizations(consecutive_chords, max_tonicization_num_chords=3)
        onset degree key
+    0    0.0    V/V   C
+    1    1.0    V/V   C
+    2    2.0    V/V   C
+    3    3.0    V/V   C
+    >>> remove_long_tonicizations(consecutive_chords, max_tonicization_num_chords=0)
+       onset degree key
     0    0.0      V   G
     1    1.0      V   G
     2    2.0      V   G
@@ -744,6 +770,47 @@ def remove_long_tonicizations(
     179.5,180.0,590,I,_,I,_,0.0,F,M
     180.0,180.5,5903,V,_,IV,_,0.0,F,Mm7
 
+    Inversions within a tonicization count as one chord (1 distinct chord
+    <= 2, so the tonicization is kept):
+    >>> inversions = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,degree,inversion,key
+    ... 0.0,I,0,C
+    ... 1.0,V/V,0,C
+    ... 2.0,V/V,1,C
+    ... 3.0,V/V,2,C
+    ... 4.0,I,0,C
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(inversions, max_tonicization_num_chords=2)
+       onset degree  inversion key
+    0    0.0      I          0   C
+    1    1.0    V/V          0   C
+    2    2.0    V/V          1   C
+    3    3.0    V/V          2   C
+    4    4.0      I          0   C
+
+    Different qualities are NOT collapsed during de-repeat, so V(M) and
+    V(Mm7) count as 2 distinct chords (> 1 → removed):
+    >>> qualities = pd.read_csv(
+    ...     io.StringIO(
+    ...         '''
+    ... onset,primary_degree,secondary_degree,quality,key
+    ... 0.0,I,I,M,C
+    ... 1.0,V,V,M,C
+    ... 2.0,V,V,Mm7,C
+    ... 3.0,I,I,M,C
+    ... '''
+    ...     )
+    ... )
+    >>> remove_long_tonicizations(qualities, max_tonicization_num_chords=1)
+       onset primary_degree secondary_degree quality key degree
+    0    0.0              I                I       M   C      I
+    1    1.0              V                I       M   G      V
+    2    2.0              V                I     Mm7   G      V
+    3    3.0              I                I       M   C      I
 
     """
     _warn_if_lowercase_degrees(chord_df)
@@ -791,28 +858,11 @@ def remove_long_tonicizations(
         chord_df["secondary_mode"] = chord_df["secondary_mode"].fillna("_")
 
     # De-repeat for expand_tonicizations: consecutive rows with the same
-    # (primary_degree, secondary_degree, key) confuse the shift-based neighbor
-    # checks. We collapse them, expand, then map results back.
-    same_as_prev = (
-        (chord_df["primary_degree"] == chord_df["primary_degree"].shift(1))
-        & (chord_df["secondary_degree"] == chord_df["secondary_degree"].shift(1))
-        & (chord_df["key"] == chord_df["key"].shift(1))
-    )
-    if "secondary_mode" in chord_df.columns:
-        same_as_prev &= chord_df["secondary_mode"] == chord_df["secondary_mode"].shift(
-            1
-        )
-    if "secondary_alteration" in chord_df.columns:
-        same_as_prev &= (
-            chord_df["secondary_alteration"]
-            == chord_df["secondary_alteration"].shift(1)
-        )
-    first_of_group = ~same_as_prev
-    # shift(1) produces NA for the first row; with PyArrow-backed dtypes,
-    # ~NA stays NA rather than becoming True, which breaks the subsequent
-    # astype(int).cumsum(). The first row is always the start of a group.
+    # harmony (including quality) confuse the shift-based neighbor checks.
+    # We collapse them, expand, then map results back.
+    group_ids = _harmony_group_ids(chord_df)
+    first_of_group = group_ids != group_ids.shift(1)
     first_of_group.iloc[0] = True
-    group_ids = first_of_group.astype(int).cumsum() - 1
 
     derepeated = chord_df.loc[first_of_group].copy().reset_index(drop=True)
     derepeated = expand_tonicizations(
@@ -826,6 +876,10 @@ def remove_long_tonicizations(
         cols_to_map.append("secondary_alteration")
     for col in cols_to_map:
         chord_df[col] = group_ids.map(derepeated[col]).values
+
+    # Post-expansion group IDs for inversion-aware counting: different
+    # inversions of the same chord count as one distinct harmony.
+    count_group_ids = _harmony_group_ids(chord_df)
 
     tonicization_changes = (
         chord_df["secondary_degree"] != chord_df["secondary_degree"].shift(1)
@@ -889,9 +943,11 @@ def remove_long_tonicizations(
             tonicization_release = chord_df.iloc[end_i]["onset"]
             tonicization_duration = tonicization_release - tonicization_onset
 
+        n_distinct = count_group_ids.iloc[start_i:end_i].nunique()
+
         if (
             max_tonicization_num_chords is not None
-            and end_i - start_i > max_tonicization_num_chords
+            and n_distinct > max_tonicization_num_chords
         ):
             if (
                 min_removal_duration is None
@@ -906,7 +962,7 @@ def remove_long_tonicizations(
         ):
             if (
                 min_removal_num_chords is None
-                or end_i - start_i >= min_removal_num_chords
+                or n_distinct >= min_removal_num_chords
             ):
                 remove_tonicization(tonicization, start_i, end_i)
 
@@ -999,6 +1055,9 @@ def remove_short_modulations(
 
     Note that we only replace modulations that are preceded and followed by the same
     key.
+
+    ``min_modulation_num_chords`` and ``max_removal_num_chords`` count distinct
+    harmonies: different inversions of the same chord count as one.
 
 
     >>> modulation_with_tonicization = pd.read_csv(
@@ -1114,6 +1173,10 @@ def remove_short_modulations(
 
     chord_df["key"] = chord_df["key"].ffill()
 
+    # Inversion-aware counting: different inversions of the same chord
+    # count as one distinct harmony.
+    count_group_ids = _harmony_group_ids(chord_df)
+
     key_changes = chord_df["key"] != chord_df["key"].shift(1)
     indices = key_changes.index[key_changes].tolist()
     indices.append(len(chord_df))
@@ -1197,9 +1260,11 @@ def remove_short_modulations(
             modulation_release = chord_df.iloc[end_i]["onset"]
             modulation_duration = modulation_release - modulation_onset
 
+        n_distinct = count_group_ids.iloc[start_i:end_i].nunique()
+
         if (
             min_modulation_num_chords is not None
-            and end_i - start_i < min_modulation_num_chords
+            and n_distinct < min_modulation_num_chords
         ):
             if (
                 max_removal_duration is None
@@ -1214,7 +1279,7 @@ def remove_short_modulations(
         ):
             if (
                 max_removal_num_chords is None
-                or end_i - start_i <= max_removal_num_chords
+                or n_distinct <= max_removal_num_chords
             ):
                 remove_modulation_if_possible(start_i, end_i)
 

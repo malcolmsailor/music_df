@@ -701,3 +701,155 @@ class TestReplaceSpuriousTonicsAlterations:
         )
         result = replace_spurious_tonics(df)
         assert result.loc[1, "primary_degree"] == "V"
+
+
+class TestInversionAwareCounting:
+    """Tests for inversion-aware chord counting in remove_long_tonicizations
+    and remove_short_modulations."""
+
+    def test_inversions_count_as_one_in_tonicization(self):
+        """V/V with three different inversions = 1 distinct chord.
+        Old raw count was 3 (> 2 → removed). New distinct count is 1
+        (<= 2 → kept)."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,inversion,key
+0.0,I,0,C
+1.0,V/V,0,C
+2.0,V/V,1,C
+3.0,V/V,2,C
+4.0,I,0,C
+"""
+            )
+        )
+        # 1 distinct chord <= 2 → kept as tonicization
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=2
+        )
+        assert result.loc[1, "degree"] == "V/V"
+        assert result.loc[1, "key"] == "C"
+
+        # 1 distinct chord > 0 → removed
+        result2 = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=0
+        )
+        assert result2.loc[1, "key"] == "G"
+        assert result2.loc[2, "key"] == "G"
+        assert result2.loc[3, "key"] == "G"
+
+    def test_distinct_chords_not_removed_under_threshold(self):
+        """V/V and IV/V are 2 distinct chords (inversions don't add),
+        so max_tonicization_num_chords=2 should keep the tonicization."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,inversion,key
+0.0,I,0,C
+1.0,V/V,0,C
+2.0,V/V,1,C
+3.0,IV/V,0,C
+4.0,I,0,C
+"""
+            )
+        )
+        # 2 distinct chords <= 2 → kept
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=2
+        )
+        assert result.loc[1, "degree"] == "V/V"
+
+        # 2 distinct chords > 1 → removed
+        result2 = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        assert result2.loc[1, "key"] == "G"
+
+    def test_quality_aware_derepeat(self):
+        """V/V (M) followed by V7/V (Mm7) should NOT be collapsed during
+        de-repeat because they have different qualities."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,primary_degree,secondary_degree,quality,key
+0.0,I,I,M,C
+1.0,V,V,M,C
+2.0,V,V,Mm7,C
+3.0,I,I,M,C
+"""
+            )
+        )
+        result = remove_long_tonicizations(
+            chord_df, max_tonicization_num_chords=1
+        )
+        # 2 distinct chords (M vs Mm7) > 1 → should be removed
+        assert result.loc[1, "key"] == "G"
+        assert result.loc[2, "key"] == "G"
+
+    def test_inversions_count_as_one_in_modulation(self):
+        """Different inversions of I in a modulated key should count as 1
+        distinct chord for min_modulation_num_chords."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,inversion,key
+0.0,I,0,C
+1.0,I,0,G
+2.0,I,1,G
+3.0,I,2,G
+4.0,I,0,C
+"""
+            )
+        )
+        # 1 distinct chord < 2 → removed
+        result = remove_short_modulations(
+            chord_df, min_modulation_num_chords=2
+        )
+        assert result.loc[1, "key"] == "C"
+        assert result.loc[2, "key"] == "C"
+        assert result.loc[3, "key"] == "C"
+
+    def test_modulation_kept_with_enough_distinct_chords(self):
+        """I and V are 2 distinct chords, so min_modulation_num_chords=2
+        should keep the modulation."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,inversion,key
+0.0,I,0,C
+1.0,I,0,G
+2.0,V,0,G
+3.0,I,0,C
+"""
+            )
+        )
+        # 2 distinct chords >= 2 → kept
+        result = remove_short_modulations(
+            chord_df, min_modulation_num_chords=2
+        )
+        assert result.loc[1, "key"] == "G"
+        assert result.loc[2, "key"] == "G"
+
+    def test_max_removal_num_chords_inversion_aware(self):
+        """max_removal_num_chords in remove_short_modulations should use
+        inversion-aware counting."""
+        chord_df = pd.read_csv(
+            io.StringIO(
+                """
+onset,degree,inversion,key
+0.0,I,0,C
+1.0,I,0,G
+2.0,I,1,G
+3.0,I,2,G
+4.0,I,0,C
+"""
+            )
+        )
+        # duration=3.0 < min_modulation_duration=4.0, and
+        # 1 distinct chord <= max_removal_num_chords=1 → removal allowed
+        result = remove_short_modulations(
+            chord_df,
+            min_modulation_duration=4.0,
+            max_removal_num_chords=1,
+        )
+        assert result.loc[1, "key"] == "C"
