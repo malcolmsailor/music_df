@@ -19,11 +19,42 @@ else:
         Fraction(1 * 2**i, (2 * 2**i - 1)) for i in range(1, MAX_DEPTH)
     ]
     ALLOWED_ERROR = 0.002
-    # Finest subdivision used in the divmod decomposition loop; covers all
-    # standard subdivisions (triplets through 32nd-note triplets, regular
-    # values through 64th notes).
-    SNAP_GRID = 96
     INV_ALLOWED_ERROR = 1 - ALLOWED_ERROR
+
+    # 7-smooth numbers (prime factors in {2,3,5,7}) up to 96. These are the
+    # only denominators that occur in musical durations: powers-of-2
+    # subdivisions, triplets, quintuplets, and septuplets.
+    def _is_7_smooth(n: int) -> bool:
+        for p in (2, 3, 5, 7):
+            while n % p == 0:
+                n //= p
+        return n == 1
+    _SMOOTH_DENOMS = tuple(d for d in range(1, 97) if _is_7_smooth(d))
+    del _is_7_smooth
+
+    def _snap_to_musical(val: float) -> float:
+        """Snap a float to the nearest fraction with a 7-smooth denominator.
+
+        Musical durations always have denominators whose prime factors are
+        in {2, 3, 5, 7}. This handles any tuplet type (triplets, quintuplets,
+        septuplets, etc.) while being robust to floating-point drift.
+
+        >>> _snap_to_musical(0.1)
+        0.1
+        >>> _snap_to_musical(0.3333)
+        0.3333333333333333
+        >>> _snap_to_musical(1.2919999999999732)
+        1.2916666666666667
+        """
+        best_d = 1
+        best_err = abs(val - round(val))
+        for d in _SMOOTH_DENOMS:
+            n = round(val * d)
+            err = abs(n / d - val)
+            if err < best_err:
+                best_err = err
+                best_d = d
+        return round(val * best_d) / best_d
 
     class KernDurError(Exception):
         pass
@@ -249,14 +280,18 @@ else:
         >>> dur_to_kern(0.1670000000000016, 1.5, "2/4")
         [(0.16666666666666666, '24')]
 
+        Quintuplet 32nd note (duration 0.1 quarter notes):
+        >>> dur_to_kern(0.1, 0.0, "4/4")
+        [(0.1, '40')]
+
         Following used to give a recursion error, fixed by `split_fives_hack()`
         >>> dur_to_kern(5.0, 6.0, "6/4")
         [(3.0, '2.'), (2.0, '2')]
         """
         if isinstance(meter, str):
             meter = Meter(meter)
-        inp = round(float(inp) * SNAP_GRID) / SNAP_GRID
-        offset = round(float(offset) * SNAP_GRID) / SNAP_GRID
+        inp = _snap_to_musical(float(inp))
+        offset = _snap_to_musical(float(offset))
         split_durs = meter.split_at_metric_strong_points(
             [_Dur(offset, offset + inp)], min_split_dur=0.5  # type:ignore
         )
@@ -269,7 +304,7 @@ else:
         split_durs = split_durs[:-1] + split_fives_hack(split_durs[-1])
 
         durs = [
-            round(float(dur.release - dur.onset) * SNAP_GRID) / SNAP_GRID
+            _snap_to_musical(float(dur.release - dur.onset))
             for dur in split_durs
         ]
         # It's possible these will be different
