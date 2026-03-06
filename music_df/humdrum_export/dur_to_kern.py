@@ -289,7 +289,9 @@ else:
         [(3.0, '2.'), (2.0, '2')]
         """
         if isinstance(meter, str):
-            meter = Meter(meter)
+            from .fallback_meter import make_meter
+
+            meter = make_meter(meter)
         inp = _snap_to_musical(float(inp))
         offset = _snap_to_musical(float(offset))
         split_durs = meter.split_at_metric_strong_points(

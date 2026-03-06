@@ -12,6 +12,8 @@ import pandas as pd
 
 try:
     from metricker import Meter
+
+    from .fallback_meter import make_meter
 except ImportError:
     pass
 else:
@@ -321,7 +323,7 @@ else:
         prev_release: float = 0.0
         measure_start: float = 0.0
 
-        meter = Meter("4/4")  # Set default meter
+        meter = make_meter("4/4")  # Set default meter
 
         this_measure_tokens = []
         this_measure_labels = []
@@ -424,7 +426,7 @@ else:
                         ),
                     )
                 )
-                meter = Meter(f"{int(other['numerator'])}/{int(other['denominator'])}")
+                meter = make_meter(f"{int(other['numerator'])}/{int(other['denominator'])}")
                 if label_col is not None or nth_note_label_col is not None:
                     # We need to append a dummy value so we can zip tokens and labels
                     #   together below

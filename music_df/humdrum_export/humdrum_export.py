@@ -179,9 +179,9 @@ def _align_pickup_durations(
     if max_dur == 0 or all(abs(d - max_dur) < 1e-9 for d in pickup_durs):
         return spines
 
-    from metricker import Meter
+    from .fallback_meter import make_meter
 
-    meter = Meter("4/4")
+    meter = make_meter("4/4")
 
     aligned: t.List[t.List[str]] = []
     for spine, pickup_dur in zip(spines, pickup_durs):
