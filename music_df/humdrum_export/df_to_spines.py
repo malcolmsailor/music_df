@@ -151,11 +151,37 @@ else:
             measure_offset,
             meter,  # type:ignore
         )
+        tie_to_prev = getattr(note, "tie_to_prev", False)
+        tie_to_next = getattr(note, "tie_to_next", False)
+        if tie_to_prev is not True:
+            tie_to_prev = False
+        if tie_to_next is not True:
+            tie_to_next = False
+
         if len(notes) > 1:
             notes[0] = "[" + notes[0]
             notes[-1] = notes[-1] + "]"
         if len(notes) > 2:
             notes[1:-1] = [n + "_" for n in notes[1:-1]]
+
+        # Apply cross-barline tie markers from split_notes_at_barlines
+        if tie_to_prev or tie_to_next:
+            if len(notes) == 1:
+                if tie_to_prev and tie_to_next:
+                    notes[0] = notes[0] + "_"
+                elif tie_to_prev:
+                    notes[0] = notes[0] + "]"
+                else:
+                    notes[0] = "[" + notes[0]
+            else:
+                if tie_to_prev:
+                    # First token: change from start "[" to continuation "_"
+                    notes[0] = notes[0].lstrip("[") + "_"
+                if tie_to_next:
+                    # Last token: change from end "]" to continuation "_"
+                    if notes[-1].endswith("]"):
+                        notes[-1] = notes[-1][:-1] + "_"
+
         if color is not None:
             notes = [n + color for n in notes]
         if label_name is not None:
@@ -339,18 +365,10 @@ else:
         # actual_bar_dur = 0
         # expected_bar_dur = None
 
-        _IGNORED_TYPES = {
-            "tempo",
-            "text",
-            "control_change",
-            "midi_port",
-            "program_change",
-            "end_of_track",
-            "key_signature",
-        }
+        _HANDLED_TYPES = {"note", "bar", "time_signature"}
 
         for i, row in voice_part.iterrows():
-            if row.type in _IGNORED_TYPES:
+            if row.type not in _HANDLED_TYPES:
                 continue
             if skip_measure:
                 if row.type != "bar":
@@ -519,6 +537,8 @@ else:
                                 else:
                                     text_token = f"!LO:TX:b:t={label}"
                                 this_measure_labels.append(text_token)
+                            else:
+                                this_measure_labels.append("")
                             assert len(this_measure_labels) == len(this_measure_tokens)
 
             if row.type == "note":

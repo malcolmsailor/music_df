@@ -150,3 +150,27 @@ class TestDrop:
             music_df_with_early_notes, chord_df_starting_at_0, unmatched="backfill"
         )
         pd.testing.assert_frame_equal(result_drop, result_backfill)
+
+
+class TestDtypeMismatch:
+    def test_int_note_onset_float_chord_onset(self):
+        """merge_asof requires matching dtypes; int vs float should not crash."""
+        music_df = pd.DataFrame(
+            {
+                "type": ["bar", "note", "note"],
+                "pitch": [float("nan"), 60.0, 64.0],
+                "onset": [0, 0, 2],  # int64
+                "release": [4, 2, 4],
+            }
+        )
+        chord_df = pd.DataFrame(
+            {
+                "onset": [0.0, 2.0],  # float64
+                "key": ["C", "G"],
+            }
+        )
+        assert music_df["onset"].dtype != chord_df["onset"].dtype
+        result = label_music_df_with_chord_df(music_df, chord_df, columns_to_add=("key",))
+        notes = result[result["type"] == "note"]
+        assert notes.iloc[0]["key"] == "C"
+        assert notes.iloc[1]["key"] == "G"

@@ -95,5 +95,64 @@ def test_df2hum_with_98_rest():
     os.remove(temp_path)
 
 
+def test_df2hum_with_labels_and_grace_notes():
+    """Grace notes (dur=0) with label_col should not cause an assertion error."""
+    csv_table = """,type,pitch,onset,release,other,spelling
+0,time_signature,100.0,,,"{'numerator': 4, 'denominator': 4}",
+1,bar,,100.0,104.0,,
+2,note,60,100.0,101.0,,C
+3,note,69,101.0,101.0,,A
+4,note,67,101.0,102.0,,G
+5,bar,,104.0,108.0,,
+    """
+    _, temp_path = mkstemp(".csv")
+    with open(temp_path, "w") as outf:
+        outf.write(csv_table)
+    df = read_csv(temp_path)
+    os.remove(temp_path)
+    assert df is not None
+
+    # Should not raise AssertionError
+    df2hum(df, label_col="spelling")
+
+
+def test_barline_split_notes_are_tied():
+    """Notes split at barlines by split_notes_at_barlines should produce
+    tied kern tokens in the humdrum output."""
+    csv_table = """,type,pitch,onset,release,other
+0,time_signature,,,,"{'numerator': 2, 'denominator': 4}"
+1,bar,,16.0,18.0,
+2,note,69,16.0,17.5,
+3,note,72,16.0,17.5,
+4,note,70,17.5,18.5,
+5,note,74,17.5,18.5,
+6,bar,,18.0,20.0,
+7,note,69,18.5,19.0,
+8,note,72,18.5,19.0,
+    """
+    _, temp_path = mkstemp(".csv")
+    with open(temp_path, "w") as outf:
+        outf.write(csv_table)
+    df = read_csv(temp_path)
+    os.remove(temp_path)
+    assert df is not None
+
+    out = df2hum(df)
+    lines = out.strip().split("\n")
+
+    # Find the barline between the two measures
+    barline_indices = [i for i, line in enumerate(lines) if line.startswith("=")]
+    # The notes at onset 17.5 (B-flat/D) overlap the barline at 18.0.
+    # After splitting, the first half should be tied to the second half.
+    # Look for tie-start "[" before the barline and tie-end "]" after.
+    pre_barline = "\n".join(lines)
+    assert "[" in pre_barline, (
+        f"Expected tie-start '[' in output for notes split at barline.\n{out}"
+    )
+    assert "]" in pre_barline, (
+        f"Expected tie-end ']' in output for notes split at barline.\n{out}"
+    )
+
+
 if __name__ == "__main__":
     test_df2hum_with_grace_duration()

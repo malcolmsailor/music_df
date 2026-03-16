@@ -1057,6 +1057,10 @@ def inversion_number_to_figure(
     '7'
     >>> inversion_number_to_figure(3, "Mm7")
     '42'
+    >>> inversion_number_to_figure(3, "+")
+    '42'
+    >>> inversion_number_to_figure(3, "M")
+    '42'
     """
     # If the chord is a 7th or augmented 6th, we use 7th chord inversions. (Since
     #   we only have integers to indicate 1st, 2nd inversion etc., we can't distinguish
@@ -1075,7 +1079,13 @@ def inversion_number_to_figure(
     # Otherwise, assume to be a triad
     if triad_inversions_mapping is None:
         triad_inversions_mapping = TRIAD_INVERSIONS
-    return triad_inversions_mapping.get(inversion_number, "?")
+    if inversion_number in triad_inversions_mapping:
+        return triad_inversions_mapping[inversion_number]
+    # Triad quality with out-of-range inversion (e.g., inv=3) likely indicates
+    # an unrecognized seventh chord; fall back to seventh chord figures.
+    if seventh_chord_inversions_mapping is None:
+        seventh_chord_inversions_mapping = SEVENTH_CHORD_INVERSIONS
+    return seventh_chord_inversions_mapping.get(inversion_number, "?")
 
 
 def split_degrees_to_single_degree(
@@ -1536,9 +1546,18 @@ def label_music_df_with_chord_df(
         )
         columns_to_add = [c for c in columns_to_add if c in chord_df.columns]
 
+    left = music_df.drop(columns=[c for c in columns_to_add if c in music_df.columns])
+    right = chord_df[["onset"] + columns_to_add]
+    # merge_asof requires matching dtypes on the merge key
+    if left["onset"].dtype != right["onset"].dtype:
+        left = left.copy()
+        right = right.copy()
+        left["onset"] = left["onset"].astype(float)
+        right["onset"] = right["onset"].astype(float)
+
     out = pd.merge_asof(
-        music_df.drop(columns=[c for c in columns_to_add if c in music_df.columns]),
-        chord_df[["onset"] + columns_to_add],
+        left,
+        right,
         on="onset",
         direction="backward",
     )
