@@ -31,7 +31,10 @@ def _write_spine(spine: t.List[str], path: str) -> None:
 
 @contextmanager
 def _get_temp_paths(n: int):
-    paths = [tempfile.mkstemp(suffix=".krn")[1] for _ in range(n)]
+    fd_path_pairs = [tempfile.mkstemp(suffix=".krn") for _ in range(n)]
+    for fd, _ in fd_path_pairs:
+        os.close(fd)
+    paths = [path for _, path in fd_path_pairs]
     try:
         yield paths
     finally:

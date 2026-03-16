@@ -284,6 +284,11 @@ else:
         >>> dur_to_kern(0.1, 0.0, "4/4")
         [(0.1, '40')]
 
+        Notes crossing a bar boundary must always be split, even when
+        the pieces are shorter than min_split_dur:
+        >>> dur_to_kern(0.25, 3.8125, "4/4")
+        [(0.1875, '32.'), (0.0625, '64')]
+
         Following used to give a recursion error, fixed by `split_fives_hack()`
         >>> dur_to_kern(5.0, 6.0, "6/4")
         [(3.0, '2.'), (2.0, '2')]
@@ -294,9 +299,28 @@ else:
             meter = make_meter(meter)
         inp = _snap_to_musical(float(inp))
         offset = _snap_to_musical(float(offset))
-        split_durs = meter.split_at_metric_strong_points(
-            [_Dur(offset, offset + inp)], min_split_dur=0.5  # type:ignore
-        )
+        # Force-split at bar boundaries before metric splitting, since
+        # split_at_metric_strong_points with min_split_dur may skip the
+        # bar boundary when the resulting pieces are very short.
+        bar_dur = meter.bar_dur
+        durs_to_split = [_Dur(offset, offset + inp)]
+        bar_split = []
+        for d in durs_to_split:
+            onset_bar = math.floor(d.onset / bar_dur) * bar_dur
+            next_bar = onset_bar + bar_dur
+            cur = d
+            while cur.release > next_bar + 1e-9:
+                bar_split.append(_Dur(cur.onset, next_bar))
+                cur = _Dur(next_bar, cur.release)
+                next_bar += bar_dur
+            bar_split.append(cur)
+        split_durs = []
+        for d in bar_split:
+            split_durs.extend(
+                meter.split_at_metric_strong_points(
+                    [d], min_split_dur=0.5  # type:ignore
+                )
+            )
         # (Malcolm 2023-10-10) I'm not precisely sure what the rationale for applying
         #   split_odd_duration is
         split_durs = split_durs[:-1] + meter.split_odd_duration(

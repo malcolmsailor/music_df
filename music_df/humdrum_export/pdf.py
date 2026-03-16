@@ -106,7 +106,8 @@ else:
                     os.path.expanduser("~"), "tmp", "hum2pdf", "temp.krn"
                 )
             else:
-                _, tmp_krn_path = tempfile.mkstemp(suffix=".krn")
+                _fd, tmp_krn_path = tempfile.mkstemp(suffix=".krn")
+                os.close(_fd)
             try:
                 with open(humdrum_path) as inf:
                     contents = inf.readlines()

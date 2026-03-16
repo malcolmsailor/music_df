@@ -22,6 +22,7 @@ class BeatBoundaryMeter:
         self._beat_dur = Fraction(4, denom)
         self._numer = numer
         self._denom = denom
+        self.bar_dur = numer * Fraction(4, denom)
 
     def split_at_metric_strong_points(self, items, min_split_dur=None, force_split=False):
         result = []

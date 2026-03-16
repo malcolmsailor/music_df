@@ -339,24 +339,41 @@ else:
         # actual_bar_dur = 0
         # expected_bar_dur = None
 
+        _IGNORED_TYPES = {
+            "tempo",
+            "text",
+            "control_change",
+            "midi_port",
+            "program_change",
+            "end_of_track",
+            "key_signature",
+        }
+
         for i, row in voice_part.iterrows():
+            if row.type in _IGNORED_TYPES:
+                continue
             if skip_measure:
                 if row.type != "bar":
                     continue
                 this_measure_tokens = []
                 this_measure_labels = []
-                handle_rest(
-                    measure_start,
-                    row.onset,
-                    measure_start,
-                    meter,
-                    this_measure_tokens,
-                    (
-                        this_measure_labels
-                        if (label_col is not None or nth_note_label_col is not None)
-                        else None
-                    ),
-                )
+                try:
+                    handle_rest(
+                        measure_start,
+                        row.onset,
+                        measure_start,
+                        meter,
+                        this_measure_tokens,
+                        (
+                            this_measure_labels
+                            if (label_col is not None or nth_note_label_col is not None)
+                            else None
+                        ),
+                    )
+                except KernDurError as exc:
+                    LOGGER.warning(
+                        f"Could not fill skipped measure with rest due to {exc}"
+                    )
                 prev_release: float = row.onset
 
             if row.onset > prev_release + REST_TOLERANCE:
@@ -432,16 +449,6 @@ else:
                     #   together below
                     this_measure_labels.append("REMOVE")
                     assert len(this_measure_labels) == len(this_measure_tokens)
-            elif row.type in {
-                "tempo",
-                "text",
-                "control_change",
-                "midi_port",
-                "program_change",
-                "end_of_track",
-            }:
-                # (Malcolm 2023-12-18) For now, we do nothing about tempi or text
-                continue
             else:
                 assert row.type == "note"
                 try:
@@ -541,6 +548,25 @@ else:
 
         return tokens
 
+    def _synthesize_bars(df: pd.DataFrame) -> pd.DataFrame:
+        """Add bar rows when none are present, inferring from time signatures
+        or defaulting to 4/4."""
+        ts_rows = df[df.type == "time_signature"]
+        if len(ts_rows):
+            other = _to_dict_if_necessary(ts_rows.iloc[0].other)
+            bar_dur = other["numerator"] * 4 / other["denominator"]
+        else:
+            bar_dur = 4.0
+
+        first_onset = df.onset.min()
+        last_release = df.release.max()
+        bar_starts = np.arange(first_onset, last_release, bar_dur)
+        bar_rows = pd.DataFrame(
+            {"type": "bar", "onset": bar_starts, "release": bar_starts + bar_dur}
+        )
+        df = pd.concat([df, bar_rows]).sort_values("onset").reset_index(drop=True)
+        return df
+
     def df_to_spines(
         df,
         label_col: t.Optional[str] = None,
@@ -550,6 +576,8 @@ else:
     ) -> t.List[t.List[str]]:
         if label_mask_col is not None:
             assert len(df.loc[df[label_mask_col], label_color_col].unique()) == 1
+        if not (df.type == "bar").any():
+            df = _synthesize_bars(df)
         if df.iloc[-1].type != "bar":
             last_bar = pd.DataFrame({"type": ["bar"], "onset": [df.release.max()]})
             df = pd.concat([df, last_bar])

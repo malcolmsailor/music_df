@@ -53,7 +53,8 @@ def _rscale_files(files: t.List[str], factor: str) -> t.List[str]:
     """rscale each file, returning paths to new temp files."""
     tmp_paths = []
     for f in files:
-        _, tmp_path = tempfile.mkstemp(suffix=".krn")
+        _fd, tmp_path = tempfile.mkstemp(suffix=".krn")
+        os.close(_fd)
         result = sh.rscale("-f", factor, f)  # type:ignore
         with open(tmp_path, "w") as outf:
             outf.write(str(result))
@@ -82,7 +83,8 @@ def collate_spines(files: t.List[str]):
         tb_paths = []
         for f in work_files:
             result = sh.timebase("-t", str(gcd), f)  # type:ignore
-            _, tmp_path = tempfile.mkstemp(suffix=".krn")
+            _fd, tmp_path = tempfile.mkstemp(suffix=".krn")
+            os.close(_fd)
             with open(tmp_path, "w") as outf:
                 outf.write(str(result))
             tb_paths.append(tmp_path)
@@ -95,7 +97,8 @@ def collate_spines(files: t.List[str]):
             _clean_up(scaled_files)
 
     if global_recip is not None:
-        _, tmp_path = tempfile.mkstemp(suffix=".krn")
+        _fd, tmp_path = tempfile.mkstemp(suffix=".krn")
+        os.close(_fd)
         with open(tmp_path, "w") as outf:
             outf.write(str(result))
         result = sh.rscale("-f", str(global_recip), tmp_path)  # type:ignore
