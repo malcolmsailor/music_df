@@ -48,10 +48,12 @@ humdrum = [
     "metricker @ git+https://github.com/malcolmsailor/metricker.git",
 ]
 scripts = ["omegaconf", "pyyaml", "h5py"]
+doublings = ["pydivsufsort"]
 dev = ["pytest", "pdoc3"]
 full = [
     "music_df[visualization]",
     "music_df[harmony]",
     "music_df[humdrum]",
     "music_df[scripts]",
+    "music_df[doublings]",
 ]
