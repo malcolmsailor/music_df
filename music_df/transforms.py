@@ -85,11 +85,13 @@ def apply_transforms(
     ...     df = df.copy()
     ...     df[col_name] = value
     ...     return df
+    ...
     >>> @transform
     ... def _test_double_col(df, col_name="foo"):
     ...     df = df.copy()
     ...     df[col_name] = df[col_name] * 2
     ...     return df
+    ...
 
     >>> df = pd.DataFrame({"pitch": [60, 62]})
     >>> steps = [
@@ -114,8 +116,7 @@ def apply_transforms(
         name, kwargs = next(iter(step.items()))
         if name not in TRANSFORMS:
             raise KeyError(
-                f"Unknown transform {name!r}. "
-                f"Available: {sorted(TRANSFORMS.keys())}"
+                f"Unknown transform {name!r}. Available: {sorted(TRANSFORMS.keys())}"
             )
         df = TRANSFORMS[name](df, **kwargs)
     return df

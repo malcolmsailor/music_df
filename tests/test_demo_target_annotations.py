@@ -8,6 +8,9 @@ original index) to mismatch the cropped excerpt's index.
 from __future__ import annotations
 
 import shutil
+
+# demo helpers live under tests/demos/
+import sys
 import tempfile
 from pathlib import Path
 
@@ -17,9 +20,6 @@ import pytest
 
 from music_df.dedouble_instruments import dedouble_octaves
 from music_df.sort_df import sort_df
-
-# demo helpers live under tests/demos/
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "demos"))
 from _demo_helpers import (
@@ -39,20 +39,45 @@ def _make_octave_doubling_df_without_barlines() -> pd.DataFrame:
     """
     rows = [
         # time signature (4/4)
-        {"type": "time_signature", "onset": 0.0, "release": np.nan,
-         "track": np.nan, "channel": np.nan, "pitch": np.nan,
-         "velocity": np.nan, "other": "{'numerator': 4, 'denominator': 4}"},
+        {
+            "type": "time_signature",
+            "onset": 0.0,
+            "release": np.nan,
+            "track": np.nan,
+            "channel": np.nan,
+            "pitch": np.nan,
+            "velocity": np.nan,
+            "other": "{'numerator': 4, 'denominator': 4}",
+        },
     ]
     # 8-note melody on two tracks an octave apart (covers 2 bars of 4/4)
     for i in range(8):
         onset = float(i)
         release = onset + 1.0
-        rows.append({"type": "note", "onset": onset, "release": release,
-                      "track": 1.0, "channel": 0.0, "pitch": 60.0 + i,
-                      "velocity": 80.0, "other": np.nan})
-        rows.append({"type": "note", "onset": onset, "release": release,
-                      "track": 2.0, "channel": 0.0, "pitch": 72.0 + i,
-                      "velocity": 80.0, "other": np.nan})
+        rows.append(
+            {
+                "type": "note",
+                "onset": onset,
+                "release": release,
+                "track": 1.0,
+                "channel": 0.0,
+                "pitch": 60.0 + i,
+                "velocity": 80.0,
+                "other": np.nan,
+            }
+        )
+        rows.append(
+            {
+                "type": "note",
+                "onset": onset,
+                "release": release,
+                "track": 2.0,
+                "channel": 0.0,
+                "pitch": 72.0 + i,
+                "velocity": 80.0,
+                "other": np.nan,
+            }
+        )
     df = pd.DataFrame(rows)
     df = sort_df(df)
     assert "bar" not in df["type"].values
@@ -64,9 +89,7 @@ class TestBeforeTargetAnnotation:
 
     def _process_df(self, df: pd.DataFrame) -> FileResult:
         """Mimic what the demo pipeline does: transform, compute indices."""
-        result = dedouble_octaves(
-            df, instrument_columns=["track"], min_length=2
-        )
+        result = dedouble_octaves(df, instrument_columns=["track"], min_length=2)
         original_indices = set(df.index)
         kept_indices = set(result["original_index"])
         dropped = original_indices - kept_indices
@@ -115,8 +138,10 @@ class TestBeforeTargetAnnotation:
 
         # Crop the 'before' excerpt the same way save_samples does
         before = crop_passage(
-            cand.file_result.original_df, cand.bar_onset,
-            passage_bars=None, passage_qn=8.0,
+            cand.file_result.original_df,
+            cand.bar_onset,
+            passage_bars=None,
+            passage_qn=8.0,
         )
 
         involved = cand.file_result.involved_indices
@@ -130,8 +155,7 @@ class TestBeforeTargetAnnotation:
         target_true = before_notes[before_notes["target"]]
         target_keys = set(zip(target_true["onset"], target_true["pitch"]))
         assert target_keys <= involved_notes_key, (
-            f"target=True notes not in involved set: "
-            f"{target_keys - involved_notes_key}"
+            f"target=True notes not in involved set: {target_keys - involved_notes_key}"
         )
 
         # Check: every involved note in the excerpt should be target=True
@@ -140,6 +164,5 @@ class TestBeforeTargetAnnotation:
             if (row["onset"], row["pitch"]) in involved_notes_key:
                 excerpt_involved_keys.add((row["onset"], row["pitch"]))
         assert excerpt_involved_keys <= target_keys, (
-            f"Involved notes missing target=True: "
-            f"{excerpt_involved_keys - target_keys}"
+            f"Involved notes missing target=True: {excerpt_involved_keys - target_keys}"
         )

@@ -2,7 +2,7 @@
 
 Reads files, applies the specified transforms in order, reports summary
 statistics, and saves sampled before/after passage excerpts as CSVs with
-changed notes highlighted via a ``target`` column.
+changed notes labeled with the responsible transform name in a ``label`` column.
 
 Usage:
     python demo_transforms.py input/ output/ --transforms quantize_df,salami_slice,dedouble
@@ -70,16 +70,18 @@ def _note_tuples(df: pd.DataFrame) -> set[tuple]:
     return set(notes[cols].itertuples(index=False, name=None))
 
 
-def _mark_targets(df: pd.DataFrame, target_tuples: set[tuple]) -> pd.DataFrame:
-    """Add a ``target`` column: True for note rows whose identity is in target_tuples."""
+def _label_notes(
+    df: pd.DataFrame, label_map: dict[tuple, str],
+) -> pd.DataFrame:
+    """Add a ``label`` column with the transform name for changed notes, NA otherwise."""
     df = df.copy()
-    if not target_tuples:
-        df["target"] = False
+    if not label_map:
+        df["label"] = pd.NA
         return df
     notes = df["type"] == "note"
     cols = [c for c in _NOTE_KEY_COLS if c in df.columns]
-    note_keys = set(df.loc[notes, cols].itertuples(index=False, name=None))
-    df["target"] = notes & df[cols].apply(tuple, axis=1).isin(target_tuples)
+    tuples = df[cols].apply(tuple, axis=1)
+    df["label"] = tuples.map(label_map).where(notes, other=pd.NA)
     return df
 
 
@@ -95,6 +97,9 @@ class FileResult:
     notes_after: int
     before_df: pd.DataFrame
     after_df: pd.DataFrame
+    # Per-transform diffs: maps note tuple -> transform name
+    removed_by: dict[tuple, str]
+    added_by: dict[tuple, str]
 
 
 def _ensure_barlines(df: pd.DataFrame) -> pd.DataFrame:
@@ -112,15 +117,33 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
 
     df = _ensure_barlines(df)
     notes_before = int((df["type"] == "note").sum())
-    result = apply_transforms(df, steps)
-    notes_after = int((result["type"] == "note").sum())
+
+    # Apply transforms one at a time, tracking which notes each step changes.
+    # Earlier transforms take priority (a note is attributed to the first
+    # transform that touches it).
+    removed_by: dict[tuple, str] = {}
+    added_by: dict[tuple, str] = {}
+    current = df
+    for step in steps:
+        (name, kwargs), = step.items()
+        before_tuples = _note_tuples(_quantize_for_comparison(current))
+        current = apply_transforms(current, [step])
+        after_tuples = _note_tuples(_quantize_for_comparison(current))
+        for t in before_tuples - after_tuples:
+            removed_by.setdefault(t, name)
+        for t in after_tuples - before_tuples:
+            added_by.setdefault(t, name)
+
+    notes_after = int((current["type"] == "note").sum())
 
     return FileResult(
         path=path,
         notes_before=notes_before,
         notes_after=notes_after,
         before_df=df,
-        after_df=result,
+        after_df=current,
+        removed_by=removed_by,
+        added_by=added_by,
     )
 
 
@@ -169,7 +192,7 @@ def _collect_candidates(
 ) -> list[Candidate]:
     candidates: list[Candidate] = []
     for result in results:
-        if result.notes_before == result.notes_after:
+        if not result.removed_by and not result.added_by:
             continue
         df = result.before_df
         bar_rows = df[df["type"] == "bar"]
@@ -177,10 +200,7 @@ def _collect_candidates(
             continue
         bar_onsets = sorted(bar_rows["onset"].unique())
 
-        before_all = _note_tuples(_quantize_for_comparison(df))
-        after_all = _note_tuples(_quantize_for_comparison(result.after_df))
-        # Notes that appear in only one side
-        changed = (before_all - after_all) | (after_all - before_all)
+        changed = set(result.removed_by) | set(result.added_by)
 
         for bar_idx, bar_onset in enumerate(bar_onsets):
             end_onset = _get_passage_end(
@@ -261,14 +281,8 @@ def _save_samples(
         after = sort_df(pd.concat([non_notes, after_notes], ignore_index=True))
         after = _quantize_for_comparison(after)
 
-        # Symmetric diff: find notes unique to each side
-        before_tuples = _note_tuples(before)
-        after_tuples = _note_tuples(after)
-        only_before = before_tuples - after_tuples
-        only_after = after_tuples - before_tuples
-
-        before = _mark_targets(before, only_before)
-        after = _mark_targets(after, only_after)
+        before = _label_notes(before, cand.file_result.removed_by)
+        after = _label_notes(after, cand.file_result.added_by)
 
         before.to_csv(output_folder / f"{excerpt_id}_before.csv", index=False)
         after.to_csv(output_folder / f"{excerpt_id}_after.csv", index=False)

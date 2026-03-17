@@ -10,10 +10,9 @@ import argparse
 from functools import partial
 
 import pandas as pd
+from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
 from music_df.dedouble_instruments import DEFAULT_PITCH_THRESHOLD, dedouble_octaves
-
-from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
 
 def _find_octave_partner_indices(
@@ -31,16 +30,18 @@ def _find_octave_partner_indices(
     partners: set[int] = set()
     for _, dn in dropped_notes.iterrows():
         match_mask = (
-            (kept_notes["onset"] * tpq).round() == round(dn["onset"] * tpq)
-        ) & (
-            (kept_notes["release"] * tpq).round() == round(dn["release"] * tpq)
-        ) & (kept_notes["pitch"] % 12 == dn["pitch"] % 12)
+            ((kept_notes["onset"] * tpq).round() == round(dn["onset"] * tpq))
+            & ((kept_notes["release"] * tpq).round() == round(dn["release"] * tpq))
+            & (kept_notes["pitch"] % 12 == dn["pitch"] % 12)
+        )
         partners.update(kept_notes.loc[match_mask, "original_index"])
     return partners
 
 
 def _transform(df, min_length, pitch_threshold):
-    result = dedouble_octaves(df, min_length=min_length, pitch_threshold=pitch_threshold)
+    result = dedouble_octaves(
+        df, min_length=min_length, pitch_threshold=pitch_threshold
+    )
     dropped = set(df.index) - set(result["original_index"])
     partners = _find_octave_partner_indices(df, result, dropped)
     result.attrs["involved_indices"] = dropped | partners
@@ -53,7 +54,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     add_common_args(parser)
     parser.add_argument(
-        "--pitch-threshold", type=float, default=DEFAULT_PITCH_THRESHOLD,
+        "--pitch-threshold",
+        type=float,
+        default=DEFAULT_PITCH_THRESHOLD,
         help=f"MIDI pitch threshold for melody/bass register (default: {DEFAULT_PITCH_THRESHOLD})",
     )
     # Override min-length default to 3 (octave matching needs more notes
@@ -64,7 +67,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    transform = partial(_transform, min_length=args.min_length, pitch_threshold=args.pitch_threshold)
+    transform = partial(
+        _transform, min_length=args.min_length, pitch_threshold=args.pitch_threshold
+    )
     meta = {
         "input_folder": str(args.input_folder),
         "max_files": args.max_files,

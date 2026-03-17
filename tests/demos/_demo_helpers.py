@@ -25,12 +25,12 @@ from music_df.slice_df import slice_df
 from music_df.sort_df import sort_df
 
 SUPPORTED_EXTENSIONS = {".csv", ".mid", ".midi", ".xml", ".mxl", ".mscx", ".mscz", ".krn"}
-# Match the default grid used by dedouble_instruments()
+# Match the default grid used by dedouble_unisons_across_instruments()
 TICKS_PER_QUARTER = 16
 
 
 def quantize_df(df: pd.DataFrame, tpq: int = TICKS_PER_QUARTER) -> pd.DataFrame:
-    """Round note onsets/releases to the same grid as dedouble_instruments()."""
+    """Round note onsets/releases to the same grid as dedouble_unisons_across_instruments()."""
     df = df.copy()
     note_mask = df["type"] == "note"
     df.loc[note_mask, "onset"] = (df.loc[note_mask, "onset"] * tpq).round() / tpq

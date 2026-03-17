@@ -3,7 +3,7 @@ Instrument-aware dedoubling via suffix array + LCP.
 
 Detects cross-instrument doublings — runs of >= n consecutive matching notes
 played by different instruments — and removes one copy. Supports both exact
-pitch matching (``dedouble_instruments``) and octave-equivalent matching
+pitch matching (``dedouble_unisons_across_instruments``) and octave-equivalent matching
 (``dedouble_octaves``).
 
 Also provides within-instrument octave dedoubling
@@ -121,7 +121,7 @@ def _find_doublings(
         from pydivsufsort import divsufsort, kasai
     except ImportError as exc:
         raise ImportError(
-            "pydivsufsort is required for dedouble_instruments. "
+            "pydivsufsort is required for dedouble_unisons_across_instruments. "
             "Install it with: pip install music_df[doublings]"
         ) from exc
 
@@ -222,7 +222,7 @@ def _find_doublings(
 
 
 @transform
-def dedouble_instruments(
+def dedouble_unisons_across_instruments(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,
     min_length: int = 2,
@@ -271,7 +271,7 @@ def dedouble_instruments(
     ...     "onset":   [0.0, 0.0, 1.0, 2.0, 0.0, 1.0, 2.0],
     ...     "release": [np.nan, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
     ... })
-    >>> result = dedouble_instruments(df, instrument_columns=["track"])
+    >>> result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
     >>> result.attrs["n_undedoubled_notes"]
     6
     >>> result.attrs["n_dedoubled_notes"]
@@ -299,7 +299,7 @@ def dedouble_octaves(
 ) -> pd.DataFrame:
     """Remove cross-instrument octave doublings from a music_df.
 
-    Like ``dedouble_instruments`` but matches by pitch class (pitch % 12)
+    Like ``dedouble_unisons_across_instruments`` but matches by pitch class (pitch % 12)
     instead of exact pitch. Defaults to *min_length=3* to reduce false
     positives from contrary motion.
 

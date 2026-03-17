@@ -1,6 +1,6 @@
 """Demo: apply instrument dedoubling to a folder of music files.
 
-Reads files, applies dedouble_instruments(), reports summary statistics,
+Reads files, applies dedouble_unisons_across_instruments(), reports summary statistics,
 and saves sampled before/after passage excerpts as CSVs.
 """
 
@@ -9,10 +9,9 @@ from __future__ import annotations
 import argparse
 
 import pandas as pd
-
-from music_df.dedouble_instruments import dedouble_instruments
-
 from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
+
+from music_df.dedouble_instruments import dedouble_unisons_across_instruments
 
 
 def _find_partner_indices(
@@ -31,16 +30,16 @@ def _find_partner_indices(
     partners: set[int] = set()
     for _, dn in dropped_notes.iterrows():
         match_mask = (
-            (kept_notes["onset"] * tpq).round() == round(dn["onset"] * tpq)
-        ) & (
-            (kept_notes["release"] * tpq).round() == round(dn["release"] * tpq)
-        ) & (kept_notes["pitch"] == dn["pitch"])
+            ((kept_notes["onset"] * tpq).round() == round(dn["onset"] * tpq))
+            & ((kept_notes["release"] * tpq).round() == round(dn["release"] * tpq))
+            & (kept_notes["pitch"] == dn["pitch"])
+        )
         partners.update(kept_notes.loc[match_mask, "original_index"])
     return partners
 
 
 def _transform(df, min_length):
-    result = dedouble_instruments(df, min_length=min_length)
+    result = dedouble_unisons_across_instruments(df, min_length=min_length)
     dropped = set(df.index) - set(result["original_index"])
     partners = _find_partner_indices(df, result, dropped)
     result.attrs["involved_indices"] = dropped | partners

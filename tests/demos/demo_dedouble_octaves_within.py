@@ -10,13 +10,12 @@ import argparse
 from functools import partial
 
 import pandas as pd
+from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
 from music_df.dedouble_instruments import (
     DEFAULT_PITCH_THRESHOLD,
     dedouble_octaves_within_instrument,
 )
-
-from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
 
 def _find_within_octave_partner_indices(
@@ -47,8 +46,14 @@ def _find_within_octave_partner_indices(
     return partners
 
 
-def _transform(df, min_length, pitch_threshold, match_releases, max_gap_onsets,
-               max_streak_pitch_distance):
+def _transform(
+    df,
+    min_length,
+    pitch_threshold,
+    match_releases,
+    max_gap_onsets,
+    max_streak_pitch_distance,
+):
     result = dedouble_octaves_within_instrument(
         df,
         min_length=min_length,
@@ -69,19 +74,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     add_common_args(parser)
     parser.add_argument(
-        "--pitch-threshold", type=float, default=DEFAULT_PITCH_THRESHOLD,
+        "--pitch-threshold",
+        type=float,
+        default=DEFAULT_PITCH_THRESHOLD,
         help=f"MIDI pitch threshold for melody/bass register (default: {DEFAULT_PITCH_THRESHOLD})",
     )
     parser.add_argument(
-        "--no-match-releases", action="store_true",
+        "--no-match-releases",
+        action="store_true",
         help="Don't require matching releases for octave pairs",
     )
     parser.add_argument(
-        "--max-gap-onsets", type=int, default=0,
+        "--max-gap-onsets",
+        type=int,
+        default=0,
         help="Allow up to N consecutive onsets without the pair before breaking the streak (default: 0)",
     )
     parser.add_argument(
-        "--max-streak-pitch-distance", type=int, default=12,
+        "--max-streak-pitch-distance",
+        type=int,
+        default=12,
         help="Max lower-pitch distance between consecutive pairs in a streak (default: 12)",
     )
     parser.set_defaults(min_length=3)

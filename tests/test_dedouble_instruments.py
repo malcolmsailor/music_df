@@ -5,9 +5,9 @@ import pytest
 from music_df.dedouble_instruments import (
     CANDIDATE_INSTRUMENT_COLUMNS,
     DEFAULT_PITCH_THRESHOLD,
-    dedouble_instruments,
     dedouble_octaves,
     dedouble_octaves_within_instrument,
+    dedouble_unisons_across_instruments,
 )
 
 
@@ -28,7 +28,7 @@ class TestBasicDoubling:
                 ("note", 2, 64, 2.0, 3.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_undedoubled_notes"] == 6
         assert result.attrs["n_dedoubled_notes"] == 3
         # Lower-sorted instrument (track 1) is kept
@@ -53,7 +53,7 @@ class TestPartialDoubling:
                 ("note", 2, 64, 3.0, 4.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_undedoubled_notes"] == 9
         assert result.attrs["n_dedoubled_notes"] == 6
         # Track 2's 3 doubled notes are removed
@@ -71,7 +71,7 @@ class TestNoDoubling:
                 ("note", 2, 67, 1.0, 2.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 4
 
 
@@ -86,7 +86,7 @@ class TestMinLength:
                 ("note", 2, 62, 1.0, 2.0),
             ]
         )
-        result = dedouble_instruments(
+        result = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], min_length=2
         )
         assert result.attrs["n_dedoubled_notes"] == 2
@@ -101,7 +101,7 @@ class TestMinLength:
                 ("note", 2, 62, 1.0, 2.0),
             ]
         )
-        result = dedouble_instruments(
+        result = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], min_length=3
         )
         assert result.attrs["n_dedoubled_notes"] == 4
@@ -112,14 +112,22 @@ class TestNonNotePreservation:
         """Non-note rows pass through unchanged."""
         df = pd.DataFrame(
             {
-                "type": ["time_signature", "bar", "note", "note", "note", "note", "bar"],
+                "type": [
+                    "time_signature",
+                    "bar",
+                    "note",
+                    "note",
+                    "note",
+                    "note",
+                    "bar",
+                ],
                 "track": [np.nan, np.nan, 1, 1, 2, 2, np.nan],
                 "pitch": [np.nan, np.nan, 60, 62, 60, 62, np.nan],
                 "onset": [0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 4.0],
                 "release": [np.nan, np.nan, 1.0, 2.0, 1.0, 2.0, np.nan],
             }
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert (result.type == "time_signature").sum() == 1
         assert (result.type == "bar").sum() == 2
 
@@ -136,7 +144,7 @@ class TestInstrumentColumnAutoDetection:
             }
         )
         # Should not raise - auto-detects "track"
-        result = dedouble_instruments(df)
+        result = dedouble_unisons_across_instruments(df)
         assert result.attrs["dedoubled_instruments"]
 
     def test_detects_multiple_columns(self):
@@ -150,7 +158,7 @@ class TestInstrumentColumnAutoDetection:
                 "release": [1.0, 1.0, 1.0, 1.0],
             }
         )
-        result = dedouble_instruments(df)
+        result = dedouble_unisons_across_instruments(df)
         assert result.attrs["dedoubled_instruments"]
 
     def test_raises_without_instrument_columns(self):
@@ -163,7 +171,7 @@ class TestInstrumentColumnAutoDetection:
             }
         )
         with pytest.raises(ValueError, match="No instrument columns found"):
-            dedouble_instruments(df)
+            dedouble_unisons_across_instruments(df)
 
 
 class TestQuantization:
@@ -177,7 +185,7 @@ class TestQuantization:
                 ("note", 2, 62, 1.001, 2.001),
             ]
         )
-        result = dedouble_instruments(
+        result = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], quantize=True
         )
         assert result.attrs["n_dedoubled_notes"] == 2
@@ -192,7 +200,7 @@ class TestQuantization:
                 ("note", 2, 62, 1.001, 2.001),
             ]
         )
-        result = dedouble_instruments(
+        result = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], quantize=False
         )
         assert result.attrs["n_dedoubled_notes"] == 4
@@ -210,13 +218,13 @@ class TestReleaseTicksPerQuarter:
             ]
         )
         # At tpq=16 for both, 1.0*16=16 vs 1.06*16=17 -> different tokens
-        result_fine = dedouble_instruments(
+        result_fine = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], ticks_per_quarter=16
         )
         assert result_fine.attrs["n_dedoubled_notes"] == 4
 
         # With coarse release grid (tpq=4): 1.0*4=4 vs 1.06*4=4 -> same token
-        result_coarse = dedouble_instruments(
+        result_coarse = dedouble_unisons_across_instruments(
             df,
             instrument_columns=["track"],
             ticks_per_quarter=16,
@@ -234,10 +242,10 @@ class TestReleaseTicksPerQuarter:
                 ("note", 2, 62, 1.0, 2.0),
             ]
         )
-        result_default = dedouble_instruments(
+        result_default = dedouble_unisons_across_instruments(
             df, instrument_columns=["track"], ticks_per_quarter=16
         )
-        result_none = dedouble_instruments(
+        result_none = dedouble_unisons_across_instruments(
             df,
             instrument_columns=["track"],
             ticks_per_quarter=16,
@@ -289,7 +297,7 @@ class TestThreeInstruments:
                 ("note", 3, 67, 1.0, 2.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 4
         # Track 1 kept, track 2 dropped, track 3 kept
         remaining_tracks = sorted(result[result.type == "note"]["track"].unique())
@@ -307,14 +315,14 @@ class TestKeepFirstOrdering:
                 ("note", 1, 62, 1.0, 2.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         remaining_tracks = sorted(result[result.type == "note"]["track"].unique())
         # Track 1 < Track 2 in sort order, so Track 1 kept
         assert remaining_tracks == [1]
 
 
 class TestExactDoublingUnchanged:
-    """Verify dedouble_instruments behavior is identical after refactor."""
+    """Verify dedouble_unisons_across_instruments behavior is identical after refactor."""
 
     def test_basic_doubling_still_works(self):
         df = _make_df(
@@ -327,12 +335,12 @@ class TestExactDoublingUnchanged:
                 ("note", 2, 64, 2.0, 3.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 3
         assert sorted(result[result.type == "note"]["track"].unique()) == [1]
 
     def test_no_false_octave_match(self):
-        """dedouble_instruments should NOT match notes an octave apart."""
+        """dedouble_unisons_across_instruments should NOT match notes an octave apart."""
         df = _make_df(
             [
                 ("note", 1, 60, 0.0, 1.0),
@@ -343,7 +351,7 @@ class TestExactDoublingUnchanged:
                 ("note", 2, 76, 2.0, 3.0),
             ]
         )
-        result = dedouble_instruments(df, instrument_columns=["track"])
+        result = dedouble_unisons_across_instruments(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 6
 
 
@@ -431,9 +439,7 @@ class TestOctaveMinLengthDefault:
                 ("note", 2, 74, 1.0, 2.0),
             ]
         )
-        result = dedouble_octaves(
-            df, instrument_columns=["track"], min_length=2
-        )
+        result = dedouble_octaves(df, instrument_columns=["track"], min_length=2)
         assert result.attrs["n_dedoubled_notes"] == 2
 
 
@@ -455,9 +461,7 @@ class TestBasicWithinOctave:
                 ("note", 1, 76, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_undedoubled_notes"] == 6
         assert result.attrs["n_dedoubled_notes"] == 3
 
@@ -471,9 +475,7 @@ class TestBasicWithinOctave:
                 ("note", 1, 74, 1.0, 2.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 4
 
 
@@ -491,9 +493,7 @@ class TestWithinOctavePitchThreshold:
                 ("note", 1, 76, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 3
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
         # Higher voice kept: 72, 74, 76
@@ -512,9 +512,7 @@ class TestWithinOctavePitchThreshold:
                 ("note", 1, 52, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 3
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
         # Lower voice kept: 36, 38, 40
@@ -615,9 +613,7 @@ class TestWithinOctaveIntervals:
                 ("note", 1, 76, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 3
 
     def test_custom_intervals_misses_24(self):
@@ -659,15 +655,11 @@ class TestWithinOctaveMultipleInstruments:
                 ("note", 2, 64, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         # Each track loses 3 notes
         assert result.attrs["n_dedoubled_notes"] == 6
         # Both tracks still present
-        remaining_tracks = sorted(
-            result[result.type == "note"]["track"].unique()
-        )
+        remaining_tracks = sorted(result[result.type == "note"]["track"].unique())
         assert remaining_tracks == [1, 2]
 
 
@@ -683,9 +675,7 @@ class TestWithinOctaveNonNotePreservation:
                 "release": [np.nan, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
             }
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert (result.type == "bar").sum() == 1
         assert result.attrs["n_dedoubled_notes"] == 3
 
@@ -703,9 +693,7 @@ class TestWithinOctaveNoDoublings:
                 ("note", 1, 69, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 6
 
 
@@ -736,9 +724,7 @@ class TestWithinOctavePitchProximity:
                 ("note", 1, 74, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         assert result.attrs["n_dedoubled_notes"] == 6
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
         # Bass: keep lower (39, 41, 43); Treble: keep upper (70, 72, 74)
@@ -762,9 +748,7 @@ class TestWithinOctavePitchProximity:
                 ("note", 1, 78, 2.0, 3.0),
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         # At least the 3-onset streak (60/72, 62/74, 66/78) should be detected
         assert result.attrs["n_dedoubled_notes"] <= 5
 
@@ -786,9 +770,7 @@ class TestWithinOctaveMixedNotes:
                 ("note", 1, 71, 2.0, 3.0),  # B4, not doubled
             ]
         )
-        result = dedouble_octaves_within_instrument(
-            df, instrument_columns=["track"]
-        )
+        result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
         # 3 doubled notes dropped, 6 remain (3 kept from doubling + 3 non-doubled)
         assert result.attrs["n_dedoubled_notes"] == 6
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
