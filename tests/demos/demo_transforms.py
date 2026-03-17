@@ -126,12 +126,20 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
     current = df
     for step in steps:
         (name, kwargs), = step.items()
-        before_tuples = _note_tuples(_quantize_for_comparison(current))
+        before_q = _quantize_for_comparison(current)
         current = apply_transforms(current, [step])
-        after_tuples = _note_tuples(_quantize_for_comparison(current))
-        for t in before_tuples - after_tuples:
+        after_q = _quantize_for_comparison(current)
+
+        custom_diff = getattr(TRANSFORMS[name], "diff_func", None)
+        if custom_diff is not None:
+            removed, added = custom_diff(before_q, after_q)
+        else:
+            removed = _note_tuples(before_q) - _note_tuples(after_q)
+            added = _note_tuples(after_q) - _note_tuples(before_q)
+
+        for t in removed:
             removed_by.setdefault(t, name)
-        for t in after_tuples - before_tuples:
+        for t in added:
             added_by.setdefault(t, name)
 
     notes_after = int((current["type"] == "note").sum())

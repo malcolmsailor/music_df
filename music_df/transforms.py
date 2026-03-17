@@ -38,15 +38,33 @@ import pandas as pd
 TRANSFORMS: dict[str, Callable[..., pd.DataFrame]] = {}
 
 
-def transform(func: Callable[..., pd.DataFrame]) -> Callable[..., pd.DataFrame]:
-    """Register a df -> df function as a named transform."""
-    if func.__name__ in TRANSFORMS:
-        raise ValueError(
-            f"Transform {func.__name__!r} is already registered "
-            f"(from {TRANSFORMS[func.__name__].__module__})"
-        )
-    TRANSFORMS[func.__name__] = func
-    return func
+def transform(
+    func: Callable[..., pd.DataFrame] | None = None,
+    *,
+    diff_func: Callable[[pd.DataFrame, pd.DataFrame], tuple[set, set]] | None = None,
+) -> Callable[..., pd.DataFrame] | Callable[[Callable], Callable]:
+    """Register a df -> df function as a named transform.
+
+    Supports both ``@transform`` and ``@transform(diff_func=...)``.
+
+    When *diff_func* is provided it is attached as an attribute on the
+    registered function so that callers (e.g. demo_transforms) can use a
+    custom diff instead of naive tuple comparison.
+    """
+    def _register(f: Callable[..., pd.DataFrame]) -> Callable[..., pd.DataFrame]:
+        if f.__name__ in TRANSFORMS:
+            raise ValueError(
+                f"Transform {f.__name__!r} is already registered "
+                f"(from {TRANSFORMS[f.__name__].__module__})"
+            )
+        if diff_func is not None:
+            f.diff_func = diff_func  # type: ignore[attr-defined]
+        TRANSFORMS[f.__name__] = f
+        return f
+
+    if func is not None:
+        return _register(func)
+    return _register
 
 
 def get_transform_params(name: str) -> dict[str, inspect.Parameter]:
@@ -132,6 +150,7 @@ _TRANSFORM_MODULES = (
     "music_df.detremolo",
     "music_df.merge_notes",
     "music_df.quantize_df",
+    "music_df.remove_repeated_bars",
     "music_df.salami_slice",
     "music_df.slice_df",
     "music_df.sort_df",
