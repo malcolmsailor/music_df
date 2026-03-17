@@ -18,6 +18,8 @@ functions (install with ``pip install music_df[doublings]``).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from music_df.transforms import transform
 from typing import Callable, Sequence
 
 import numpy as np
@@ -219,6 +221,7 @@ def _find_doublings(
     return _build_output(df, drop_indices, n_undedoubled_notes, n_non_notes)
 
 
+@transform
 def dedouble_instruments(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,
@@ -284,6 +287,7 @@ def dedouble_instruments(
     )
 
 
+@transform
 def dedouble_octaves(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,
@@ -351,6 +355,7 @@ class _Streak:
     gap: int = 0
 
 
+@transform
 def dedouble_octaves_within_instrument(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,

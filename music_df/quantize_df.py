@@ -3,9 +3,12 @@ from typing import Literal, get_args
 import numpy as np
 import pandas as pd
 
+from music_df.transforms import transform
+
 ZeroDurAction = Literal["remove", "drop", "min_dur", "preserve"]
 
 
+@transform
 def quantize_df(
     df,
     tpq: int = 4,

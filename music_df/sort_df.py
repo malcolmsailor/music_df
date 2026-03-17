@@ -2,6 +2,8 @@ from types import MappingProxyType
 
 import pandas as pd
 
+from music_df.transforms import transform
+
 
 class SortOrderMapping(dict):
     def __init__(self, *args, missing_value, **kwargs):
@@ -17,6 +19,7 @@ DF_TYPE_SORT_ORDER = SortOrderMapping(
 )
 
 
+@transform
 def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
     if not inplace:
         df = df.sort_values(

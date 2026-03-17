@@ -13,6 +13,7 @@ import pandas as pd
 
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
+from music_df.transforms import transform
 
 
 def appears_salami_sliced(df: pd.DataFrame) -> bool:
@@ -86,6 +87,7 @@ def get_unique_salami_slices(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[first_index]
 
 
+@transform
 def salami_slice(
     df: pd.DataFrame,
     include_slice_ids: bool = True,
@@ -154,6 +156,7 @@ def salami_slice(
     return new_df
 
 
+@transform
 def slice_into_uniform_steps(
     df: pd.DataFrame, step_dur: float, quantize_tpq: None | int = None
 ) -> pd.DataFrame:
@@ -305,6 +308,7 @@ def add_distinct_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
     return df
 
 
+@transform
 def undo_salami_slice(df: pd.DataFrame) -> pd.DataFrame:
     """
     Inverts the salami slicing operation.

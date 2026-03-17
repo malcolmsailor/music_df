@@ -7,6 +7,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
+from music_df.transforms import transform
 from music_df.transpose import PERCUSSION_CHANNEL
 
 _EPSILON = 1e-6
@@ -60,6 +61,7 @@ def _compute_outer_voice_flags(
     return is_bass, is_soprano
 
 
+@transform
 def merge_repeated_notes(
     df: pd.DataFrame,
     max_note_duration: float | None = None,
@@ -163,6 +165,7 @@ def merge_repeated_notes(
     return out_df.drop(to_drop, axis=0)
 
 
+@transform
 def detremolo(
     df: pd.DataFrame,
     max_tremolo_note_length: float = 0.25,

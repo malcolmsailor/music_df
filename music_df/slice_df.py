@@ -4,8 +4,10 @@ from typing import Iterable
 import pandas as pd
 
 from music_df.sort_df import sort_df
+from music_df.transforms import transform
 
 
+@transform
 def slice_df(
     df: pd.DataFrame,
     slice_boundaries: Iterable[float],

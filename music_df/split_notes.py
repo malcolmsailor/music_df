@@ -9,29 +9,32 @@ import pandas as pd
 
 from music_df.add_feature import add_bar_durs
 from music_df.sort_df import sort_df
+from music_df.transforms import transform
 
 
+@transform
 def split_notes_at_barlines(
     df: pd.DataFrame,
     min_overhang_dur: float | None = None,
     clear_on_split: list[str] | None = None,
+    tie_split_notes: bool = True,
 ):
     """
     >>> csv_table = '''
-    ... type,pitch,onset,release,tie_to_next,tie_to_prev
-    ... bar,,0.0,4.0,,
-    ... note,60,0.0,4.0,,
-    ... note,64,0.0,4.001,,
-    ... note,67,0.0,12.0,,
-    ... bar,,4.0,8.0,,
-    ... note,72,7.999,12.0,,
-    ... bar,,8.0,12.0,,
-    ... note,76,9.0,9.001,,
-    ... bar,,12.0,16.0,,
+    ... type,pitch,onset,release
+    ... bar,,0.0,4.0
+    ... note,60,0.0,4.0
+    ... note,64,0.0,4.001
+    ... note,67,0.0,12.0
+    ... bar,,4.0,8.0
+    ... note,72,7.999,12.0
+    ... bar,,8.0,12.0
+    ... note,76,9.0,9.001
+    ... bar,,12.0,16.0
     ... '''
     >>> df = pd.read_csv(io.StringIO(csv_table.strip()))
-    >>> df["tie_to_next"] = df["tie_to_next"].fillna(False)
-    >>> df["tie_to_prev"] = df["tie_to_prev"].fillna(False)
+    >>> df["tie_to_next"] = False
+    >>> df["tie_to_prev"] = False
     >>> df
        type  pitch   onset  release  tie_to_next  tie_to_prev
     0   bar    NaN   0.000    4.000        False        False
@@ -74,15 +77,31 @@ def split_notes_at_barlines(
     9   note   76.0    9.0    9.001        False        False
     10   bar    NaN   12.0   16.000        False        False
 
+    >>> split_notes_at_barlines(df, tie_split_notes=False)
+        type  pitch   onset  release  tie_to_next  tie_to_prev
+    0    bar    NaN   0.000    4.000        False        False
+    1   note   60.0   0.000    4.000        False        False
+    2   note   64.0   0.000    4.000        False        False
+    3   note   67.0   0.000    4.000        False        False
+    4    bar    NaN   4.000    8.000        False        False
+    5   note   64.0   4.000    4.001        False        False
+    6   note   67.0   4.000    8.000        False        False
+    7   note   72.0   7.999    8.000        False        False
+    8    bar    NaN   8.000   12.000        False        False
+    9   note   67.0   8.000   12.000        False        False
+    10  note   72.0   8.000   12.000        False        False
+    11  note   76.0   9.000    9.001        False        False
+    12   bar    NaN  12.000   16.000        False        False
     """
     if df.loc[df.type == "bar", "release"].isna().any():
         df = add_bar_durs(df)
-    if "tie_to_next" not in df.columns:
-        df = df.copy()
-        df["tie_to_next"] = False
-    if "tie_to_prev" not in df.columns:
-        df = df.copy()
-        df["tie_to_prev"] = False
+    if tie_split_notes:
+        if "tie_to_next" not in df.columns:
+            df = df.copy()
+            df["tie_to_next"] = False
+        if "tie_to_prev" not in df.columns:
+            df = df.copy()
+            df["tie_to_prev"] = False
     bars = df[df.type == "bar"].reset_index()
     bars_i = 0
     row_accumulator = []
@@ -92,7 +111,9 @@ def split_notes_at_barlines(
             row_accumulator.append(row)
             continue
         else:
-            while (bars_i < len(bars) - 1) and (bars.loc[bars_i + 1].onset < row.onset):
+            while (bars_i < len(bars) - 1) and (
+                bars.loc[bars_i + 1].onset <= row.onset
+            ):
                 bars_i += 1
             temp_row = row.copy()
             # Handle note starting before the first applicable bar's onset
@@ -103,17 +124,17 @@ def split_notes_at_barlines(
                 truncated_row.release = bar_onset
                 if (
                     min_overhang_dur is None
-                    or truncated_row.release - truncated_row.onset
-                    >= min_overhang_dur
+                    or truncated_row.release - truncated_row.onset >= min_overhang_dur
                 ):
                     row_accumulator.append(truncated_row)
-                    temp_row.tie_to_prev = True
+                    if tie_split_notes:
+                        temp_row.tie_to_prev = True
                     if clear_on_split:
                         for col in clear_on_split:
                             if col in temp_row.index:
                                 temp_row[col] = ""
                 temp_row.onset = bar_onset
-                if (
+                if tie_split_notes and (
                     min_overhang_dur is None
                     or temp_row.release - temp_row.onset >= min_overhang_dur
                 ):
@@ -130,14 +151,15 @@ def split_notes_at_barlines(
                         >= min_overhang_dur
                     ):
                         row_accumulator.append(truncated_row)
-                        temp_row.tie_to_prev = True
+                        if tie_split_notes:
+                            temp_row.tie_to_prev = True
                         if clear_on_split:
                             for col in clear_on_split:
                                 if col in temp_row.index:
                                     temp_row[col] = ""
 
                     temp_row.onset = bar_release
-                    if (
+                    if tie_split_notes and (
                         min_overhang_dur is None
                         or temp_row.release - temp_row.onset >= min_overhang_dur
                     ):
@@ -156,6 +178,7 @@ def split_notes_at_barlines(
     return out_df
 
 
+@transform
 def subdivide_notes(
     df: pd.DataFrame, grid_size, onset_col="onset", release_col="release"
 ):

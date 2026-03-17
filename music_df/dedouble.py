@@ -9,7 +9,10 @@ from typing import Iterable
 import numpy as np  # Used by doctests
 import pandas as pd
 
+from music_df.transforms import transform
 
+
+@transform
 def dedouble(
     df: pd.DataFrame,
     quantize: bool = True,

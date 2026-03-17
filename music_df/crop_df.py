@@ -4,6 +4,7 @@ from typing import Any
 import pandas as pd
 
 from music_df.add_feature import infer_barlines
+from music_df.transforms import transform
 from music_df.utils.search import get_idx_to_item_geq, get_idx_to_item_leq
 
 LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def last_time_signature_before(music_df: pd.DataFrame, i: Any) -> pd.Series:
     # return music_df.loc[time_sig_i]
 
 
+@transform
 def crop_df(
     music_df: pd.DataFrame,
     start_i: Any | None = None,

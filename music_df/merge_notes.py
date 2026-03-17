@@ -4,6 +4,7 @@ from collections import defaultdict
 import pandas as pd
 
 from music_df import sort_df
+from music_df.transforms import transform
 
 
 class MergeGroup:
@@ -16,6 +17,7 @@ class MergeGroup:
         self.max_release = max(row.release, self.max_release)
 
 
+@transform
 def merge_notes(
     df: pd.DataFrame,
     attrs_to_merge_on: tuple[str, ...] = ("type", "pitch"),

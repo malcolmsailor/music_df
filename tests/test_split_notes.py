@@ -58,3 +58,30 @@ def test_split_note_normal_case_bar_at_onset_zero():
     second = notes[notes["onset"] == 4.0].iloc[0]
     assert second["release"] == 6.0
     assert second["tie_to_prev"] == True  # noqa: E712
+
+
+def test_note_starting_at_bar_boundary_not_crossing_barline():
+    """A note starting exactly at a bar boundary and ending within that bar
+    should NOT be split or given tie flags."""
+    df = pd.DataFrame(
+        {
+            "type": ["bar", "note", "bar", "note", "bar"],
+            "onset": [0.0, 0.0, 4.0, 4.0, 8.0],
+            "release": [4.0, 3.0, 8.0, 5.0, 12.0],
+            "pitch": [None, 60, None, 62, None],
+            "tie_to_next": [False] * 5,
+            "tie_to_prev": [False] * 5,
+        }
+    )
+    result = split_notes_at_barlines(df)
+
+    notes = result[result["type"] == "note"]
+    assert len(notes) == 2, (
+        f"Expected 2 notes (no splitting needed), got {len(notes)}"
+    )
+
+    note62 = notes[notes["pitch"] == 62].iloc[0]
+    assert note62["onset"] == 4.0
+    assert note62["release"] == 5.0
+    assert note62["tie_to_next"] == False  # noqa: E712
+    assert note62["tie_to_prev"] == False  # noqa: E712
