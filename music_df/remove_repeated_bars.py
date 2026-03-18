@@ -43,13 +43,20 @@ def _bar_fingerprints(df: pd.DataFrame) -> list[int]:
     return fingerprints
 
 
-def _find_bars_to_keep(fingerprints: list[int]) -> list[int]:
-    """Return indices (into the fingerprints list) of bars to keep.
+def _find_bars_to_keep(
+    fingerprints: list[int],
+) -> tuple[list[int], list[tuple[int, int, int]]]:
+    """Return indices (into the fingerprints list) of bars to keep, plus repeat spans.
 
     Uses smallest-k greedy tandem-repeat removal, iterated to convergence.
+
+    Each span is ``(pattern_start_idx, pattern_end_idx, last_copy_idx)`` —
+    the first and last bar of the kept pattern, plus the last bar of the
+    last repeated copy, all in terms of original bar indices.
     """
     bars = list(range(len(fingerprints)))
     fps = list(fingerprints)
+    repeat_spans: list[tuple[int, int, int]] = []
 
     changed = True
     while changed:
@@ -62,6 +69,9 @@ def _find_bars_to_keep(fingerprints: list[int]) -> list[int]:
                     j = i + 2 * k
                     while j + k <= len(fps) and fps[i : i + k] == fps[j : j + k]:
                         j += k
+                    repeat_spans.append(
+                        (bars[i], bars[i + k - 1], bars[j - 1])
+                    )
                     del fps[i + k : j]
                     del bars[i + k : j]
                     changed = True
@@ -70,21 +80,27 @@ def _find_bars_to_keep(fingerprints: list[int]) -> list[int]:
             if not found:
                 i += 1
 
-    return bars
+    return bars, repeat_spans
 
 
 def _remove_repeated_bars_diff(
     before_df: pd.DataFrame, after_df: pd.DataFrame
-) -> tuple[set, set]:
+) -> tuple[set, set, list[tuple[float, float]]]:
     """Custom diff for remove_repeated_bars.
 
     The naive tuple-diff doesn't work because removing bars shifts all
     subsequent notes' timing. Instead we use the ``bars_removed`` attr
     to identify which notes were in removed bars.
+
+    Returns ``(removed, added, diff_bounds)`` where *diff_bounds* are
+    ``(start, end)`` time intervals spanning each full repeat pattern
+    (original + copies), so that excerpt windows can be expanded to show
+    the complete context.
     """
     bars_removed = after_df.attrs.get("bars_removed", [])
+    diff_bounds = after_df.attrs.get("repeat_spans", [])
     if not bars_removed:
-        return set(), set()
+        return set(), set(), diff_bounds
     before_with_bars = make_bar_explicit(before_df)
     removed_notes = before_with_bars[
         (before_with_bars["type"] == "note")
@@ -95,7 +111,7 @@ def _remove_repeated_bars_diff(
             index=False, name=None
         )
     )
-    return removed_tuples, set()
+    return removed_tuples, set(), diff_bounds
 
 
 @transform(diff_func=_remove_repeated_bars_diff)
@@ -250,7 +266,7 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
             ] = bar_release
 
     fingerprints = _bar_fingerprints(df)
-    keep_indices = _find_bars_to_keep(fingerprints)
+    keep_indices, repeat_span_indices = _find_bars_to_keep(fingerprints)
     bars_to_keep = [bar_numbers[i] for i in keep_indices]
 
     n_bars_after = len(bars_to_keep)
@@ -262,6 +278,8 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         df.attrs["n_bars_after"] = n_bars_after
         df.attrs["n_bars_removed"] = 0
         df.attrs["bars_removed"] = []
+        df.attrs["repeat_spans"] = []
+        df.attrs["bar_onset_map"] = {}
         if "bar_number" in df.columns:
             df = df.drop(columns=["bar_number"])
         return sort_df(df)
@@ -300,6 +318,39 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         - result.loc[release_mask, "bar_number"].map(cumulative_shift)
     )
 
+    # Build bar_onset_map: original bar onset -> shifted bar onset (for kept bars)
+    bar_onset_map: dict[float, float] = {}
+    for bar_num in bars_to_keep:
+        orig_onset = bar_rows.loc[bar_rows.bar_number == bar_num, "onset"].iloc[0]
+        bar_onset_map[orig_onset] = orig_onset - cumulative_shift[bar_num]
+
+    # Convert index-based spans to onset/release time spans.
+    # Each span is (before_start, before_end, after_start, after_end) so
+    # that consumers can extract excerpts in both coordinate systems.
+    # Spans from intermediate iterations whose pattern bars were later
+    # removed are skipped (the outer span from the later iteration covers
+    # the same region).
+    repeat_spans: list[tuple[float, float, float, float]] = []
+    for idx_start, idx_pattern_end, idx_span_end in repeat_span_indices:
+        pat_start_bar = bar_numbers[idx_start]
+        pat_end_bar = bar_numbers[idx_pattern_end]
+        if pat_start_bar not in bars_to_keep_set or pat_end_bar not in bars_to_keep_set:
+            continue
+        before_start = bar_rows.loc[
+            bar_rows.bar_number == pat_start_bar, "onset"
+        ].iloc[0]
+        before_end = bar_rows.loc[
+            bar_rows.bar_number == bar_numbers[idx_span_end], "release"
+        ].iloc[0]
+        after_start = before_start - cumulative_shift[pat_start_bar]
+        after_end = (
+            bar_rows.loc[
+                bar_rows.bar_number == pat_end_bar, "release"
+            ].iloc[0]
+            - cumulative_shift[pat_end_bar]
+        )
+        repeat_spans.append((before_start, before_end, after_start, after_end))
+
     result = result.drop(columns=["bar_number"])
     result = result.reset_index(drop=True)
 
@@ -309,5 +360,7 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
     result.attrs["n_bars_after"] = n_bars_after
     result.attrs["n_bars_removed"] = n_bars_removed
     result.attrs["bars_removed"] = bars_removed
+    result.attrs["repeat_spans"] = repeat_spans
+    result.attrs["bar_onset_map"] = bar_onset_map
 
     return sort_df(result)

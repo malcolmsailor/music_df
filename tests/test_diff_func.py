@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from music_df.remove_repeated_bars import (
+    _find_bars_to_keep,
     _remove_repeated_bars_diff,
     remove_repeated_bars,
 )
@@ -113,12 +114,15 @@ def test_diff_func_correctly_identifies_removed_bar():
     df = _make_aac_df()
     result = remove_repeated_bars(df)
 
-    removed, added = _remove_repeated_bars_diff(df, result)
+    removed, added, diff_bounds = _remove_repeated_bars_diff(df, result)
 
     # Only the note from the second A bar (onset=4, release=5, pitch=60)
     # should be in removed
     assert removed == {(4.0, 5.0, 60.0)}
     assert added == set()
+    # Span covers both A bars (0-8) in before coords;
+    # in after coords the kept bar A spans 0-4
+    assert diff_bounds == [(0.0, 8.0, 0.0, 4.0)]
 
 
 def test_diff_func_no_repeats():
@@ -132,12 +136,100 @@ def test_diff_func_no_repeats():
         }
     )
     result = remove_repeated_bars(df)
-    removed, added = _remove_repeated_bars_diff(df, result)
+    removed, added, diff_bounds = _remove_repeated_bars_diff(df, result)
     assert removed == set()
     assert added == set()
+    assert diff_bounds == []
 
 
 def test_diff_func_registered_on_transform():
     """remove_repeated_bars has diff_func attached via the decorator."""
     assert hasattr(remove_repeated_bars, "diff_func")
     assert remove_repeated_bars.diff_func is _remove_repeated_bars_diff
+
+
+# ---------------------------------------------------------------------------
+# _find_bars_to_keep repeat span tests
+# ---------------------------------------------------------------------------
+
+
+def test_find_bars_to_keep_aa():
+    """AA pattern: span covers both bars."""
+    fps = [hash("A"), hash("A")]
+    kept, spans = _find_bars_to_keep(fps)
+    assert kept == [0]
+    assert spans == [(0, 0, 1)]
+
+
+def test_find_bars_to_keep_abab():
+    """ABAB pattern: span covers all 4 bars."""
+    a, b = hash("A"), hash("B")
+    kept, spans = _find_bars_to_keep([a, b, a, b])
+    assert kept == [0, 1]
+    assert spans == [(0, 1, 3)]
+
+
+def test_find_bars_to_keep_ababab():
+    """ABABAB pattern: span covers all 6 bars."""
+    a, b = hash("A"), hash("B")
+    kept, spans = _find_bars_to_keep([a, b, a, b, a, b])
+    assert kept == [0, 1]
+    assert spans == [(0, 1, 5)]
+
+
+def test_find_bars_to_keep_no_repeats():
+    """ABC pattern: no spans."""
+    a, b, c = hash("A"), hash("B"), hash("C")
+    kept, spans = _find_bars_to_keep([a, b, c])
+    assert kept == [0, 1, 2]
+    assert spans == []
+
+
+def test_find_bars_to_keep_aabb():
+    """AABB pattern: two iterations produce two spans."""
+    a, b = hash("A"), hash("B")
+    kept, spans = _find_bars_to_keep([a, a, b, b])
+    assert kept == [0, 2]
+    assert len(spans) == 2
+
+
+# ---------------------------------------------------------------------------
+# repeat_spans in attrs
+# ---------------------------------------------------------------------------
+
+
+def test_repeat_spans_in_attrs_abab():
+    """ABAB: attrs contain a single span covering all 4 bars."""
+    df = pd.DataFrame({
+        "type": ["bar", "note", "bar", "note", "bar", "note", "bar", "note", "bar"],
+        "onset": [0.0, 0.0, 4.0, 4.0, 8.0, 8.0, 12.0, 12.0, 16.0],
+        "release": [4.0, 1.0, 8.0, 5.0, 12.0, 9.0, 16.0, 13.0, 20.0],
+        "pitch": [np.nan, 60.0, np.nan, 62.0, np.nan, 60.0, np.nan, 62.0, np.nan],
+    })
+    result = remove_repeated_bars(df)
+    # before: 0-16 (full ABAB span); after: 0-8 (kept AB pattern)
+    assert result.attrs["repeat_spans"] == [(0.0, 16.0, 0.0, 8.0)]
+
+
+def test_repeat_spans_empty_when_no_repeats():
+    df = pd.DataFrame({
+        "type": ["bar", "note", "bar", "note", "bar"],
+        "onset": [0.0, 0.0, 4.0, 4.0, 8.0],
+        "release": [4.0, 1.0, 8.0, 5.0, 12.0],
+        "pitch": [np.nan, 60.0, np.nan, 62.0, np.nan],
+    })
+    result = remove_repeated_bars(df)
+    assert result.attrs["repeat_spans"] == []
+
+
+def test_bar_onset_map_aac():
+    """AAC: bar_onset_map maps original onsets to shifted onsets."""
+    df = _make_aac_df()
+    result = remove_repeated_bars(df)
+    bar_onset_map = result.attrs["bar_onset_map"]
+    # Bar 0 at onset 0 is kept, no shift
+    assert bar_onset_map[0.0] == 0.0
+    # Bar 2 at onset 8 is kept, shifted left by 4 (one removed bar)
+    assert bar_onset_map[8.0] == 4.0
+    # Bar 1 at onset 4 was removed, should not be in map
+    assert 4.0 not in bar_onset_map

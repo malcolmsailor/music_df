@@ -25,12 +25,13 @@ Where params.yaml looks like:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import random
 import sys
 
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
@@ -100,6 +101,11 @@ class FileResult:
     # Per-transform diffs: maps note tuple -> transform name
     removed_by: dict[tuple, str]
     added_by: dict[tuple, str]
+    # Time intervals that should be shown intact in excerpts.
+    # Each bound is (before_start, before_end) or
+    # (before_start, before_end, after_start, after_end) for transforms
+    # that shift the timeline.
+    diff_bounds: list[tuple] = field(default_factory=list)
 
 
 def _ensure_barlines(df: pd.DataFrame) -> pd.DataFrame:
@@ -123,6 +129,7 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
     # transform that touches it).
     removed_by: dict[tuple, str] = {}
     added_by: dict[tuple, str] = {}
+    all_diff_bounds: list[tuple[float, float]] = []
     current = df
     for step in steps:
         (name, kwargs), = step.items()
@@ -132,7 +139,10 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
 
         custom_diff = getattr(TRANSFORMS[name], "diff_func", None)
         if custom_diff is not None:
-            removed, added = custom_diff(before_q, after_q)
+            diff_result = custom_diff(before_q, after_q)
+            removed, added = diff_result[0], diff_result[1]
+            if len(diff_result) > 2:
+                all_diff_bounds.extend(diff_result[2])
         else:
             removed = _note_tuples(before_q) - _note_tuples(after_q)
             added = _note_tuples(after_q) - _note_tuples(before_q)
@@ -152,6 +162,7 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
         after_df=current,
         removed_by=removed_by,
         added_by=added_by,
+        diff_bounds=all_diff_bounds,
     )
 
 
@@ -276,17 +287,92 @@ def _save_samples(
             bar_onsets, bar_idx, passage_bars, passage_qn, orig_df,
         )
 
+        # Expand window to cover any overlapping diff bounds so that
+        # the full repeat pattern is visible in the excerpt.
+        # Track after-coordinate bounds separately for transforms that
+        # shift the timeline (e.g. remove_repeated_bars).
+        after_start_time = None
+        after_end_time = None
+        for bound in cand.file_result.diff_bounds:
+            bound_start, bound_end = bound[0], bound[1]
+            if bound_start < end_time and bound_end > start_time:
+                start_time = min(start_time, bound_start)
+                end_time = max(end_time, bound_end)
+                if len(bound) >= 4:
+                    ab_start, ab_end = bound[2], bound[3]
+                    if after_start_time is None:
+                        after_start_time = ab_start
+                        after_end_time = ab_end
+                    else:
+                        after_start_time = min(after_start_time, ab_start)
+                        after_end_time = max(after_end_time, ab_end)
+
+        # Snap to bar boundaries
+        bar_idx_start = bisect.bisect_right(bar_onsets, start_time) - 1
+        start_time = bar_onsets[max(0, bar_idx_start)]
+        bar_idx_end = bisect.bisect_left(bar_onsets, end_time)
+        if bar_idx_end < len(bar_onsets):
+            end_time = bar_onsets[bar_idx_end]
+        else:
+            end_time = orig_df.loc[orig_df["type"] == "note", "release"].max()
+
+        # Compute effective passage size for cropping (may differ from
+        # the original passage_bars/passage_qn if diff bounds expanded
+        # the window).
+        eff_bars: int | None = None
+        eff_qn: float | None = None
+        if passage_bars is not None:
+            start_idx = bar_onsets.index(start_time)
+            end_idx = bisect.bisect_left(bar_onsets, end_time)
+            eff_bars = max(1, end_idx - start_idx)
+        else:
+            eff_qn = end_time - start_time
+
+        # If no after-coordinate bounds were provided, use the same
+        # window (transforms that don't shift time).
+        if after_start_time is None:
+            after_start_time = start_time
+            after_end_time = end_time
+        # Snap after window to bar boundaries in the after_df
+        after_bar_onsets = sorted(
+            after_df.loc[after_df["type"] == "bar", "onset"].unique()
+        )
+        if after_bar_onsets:
+            abi_start = bisect.bisect_right(after_bar_onsets, after_start_time) - 1
+            after_start_time = after_bar_onsets[max(0, abi_start)]
+            abi_end = bisect.bisect_left(after_bar_onsets, after_end_time)
+            if abi_end < len(after_bar_onsets):
+                after_end_time = after_bar_onsets[abi_end]
+            else:
+                after_end_time = after_df.loc[
+                    after_df["type"] == "note", "release"
+                ].max()
+
+        # Compute effective after passage size
+        after_eff_bars: int | None = None
+        after_eff_qn: float | None = None
+        if passage_bars is not None and after_bar_onsets:
+            a_start_idx = bisect.bisect_left(after_bar_onsets, after_start_time)
+            a_end_idx = bisect.bisect_left(after_bar_onsets, after_end_time)
+            after_eff_bars = max(1, a_end_idx - a_start_idx)
+        else:
+            after_eff_qn = after_end_time - after_start_time
+
         # Get non-note metadata rows (time_signature, bar, etc.)
-        before_full = _crop_passage(orig_df, cand.bar_onset, passage_bars, passage_qn)
-        non_notes = before_full[before_full["type"] != "note"]
+        before_full = _crop_passage(orig_df, start_time, eff_bars, eff_qn)
+        before_non_notes = before_full[before_full["type"] != "note"]
 
         # Slice notes at excerpt boundaries
         before_notes = _slice_to_excerpt(orig_df, start_time, end_time)
-        before = sort_df(pd.concat([non_notes, before_notes], ignore_index=True))
+        before = sort_df(pd.concat([before_non_notes, before_notes], ignore_index=True))
         before = _quantize_for_comparison(before)
 
-        after_notes = _slice_to_excerpt(after_df, start_time, end_time)
-        after = sort_df(pd.concat([non_notes, after_notes], ignore_index=True))
+        after_full = _crop_passage(
+            after_df, after_start_time, after_eff_bars, after_eff_qn,
+        )
+        after_non_notes = after_full[after_full["type"] != "note"]
+        after_notes = _slice_to_excerpt(after_df, after_start_time, after_end_time)
+        after = sort_df(pd.concat([after_non_notes, after_notes], ignore_index=True))
         after = _quantize_for_comparison(after)
 
         before = _label_notes(before, cand.file_result.removed_by)

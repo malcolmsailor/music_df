@@ -41,7 +41,11 @@ TRANSFORMS: dict[str, Callable[..., pd.DataFrame]] = {}
 def transform(
     func: Callable[..., pd.DataFrame] | None = None,
     *,
-    diff_func: Callable[[pd.DataFrame, pd.DataFrame], tuple[set, set]] | None = None,
+    diff_func: Callable[
+        [pd.DataFrame, pd.DataFrame],
+        tuple[set, set] | tuple[set, set, list[tuple[float, float]]],
+    ]
+    | None = None,
 ) -> Callable[..., pd.DataFrame] | Callable[[Callable], Callable]:
     """Register a df -> df function as a named transform.
 
