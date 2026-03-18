@@ -341,7 +341,8 @@ def df2hum(
             collated = collate_spines(paths)
             merged = merge_spines(collated)
         staves.append(merged)
-    assert staves
+    if not staves:
+        raise ValueError("No notes in DataFrame; cannot export to Humdrum")
     with _get_temp_paths(len(staves)) as paths:
         for path, stave in zip(paths, staves):
             with open(path, "w") as outf:
