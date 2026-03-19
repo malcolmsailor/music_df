@@ -27,7 +27,7 @@ def get_unique_note_onset_indices(music_df: pd.DataFrame) -> np.ndarray:
     array([1, 4])
     """
     grouped = music_df[music_df.type == "note"].groupby("onset")
-    first_index = grouped.apply(lambda x: x.index[0])
+    first_index = grouped.apply(lambda x: x.index[0], include_groups=False)
     return first_index.values  # type:ignore
 
 
@@ -82,7 +82,7 @@ def get_unique_from_array_by_df(
     if not has_range_index(music_df):
         music_df = music_df.reset_index(drop=True)
     grouped = music_df.groupby(unique_col_name_or_names)
-    first_index = grouped.apply(lambda x: x.index[0])
+    first_index = grouped.apply(lambda x: x.index[0], include_groups=False)
     if return_indices:
         return a[first_index], first_index.values  # type:ignore
     return a[first_index]

@@ -11,6 +11,9 @@ Usage:
     python demo_transforms.py input/ output/ --transforms quantize_df,dedouble \\
         --params params.yaml
 
+    # Or pass a YAML file specifying transforms as a list of dicts:
+    python demo_transforms.py input/ output/ --transforms transforms.yaml
+
     # List available transforms:
     python demo_transforms.py --list
 
@@ -20,6 +23,13 @@ Where params.yaml looks like:
       tpq: 16
     dedouble:
       match_releases: false
+
+And transforms.yaml (list-of-dicts format) looks like:
+
+    - quantize_df:
+        tpq: 16
+    - dedouble:
+        match_releases: false
 """
 
 from __future__ import annotations
@@ -29,6 +39,7 @@ import bisect
 import json
 import random
 import sys
+from collections import Counter
 
 import yaml
 from dataclasses import dataclass, field
@@ -403,6 +414,23 @@ def _save_samples(
 # CLI
 # ---------------------------------------------------------------------------
 
+def _resolve_transforms(raw: str) -> list[dict[str, dict]]:
+    """Parse --transforms value: either comma-separated names or a YAML file path.
+
+    When *raw* points to an existing YAML/YML file, load it and expect a list
+    of single-key dicts (same format that :func:`apply_transforms` accepts).
+    Otherwise treat *raw* as comma-separated transform names.
+    """
+    path = Path(raw)
+    if path.suffix.lower() in (".yaml", ".yml") and path.is_file():
+        result = yaml.safe_load(path.read_text())
+        assert isinstance(result, list), (
+            f"Expected list of transforms in {path}, got {type(result).__name__}"
+        )
+        return result
+    return [{name.strip(): {}} for name in raw.split(",")]
+
+
 def _build_steps(
     names: list[str],
     params: dict[str, dict],
@@ -430,7 +458,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("output_folder", type=Path, help="Where to write output CSVs")
     parser.add_argument(
         "--transforms", type=str, required=True,
-        help="Comma-separated transform names, applied in order.",
+        help="Comma-separated transform names, or path to a YAML file "
+             "containing a list of {name: params} dicts.",
     )
     parser.add_argument(
         "--params", type=Path, default=None,
@@ -457,8 +486,26 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     _ensure_transforms_loaded()
 
-    names = [t.strip() for t in args.transforms.split(",")]
-    for name in names:
+    steps = _resolve_transforms(args.transforms)
+    params = {}
+
+    # If loaded from a YAML file, --params is ignored (params are inline).
+    # Otherwise merge in any --params file.
+    transforms_from_file = Path(args.transforms).suffix.lower() in (".yaml", ".yml") and Path(args.transforms).is_file()
+    if transforms_from_file:
+        params = {list(s.keys())[0]: list(s.values())[0] or {} for s in steps}
+    elif args.params is not None:
+        text = args.params.read_text()
+        if args.params.suffix in (".yaml", ".yml"):
+            params = yaml.safe_load(text)
+        else:
+            params = json.loads(text)
+        names = [list(s.keys())[0] for s in steps]
+        steps = _build_steps(names, params)
+
+    # Validate all transform names
+    for step in steps:
+        (name, _), = step.items()
         if name not in TRANSFORMS:
             print(
                 f"Unknown transform: {name!r}. "
@@ -467,15 +514,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             sys.exit(1)
 
-    params: dict[str, dict] = {}
-    if args.params is not None:
-        text = args.params.read_text()
-        if args.params.suffix in (".yaml", ".yml"):
-            params = yaml.safe_load(text)
-        else:
-            params = json.loads(text)
-
-    steps = _build_steps(names, params)
+    names = [list(s.keys())[0] for s in steps]
 
     paths = [
         p for p in args.input_folder.iterdir()
@@ -518,6 +557,41 @@ def main(argv: list[str] | None = None) -> None:
         deltas = [r.notes_before - r.notes_after for r in files_changed]
         print(f"Mean delta/file:   {mean(deltas):.1f}")
         print(f"Median delta/file: {median(deltas):.1f}")
+
+    # Per-transform breakdown
+    per_transform_removed: Counter[str] = Counter()
+    per_transform_added: Counter[str] = Counter()
+    per_transform_deltas: dict[str, list[int]] = {n: [] for n in names}
+    for r in results:
+        file_removed: Counter[str] = Counter()
+        file_added: Counter[str] = Counter()
+        for _tuple, tname in r.removed_by.items():
+            per_transform_removed[tname] += 1
+            file_removed[tname] += 1
+        for _tuple, tname in r.added_by.items():
+            per_transform_added[tname] += 1
+            file_added[tname] += 1
+        for n in names:
+            per_transform_deltas[n].append(file_removed[n] - file_added[n])
+
+    name_w = max(len(n) for n in names)
+    header = (
+        f"  {'transform':<{name_w}}  {'removed':>8}  {'added':>8}"
+        f"  {'net':>8}  {'mean/file':>10}  {'median/file':>12}"
+    )
+    print(f"\n{header}")
+    print(f"  {'-' * (len(header) - 2)}")
+    for n in names:
+        removed = per_transform_removed[n]
+        added = per_transform_added[n]
+        net = removed - added
+        deltas_n = per_transform_deltas[n]
+        mu = mean(deltas_n) if deltas_n else 0.0
+        med = median(deltas_n) if deltas_n else 0.0
+        print(
+            f"  {n:<{name_w}}  {removed:>8}  {added:>8}"
+            f"  {net:>8}  {mu:>10.1f}  {med:>12.1f}"
+        )
 
     # Collect and save excerpt samples
     passage_bars = args.bars

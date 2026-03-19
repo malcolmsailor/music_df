@@ -35,7 +35,7 @@ def _split_alteration(rn: str) -> tuple[str, str]:
 
 def _warn_if_lowercase_degrees(df, cols=("primary_degree", "secondary_degree")):
     for col in cols:
-        if col in df.columns and df[col].str.contains(r"[a-wy-z]", na=False).any():
+        if col in df.columns and df[col].str.contains(r"[ivx]", na=False).any():
             warnings.warn(
                 f"Column '{col}' contains lowercase roman numerals. "
                 "Use uppercase degrees with quality/secondary_mode columns instead.",
