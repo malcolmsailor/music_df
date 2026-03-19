@@ -83,6 +83,9 @@ def infer_barlines(
 ) -> pd.DataFrame:
     from music_df.sort_df import DF_TYPE_SORT_ORDER
 
+    if "bar" in df["type"].values:
+        return df
+
     time_sig_mask = df.type == "time_signature"
     ts_df = df[time_sig_mask]
 

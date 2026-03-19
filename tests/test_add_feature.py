@@ -220,6 +220,27 @@ def test_infer_barlines_no_time_signature():
     assert ts_other["denominator"] == 4
 
 
+def test_infer_barlines_noop_when_bars_exist():
+    """infer_barlines should be a no-op when bar rows already exist."""
+    df = pd.DataFrame(
+        {
+            "type": ["time_signature", "bar", "note", "bar", "note"],
+            "onset": [0.0, 0.0, 0.0, 4.0, 4.0],
+            "release": [float("nan"), 4.0, 4.0, 8.0, 8.0],
+            "pitch": [float("nan"), float("nan"), 60.0, float("nan"), 62.0],
+            "other": [
+                {"numerator": 4, "denominator": 4},
+                float("nan"),
+                float("nan"),
+                float("nan"),
+                float("nan"),
+            ],
+        }
+    )
+    result = infer_barlines(df)
+    pd.testing.assert_frame_equal(result, df)
+
+
 def test_infer_barlines_late_time_signature():
     """When the first time_signature comes after the first note, add a default 4/4 at 0."""
     df = pd.DataFrame(
