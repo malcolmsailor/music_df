@@ -17,6 +17,7 @@ functions (install with ``pip install music_df[doublings]``).
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 
 from music_df.transforms import transform
@@ -260,7 +261,28 @@ def _find_doublings(
     return _build_output(df, drop_indices, n_undedoubled_notes, n_non_notes)
 
 
-@transform
+def _dedouble_diff(before_df: pd.DataFrame, after_df: pd.DataFrame) -> tuple[set, set]:
+    """Multiset diff for dedouble transforms.
+
+    The default set-based diff misses removals when another note with the
+    same (onset, release, pitch) remains (e.g., an octave pair in track 6
+    is removed but track 8 still has the same pitch at that onset).
+    """
+    _KEY_COLS = ("onset", "release", "pitch")
+
+    def _note_counter(df: pd.DataFrame) -> Counter:
+        notes = df[df["type"] == "note"]
+        cols = [c for c in _KEY_COLS if c in notes.columns]
+        return Counter(notes[cols].itertuples(index=False, name=None))
+
+    before_counts = _note_counter(before_df)
+    after_counts = _note_counter(after_df)
+    removed = set(before_counts - after_counts)
+    added = set(after_counts - before_counts)
+    return removed, added
+
+
+@transform(diff_func=_dedouble_diff)
 def dedouble_unisons_across_instruments(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,
@@ -326,7 +348,7 @@ def dedouble_unisons_across_instruments(
     )
 
 
-@transform
+@transform(diff_func=_dedouble_diff)
 def dedouble_octaves(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,
@@ -395,7 +417,7 @@ class _Streak:
     gap: int = 0
 
 
-@transform
+@transform(diff_func=_dedouble_diff)
 def dedouble_octaves_within_instrument(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None = None,

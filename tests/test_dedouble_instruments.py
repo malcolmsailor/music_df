@@ -415,6 +415,36 @@ class TestOctaveDoublingKeepsLowVoice:
         assert sorted(remaining["track"].unique()) == [1]
 
 
+class TestOctaveDoublingWithChords:
+    def test_instrument_playing_chords_with_octave_doubling(self):
+        """Cross-instrument octave match detected when one instrument plays chords.
+
+        Track 1 plays two-note chords (e.g., 33+45 at onset 0), with the
+        two notes an octave apart. Track 2 doubles the upper note (45).
+        In mod12 mode, both chord tones map to the same pitch class, producing
+        duplicate tokens in track 1's sequence. The algorithm must collapse
+        these duplicates so the suffix array can match track 1 against track 2.
+        """
+        df = _make_df(
+            [
+                # Track 1: plays chords (lower + upper, an octave apart)
+                ("note", 1, 33, 0.0, 1.0),
+                ("note", 1, 45, 0.0, 1.0),
+                ("note", 1, 38, 1.0, 2.0),
+                ("note", 1, 50, 1.0, 2.0),
+                ("note", 1, 45, 2.0, 3.0),
+                ("note", 1, 57, 2.0, 3.0),
+                # Track 2: doubles the upper note of track 1's chords
+                ("note", 2, 45, 0.0, 1.0),
+                ("note", 2, 50, 1.0, 2.0),
+                ("note", 2, 57, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        # Track 2 is an octave doubling of track 1 and should be removed
+        assert result.attrs["n_dedoubled_notes"] == 6
+
+
 class TestOctaveMinLengthDefault:
     def test_2_note_octave_not_removed_by_default(self):
         """2-note octave doubling NOT removed with default min_length=3."""

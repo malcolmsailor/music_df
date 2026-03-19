@@ -40,6 +40,7 @@ import json
 import random
 import sys
 import time
+import traceback
 from collections import Counter
 
 import yaml
@@ -540,7 +541,12 @@ def main(argv: list[str] | None = None) -> None:
 
     results: list[FileResult] = []
     for path in tqdm(paths, desc="Processing"):
-        result = _process_one(path, steps)
+        try:
+            result = _process_one(path, steps)
+        except Exception:
+            print(f"\nError processing {path}:", file=sys.stderr)
+            traceback.print_exc()
+            continue
         if result is not None:
             results.append(result)
 

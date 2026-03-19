@@ -9,11 +9,11 @@ from typing import Iterable, Sequence
 import numpy as np  # Used by doctests
 import pandas as pd
 
-from music_df.dedouble_instruments import CANDIDATE_INSTRUMENT_COLUMNS
+from music_df.dedouble_instruments import CANDIDATE_INSTRUMENT_COLUMNS, _dedouble_diff
 from music_df.transforms import transform
 
 
-@transform
+@transform(diff_func=_dedouble_diff)
 def dedouble(
     df: pd.DataFrame,
     quantize: bool = True,
