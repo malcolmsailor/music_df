@@ -86,11 +86,23 @@ def infer_barlines(
     if notes.empty:
         return music_df
 
-    assert time_sigs and (
-        time_sigs[0].onset <= notes.iloc[0].onset
-    ), (
-        "There is no time signature before the first note; default time signature not yet implemented"
-    )
+    # Add a default 4/4 time signature if none exists before the first note
+    first_note_onset = notes.iloc[0].onset
+    if not time_sigs or time_sigs[0].onset > first_note_onset:
+        default_ts = pd.DataFrame(
+            {
+                "type": ["time_signature"],
+                "onset": [min(first_note_onset, 0.0)],
+                "other": [{"numerator": 4, "denominator": 4}],
+            }
+        )
+        # Preserve any extra columns from the original DataFrame
+        for col in music_df.columns:
+            if col not in default_ts.columns:
+                default_ts[col] = float("nan")
+        music_df = pd.concat([default_ts, music_df], ignore_index=True)
+        time_sig_mask = music_df.type == "time_signature"
+        time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
 
     assert len(time_sigs)
 

@@ -83,6 +83,44 @@ def test_infer_barlines(n_kern_files):
         assert output_df[output_df.type != "bar"].reset_index(drop=True).equals(df)
 
 
+def test_infer_barlines_no_time_signature():
+    """When there's no time_signature row, infer_barlines should add a default 4/4."""
+    df = pd.DataFrame(
+        {
+            "type": ["note", "note"],
+            "onset": [0.0, 4.0],
+            "release": [4.0, 8.0],
+            "pitch": [60, 62],
+        }
+    )
+    result = infer_barlines(df)
+    bars = result[result["type"] == "bar"]
+    assert len(bars) >= 2
+    time_sigs = result[result["type"] == "time_signature"]
+    assert len(time_sigs) == 1
+    ts_other = time_sigs.iloc[0]["other"]
+    assert ts_other["numerator"] == 4
+    assert ts_other["denominator"] == 4
+
+
+def test_infer_barlines_late_time_signature():
+    """When the first time_signature comes after the first note, add a default 4/4 at 0."""
+    df = pd.DataFrame(
+        {
+            "type": ["note", "time_signature", "note"],
+            "onset": [0.0, 4.0, 4.0],
+            "release": [4.0, float("nan"), 8.0],
+            "pitch": [60, float("nan"), 62],
+            "other": [float("nan"), {"numerator": 3, "denominator": 4}, float("nan")],
+        }
+    )
+    result = infer_barlines(df)
+    time_sigs = result[result["type"] == "time_signature"]
+    assert len(time_sigs) == 2
+    assert time_sigs.iloc[0]["onset"] == 0.0
+    assert time_sigs.iloc[0]["other"]["numerator"] == 4
+
+
 @pytest.mark.filterwarnings("ignore:note_off event")
 def test_make_instruments_explicit(n_kern_files):
     paths = get_input_midi_paths(seed=42)

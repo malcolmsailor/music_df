@@ -51,14 +51,15 @@ else:
         meter: Meter,
     ):
         """ """
-        float_durs, kern_durs = zip(
-            *dur_to_kern(
-                dur,
-                offset=measure_offset,
-                meter=meter,
-                raise_exception_on_unrecognized_duration=True,
-            )
+        result = dur_to_kern(
+            dur,
+            offset=measure_offset,
+            meter=meter,
+            raise_exception_on_unrecognized_duration=True,
         )
+        if not result:
+            return [], []
+        float_durs, kern_durs = zip(*result)
         offsets = [0] + list(itertools.accumulate(float_durs))[:-1]
         return offsets, [d + symbol for d in kern_durs]  # type:ignore
 

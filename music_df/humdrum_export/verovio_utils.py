@@ -13,13 +13,21 @@ class VerovioLoadError(Exception):
     """Raised when verovio crashes or times out loading a humdrum string."""
 
 
-def _probe_load(hum: str, *, timeout: int = 30) -> bool:
+def _probe_load(
+    hum: str, *, options: dict | None = None, timeout: int = 30
+) -> bool:
     """Try loading *hum* in a subprocess. Returns True if it succeeded."""
     with tempfile.NamedTemporaryFile(
         suffix=".krn", mode="w", delete=False
     ) as f:
         f.write(hum)
         tmp_path = f.name
+
+    # Options affect verovio's analysis passes (e.g. beam grouping depends
+    # on page width), so the probe must use the same options as the caller.
+    opts_snippet = ""
+    if options:
+        opts_snippet = f"tk.setOptions({options!r}); "
 
     try:
         result = subprocess.run(
@@ -28,6 +36,7 @@ def _probe_load(hum: str, *, timeout: int = 30) -> bool:
                 "-c",
                 "import verovio, sys; "
                 "tk = verovio.toolkit(); "
+                f"{opts_snippet}"
                 f"tk.loadData(open({tmp_path!r}).read()); "
                 "sys.exit(0 if tk.getPageCount() > 0 else 1)",
             ],
@@ -41,7 +50,7 @@ def _probe_load(hum: str, *, timeout: int = 30) -> bool:
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def verovio_safe_load(tk, hum: str) -> bool:
+def verovio_safe_load(tk, hum: str, *, options: dict | None = None) -> bool:
     """Load humdrum into verovio, probing in a subprocess first.
 
     Verovio's C++ code can segfault on certain inputs (e.g. complex beam
@@ -55,6 +64,9 @@ def verovio_safe_load(tk, hum: str) -> bool:
     Args:
         tk: A verovio.toolkit() instance.
         hum: Humdrum string to load.
+        options: Verovio options dict (as passed to ``tk.setOptions``).
+            The probe subprocess must use the same options because they
+            can affect analysis passes like beam grouping.
 
     Returns:
         True if filters were stripped (fallback was used), False otherwise.
@@ -62,7 +74,7 @@ def verovio_safe_load(tk, hum: str) -> bool:
     Raises:
         VerovioLoadError: If verovio crashes on the input even without filters.
     """
-    if _probe_load(hum):
+    if _probe_load(hum, options=options):
         tk.loadData(hum)
         return False
 
@@ -72,7 +84,7 @@ def verovio_safe_load(tk, hum: str) -> bool:
         hum_no_filter = "\n".join(
             line for line in hum.split("\n") if not line.startswith("!!!filter:")
         )
-        if _probe_load(hum_no_filter):
+        if _probe_load(hum_no_filter, options=options):
             logger.warning("Verovio crashed with filters; loading without them")
             tk.loadData(hum_no_filter)
             return True

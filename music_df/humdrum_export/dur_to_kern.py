@@ -298,6 +298,8 @@ else:
 
             meter = make_meter(meter)
         inp = _snap_to_musical(float(inp))
+        if inp <= 0:
+            return []
         offset = _snap_to_musical(float(offset))
         # Force-split at bar boundaries before metric splitting, since
         # split_at_metric_strong_points with min_split_dur may skip the

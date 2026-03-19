@@ -3,6 +3,22 @@ import pytest
 from music_df.humdrum_export.dur_to_kern import KernDurError, dur_to_kern
 
 
+class TestZeroDuration:
+    """dur_to_kern should return [] for durations that snap to zero."""
+
+    @pytest.mark.parametrize("inp", [0.0, 1e-9, 0.001])
+    def test_zero_or_near_zero_duration_returns_empty(self, inp):
+        result = dur_to_kern(inp, 0.0, "2/4")
+        assert result == []
+
+    @pytest.mark.parametrize("inp", [0.0, 1e-9, 0.001])
+    def test_zero_duration_with_raise_flag(self, inp):
+        result = dur_to_kern(
+            inp, 0.0, "2/4", raise_exception_on_unrecognized_duration=True,
+        )
+        assert result == []
+
+
 class TestTripletFloatDriftAccumulation:
     """Simulate the pipeline that produces drifted values from truncated
     triplet durations (as totable outputs them)."""
