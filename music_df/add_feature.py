@@ -138,6 +138,7 @@ def infer_barlines(
     if default_ts_row is not None:
         df = pd.concat([default_ts_row, df], ignore_index=True)
 
+    input_attrs = df.attrs
     is_sorted = df.attrs.get("sorted")
 
     if is_sorted:
@@ -170,6 +171,7 @@ def infer_barlines(
         out_df = sort_df(out_df, ignore_index=False)
         out_df = out_df.reset_index(drop=not keep_old_index)
 
+    out_df.attrs = input_attrs
     return out_df
 
 
