@@ -381,7 +381,7 @@ def _save_samples(
 
         # Slice notes at excerpt boundaries
         before_notes = _slice_to_excerpt(orig_df, start_time, end_time)
-        before = sort_df(pd.concat([before_non_notes, before_notes], ignore_index=True))
+        before = sort_df(pd.concat([before_non_notes, before_notes], ignore_index=True), force=True)
         before = _quantize_for_comparison(before)
 
         after_full = _crop_passage(
@@ -389,7 +389,7 @@ def _save_samples(
         )
         after_non_notes = after_full[after_full["type"] != "note"]
         after_notes = _slice_to_excerpt(after_df, after_start_time, after_end_time)
-        after = sort_df(pd.concat([after_non_notes, after_notes], ignore_index=True))
+        after = sort_df(pd.concat([after_non_notes, after_notes], ignore_index=True), force=True)
         after = _quantize_for_comparison(after)
 
         before = _label_notes(before, cand.file_result.removed_by)
