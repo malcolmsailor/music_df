@@ -87,9 +87,12 @@ def _prepare_notes(
         onset_vals = note_df["onset"]
         release_vals = note_df["release"]
 
-    inst_key = (
-        note_df[instrument_columns].astype(str).agg("|".join, axis=1)
-    )
+    if len(instrument_columns) == 1:
+        inst_key = note_df[instrument_columns[0]].astype(str)
+    else:
+        inst_key = (
+            note_df[instrument_columns].astype(str).agg("|".join, axis=1)
+        )
     note_df["_inst_key"] = inst_key
     note_df["_onset_q"] = onset_vals
     note_df["_release_q"] = release_vals
@@ -103,7 +106,7 @@ def _find_doublings(
     min_length: int,
     quantize: bool,
     ticks_per_quarter: int,
-    pitch_key_fn: Callable[[float], float],
+    pitch_key_mode: str,
     drop_selector: Callable[[int, int, float, float], int],
     release_ticks_per_quarter: int | None = None,
 ) -> pd.DataFrame:
@@ -111,9 +114,9 @@ def _find_doublings(
 
     Parameters
     ----------
-    pitch_key_fn : callable
-        Maps a pitch value to the token key component.
-        Identity for exact matching, ``% 12`` for octave-equivalent.
+    pitch_key_mode : str
+        ``"identity"`` for exact pitch matching, ``"mod12"`` for
+        octave-equivalent matching.
     drop_selector : callable
         ``(inst_a, inst_b, passage_mean_a, passage_mean_b) -> inst_to_drop``
     """
@@ -136,11 +139,38 @@ def _find_doublings(
     if note_df.empty:
         return _build_output(df, set(), n_undedoubled_notes, n_non_notes)
 
-    groups = sorted(note_df.groupby("_inst_key", sort=True))
+    # --- Compute pitch keys vectorized ---
+    pitch_vals = note_df["pitch"].values
+    if pitch_key_mode == "mod12":
+        pitch_keys = pitch_vals % 12
+    else:
+        pitch_keys = pitch_vals.copy()
+    note_df["_pitch_key"] = pitch_keys
 
-    # --- 5. Tokenize ---
-    token_map: dict[tuple, int] = {}
-    next_token = 0
+    # --- Assign token IDs via np.unique on structured array ---
+    onset_q = note_df["_onset_q"].values
+    release_q = note_df["_release_q"].values
+    struct = np.empty(len(note_df), dtype=[
+        ("onset_q", np.float64), ("release_q", np.float64),
+        ("pitch_key", np.float64),
+    ])
+    struct["onset_q"] = onset_q
+    struct["release_q"] = release_q
+    struct["pitch_key"] = pitch_keys
+    _, token_ids = np.unique(struct, return_inverse=True)
+    note_df["_token"] = token_ids
+
+    # --- Sort once, then groups are pre-sorted ---
+    note_df = note_df.sort_values(["_inst_key", "onset", "pitch"])
+    orig_indices = note_df.index.values
+
+    inst_key_vals = note_df["_inst_key"].values
+    token_vals = note_df["_token"].values
+    pitch_col = note_df["pitch"].values
+
+    # --- Build per-group arrays without iterrows ---
+    unique_insts, group_starts = np.unique(inst_key_vals, return_index=True)
+    group_ends = np.append(group_starts[1:], len(inst_key_vals))
 
     sequences: list[np.ndarray] = []
     index_maps: list[np.ndarray] = []
@@ -148,76 +178,85 @@ def _find_doublings(
     pitch_arrays: list[np.ndarray] = []
     sentinel = -1
 
-    for inst_idx, (inst_name, grp) in enumerate(groups):
-        grp_sorted = grp.sort_values(["onset", "pitch"]).reset_index()
-        tokens = []
-        pitches = []
-        for _, row in grp_sorted.iterrows():
-            key = (row["_onset_q"], row["_release_q"], pitch_key_fn(row["pitch"]))
-            if key not in token_map:
-                token_map[key] = next_token
-                next_token += 1
-            tokens.append(token_map[key])
-            pitches.append(row["pitch"])
+    for inst_idx in range(len(unique_insts)):
+        start, end = group_starts[inst_idx], group_ends[inst_idx]
+        grp_tokens = token_vals[start:end]
+        grp_indices = orig_indices[start:end]
+        grp_pitches = pitch_col[start:end]
 
-        arr = np.array(tokens, dtype=np.int64)
-        idx_arr = grp_sorted["index"].values
-        pitch_arr = np.array(pitches, dtype=np.float64)
-
-        sequences.append(arr)
+        n = end - start
+        sequences.append(grp_tokens.astype(np.int64))
         sequences.append(np.array([sentinel], dtype=np.int64))
         sentinel -= 1
 
-        index_maps.append(idx_arr)
+        index_maps.append(grp_indices)
         index_maps.append(np.array([-1]))
 
-        inst_labels.append(np.full(len(arr), inst_idx, dtype=np.int64))
+        inst_labels.append(np.full(n, inst_idx, dtype=np.int64))
         inst_labels.append(np.array([-1], dtype=np.int64))
 
-        pitch_arrays.append(pitch_arr)
+        pitch_arrays.append(grp_pitches.astype(np.float64))
         pitch_arrays.append(np.array([np.nan]))
 
-    # --- 6. Concatenate ---
+    # --- Concatenate ---
     concatenated = np.concatenate(sequences)
     all_indices = np.concatenate(index_maps)
     all_inst = np.concatenate(inst_labels)
     all_pitches = np.concatenate(pitch_arrays)
 
-    # --- 7. Suffix array + LCP ---
+    # --- Suffix array + LCP ---
     sa = divsufsort(concatenated)
     lcp = kasai(concatenated, sa)
 
-    # --- 8. Scan for cross-instrument doublings ---
+    # --- Scan for cross-instrument doublings (vectorized filter) ---
+    lcp_arr = np.asarray(lcp)
+    sa_arr = np.asarray(sa)
+    n_sa = len(sa_arr)
+
+    # Filter to candidates where lcp >= min_length
+    cand_mask = lcp_arr[: n_sa - 1] >= min_length
+    cand_idx = np.where(cand_mask)[0]
+
+    if len(cand_idx) == 0:
+        return _build_output(df, set(), n_undedoubled_notes, n_non_notes)
+
+    pos_a_arr = sa_arr[cand_idx]
+    pos_b_arr = sa_arr[cand_idx + 1]
+    inst_a_arr = all_inst[pos_a_arr]
+    inst_b_arr = all_inst[pos_b_arr]
+
+    # Keep only cross-instrument, non-sentinel pairs
+    valid = (inst_a_arr >= 0) & (inst_b_arr >= 0) & (inst_a_arr != inst_b_arr)
+    cand_idx = cand_idx[valid]
+    pos_a_arr = pos_a_arr[valid]
+    pos_b_arr = pos_b_arr[valid]
+    inst_a_arr = inst_a_arr[valid]
+    inst_b_arr = inst_b_arr[valid]
+
     drop_indices: set[int] = set()
+    total_len = len(all_inst)
 
-    for i in range(len(sa) - 1):
-        match_len = lcp[i]
-        if match_len < min_length:
-            continue
-
-        pos_a = sa[i]
-        pos_b = sa[i + 1]
-        inst_a = all_inst[pos_a]
-        inst_b = all_inst[pos_b]
-
-        if inst_a < 0 or inst_b < 0:
-            continue
-        if inst_a == inst_b:
-            continue
+    for k in range(len(cand_idx)):
+        match_len = int(lcp_arr[cand_idx[k]])
+        pos_a = int(pos_a_arr[k])
+        pos_b = int(pos_b_arr[k])
+        inst_a = int(inst_a_arr[k])
+        inst_b = int(inst_b_arr[k])
 
         passage_mean_a = all_pitches[pos_a:pos_a + match_len].mean()
         passage_mean_b = all_pitches[pos_b:pos_b + match_len].mean()
         drop_inst = drop_selector(inst_a, inst_b, passage_mean_a, passage_mean_b)
         drop_pos = pos_a if drop_inst == inst_a else pos_b
 
-        for offset in range(match_len):
-            p = drop_pos + offset
-            if p < len(all_inst) and all_inst[p] >= 0:
-                orig_idx = all_indices[p]
-                if orig_idx >= 0:
-                    drop_indices.add(int(orig_idx))
+        # Vectorized offset collection
+        end = min(drop_pos + match_len, total_len)
+        offsets = np.arange(drop_pos, end)
+        valid_mask = all_inst[offsets] >= 0
+        orig = all_indices[offsets[valid_mask]]
+        valid_orig = orig[orig >= 0]
+        drop_indices.update(valid_orig.tolist())
 
-    # --- 9. Build output ---
+    # --- Build output ---
     return _build_output(df, drop_indices, n_undedoubled_notes, n_non_notes)
 
 
@@ -281,7 +320,7 @@ def dedouble_unisons_across_instruments(
     """
     return _find_doublings(
         df, instrument_columns, min_length, quantize, ticks_per_quarter,
-        pitch_key_fn=lambda p: p,
+        pitch_key_mode="identity",
         drop_selector=lambda a, b, _ma, _mb: b if a < b else a,
         release_ticks_per_quarter=release_ticks_per_quarter,
     )
@@ -332,7 +371,7 @@ def dedouble_octaves(
 
     return _find_doublings(
         df, instrument_columns, min_length, quantize, ticks_per_quarter,
-        pitch_key_fn=lambda p: p % 12,
+        pitch_key_mode="mod12",
         drop_selector=_drop_by_register,
         release_ticks_per_quarter=release_ticks_per_quarter,
     )
