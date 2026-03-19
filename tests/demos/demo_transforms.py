@@ -65,6 +65,9 @@ SUPPORTED_EXTENSIONS = {".csv", ".mid", ".midi", ".xml", ".mxl", ".mscx", ".mscz
 # Columns that together identify a "note identity" for symmetric diffing
 _NOTE_KEY_COLS = ("onset", "release", "pitch")
 
+# Temporary column used to track note identity through transforms
+_NOTE_ID_COL = "_note_id"
+
 TICKS_PER_QUARTER = 16
 
 
@@ -84,10 +87,24 @@ def _note_tuples(df: pd.DataFrame) -> set[tuple]:
     return set(notes[cols].itertuples(index=False, name=None))
 
 
-def _label_notes(
+def _label_notes_by_id(
+    df: pd.DataFrame, label_map: dict[int, str],
+) -> pd.DataFrame:
+    """Add a ``label`` column using _note_id -> transform name mapping."""
+    df = df.copy()
+    if not label_map:
+        df["label"] = pd.NA
+        return df
+    notes = df["type"] == "note"
+    ids = df[_NOTE_ID_COL].where(notes)
+    df["label"] = ids.map(label_map).where(notes, other=pd.NA)
+    return df
+
+
+def _label_notes_by_tuple(
     df: pd.DataFrame, label_map: dict[tuple, str],
 ) -> pd.DataFrame:
-    """Add a ``label`` column with the transform name for changed notes, NA otherwise."""
+    """Add a ``label`` column using (onset, release, pitch) -> transform name mapping."""
     df = df.copy()
     if not label_map:
         df["label"] = pd.NA
@@ -111,8 +128,9 @@ class FileResult:
     notes_after: int
     before_df: pd.DataFrame
     after_df: pd.DataFrame
+    # Per-transform diffs: maps _note_id -> transform name
+    removed_by: dict[int, str]
     # Per-transform diffs: maps note tuple -> transform name
-    removed_by: dict[tuple, str]
     added_by: dict[tuple, str]
     # Time intervals that should be shown intact in excerpts.
     # Each bound is (before_start, before_end) or
@@ -120,6 +138,8 @@ class FileResult:
     # that shift the timeline.
     diff_bounds: list[tuple] = field(default_factory=list)
     timings: dict[str, float] = field(default_factory=dict)
+    # Maps original bar onsets to shifted bar onsets (from remove_repeated_bars)
+    bar_onset_map: dict[float, float] = field(default_factory=dict)
 
 
 def _ensure_barlines(df: pd.DataFrame) -> pd.DataFrame:
@@ -138,38 +158,71 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
     df = _ensure_barlines(df)
     notes_before = int((df["type"] == "note").sum())
 
+    # Assign stable IDs to note rows so we can track them through transforms
+    # that modify onset/release values.
+    note_mask = df["type"] == "note"
+    df.loc[note_mask, _NOTE_ID_COL] = range(int(note_mask.sum()))
+
     # Apply transforms one at a time, tracking which notes each step changes.
     # Earlier transforms take priority (a note is attributed to the first
     # transform that touches it).
-    removed_by: dict[tuple, str] = {}
+    removed_by: dict[int, str] = {}
     added_by: dict[tuple, str] = {}
     timings: dict[str, float] = {}
     all_diff_bounds: list[tuple[float, float]] = []
     current = df
     for step in steps:
         (name, kwargs), = step.items()
+        # Track which note IDs exist before this step
+        ids_before = set(
+            current.loc[current["type"] == "note", _NOTE_ID_COL]
+            .dropna().astype(int)
+        )
         before_q = _quantize_for_comparison(current)
+
         t0 = time.perf_counter()
         current = apply_transforms(current, [step])
         timings[name] = time.perf_counter() - t0
-        after_q = _quantize_for_comparison(current)
 
+        after_notes = current[current["type"] == "note"]
+        ids_after = set(after_notes[_NOTE_ID_COL].dropna().astype(int))
+
+        # Removals: IDs that disappeared
+        for nid in ids_before - ids_after:
+            if nid in removed_by:
+                removed_by[nid] += "+" + name
+            else:
+                removed_by[nid] = name
+
+        # Additions: notes without an ID were created by this step;
+        # track by (onset, release, pitch) tuple in the after state.
+        after_q = _quantize_for_comparison(current)
+        new_notes = after_q[(after_q["type"] == "note") & after_q[_NOTE_ID_COL].isna()]
+        if not new_notes.empty:
+            cols = [c for c in _NOTE_KEY_COLS if c in new_notes.columns]
+            for t in new_notes[cols].itertuples(index=False, name=None):
+                if t in added_by:
+                    added_by[t] += "+" + name
+                else:
+                    added_by[t] = name
+            # Give new notes IDs so later transforms can track them
+            max_id = after_notes[_NOTE_ID_COL].dropna().max()
+            next_id = int(max_id) + 1 if not pd.isna(max_id) else 0
+            new_mask = (current["type"] == "note") & current[_NOTE_ID_COL].isna()
+            current.loc[new_mask, _NOTE_ID_COL] = range(
+                next_id, next_id + int(new_mask.sum())
+            )
+
+        # Extract diff_bounds from custom diff_func if available
         custom_diff = getattr(TRANSFORMS[name], "diff_func", None)
         if custom_diff is not None:
             diff_result = custom_diff(before_q, after_q)
-            removed, added = diff_result[0], diff_result[1]
             if len(diff_result) > 2:
                 all_diff_bounds.extend(diff_result[2])
-        else:
-            removed = _note_tuples(before_q) - _note_tuples(after_q)
-            added = _note_tuples(after_q) - _note_tuples(before_q)
-
-        for t in removed:
-            removed_by.setdefault(t, name)
-        for t in added:
-            added_by.setdefault(t, name)
 
     notes_after = int((current["type"] == "note").sum())
+
+    bar_onset_map = current.attrs.get("bar_onset_map", {})
 
     return FileResult(
         path=path,
@@ -181,6 +234,7 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
         added_by=added_by,
         diff_bounds=all_diff_bounds,
         timings=timings,
+        bar_onset_map=bar_onset_map,
     )
 
 
@@ -237,7 +291,17 @@ def _collect_candidates(
             continue
         bar_onsets = sorted(bar_rows["onset"].unique())
 
-        changed = set(result.removed_by) | set(result.added_by)
+        # Collect onsets of all changed notes for passage counting.
+        # removed_by keys are _note_ids; look up their onsets from before_df.
+        removed_onsets = []
+        if result.removed_by:
+            notes = df[df["type"] == "note"]
+            for nid in result.removed_by:
+                matches = notes[notes[_NOTE_ID_COL] == nid]
+                if not matches.empty:
+                    removed_onsets.append(matches.iloc[0]["onset"])
+        added_onsets = [onset for onset, release, pitch in result.added_by]
+        changed_onsets = removed_onsets + added_onsets
 
         for bar_idx, bar_onset in enumerate(bar_onsets):
             end_onset = _get_passage_end(
@@ -247,7 +311,7 @@ def _collect_candidates(
                 continue
 
             n_changed = sum(
-                1 for onset, release, pitch in changed
+                1 for onset in changed_onsets
                 if bar_onset <= onset < end_onset
             )
             if n_changed > 0:
@@ -346,11 +410,18 @@ def _save_samples(
         else:
             eff_qn = end_time - start_time
 
-        # If no after-coordinate bounds were provided, use the same
-        # window (transforms that don't shift time).
+        # If no after-coordinate bounds were provided, use bar_onset_map
+        # to translate before coordinates to after coordinates (handles
+        # timeline shifts from remove_repeated_bars). Falls back to the
+        # same window if no mapping is available.
         if after_start_time is None:
-            after_start_time = start_time
-            after_end_time = end_time
+            bom = cand.file_result.bar_onset_map
+            if bom:
+                after_start_time = bom.get(start_time, start_time)
+                after_end_time = bom.get(end_time, end_time)
+            else:
+                after_start_time = start_time
+                after_end_time = end_time
         # Snap after window to bar boundaries in the after_df
         after_bar_onsets = sorted(
             after_df.loc[after_df["type"] == "bar", "onset"].unique()
@@ -393,11 +464,15 @@ def _save_samples(
         after = sort_df(pd.concat([after_non_notes, after_notes], ignore_index=True), force=True)
         after = _quantize_for_comparison(after)
 
-        before = _label_notes(before, cand.file_result.removed_by)
-        after = _label_notes(after, cand.file_result.added_by)
+        before = _label_notes_by_id(before, cand.file_result.removed_by)
+        after = _label_notes_by_tuple(after, cand.file_result.added_by)
 
-        before.to_csv(output_folder / f"{excerpt_id}_before.csv", index=False)
-        after.to_csv(output_folder / f"{excerpt_id}_after.csv", index=False)
+        before.drop(columns=[_NOTE_ID_COL], errors="ignore").to_csv(
+            output_folder / f"{excerpt_id}_before.csv", index=False,
+        )
+        after.drop(columns=[_NOTE_ID_COL], errors="ignore").to_csv(
+            output_folder / f"{excerpt_id}_after.csv", index=False,
+        )
 
         lookup_rows.append(
             {

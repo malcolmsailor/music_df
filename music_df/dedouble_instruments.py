@@ -101,7 +101,7 @@ def _prepare_notes(
     return note_df, n_non_notes, instrument_columns
 
 
-def _find_doublings(
+def _find_doublings_drop_indices(
     df: pd.DataFrame,
     instrument_columns: Sequence[str] | None,
     min_length: int,
@@ -110,16 +110,20 @@ def _find_doublings(
     pitch_key_mode: str,
     drop_selector: Callable[[int, int, float, float], int],
     release_ticks_per_quarter: int | None = None,
-) -> pd.DataFrame:
-    """Shared core for exact and octave dedoubling.
+) -> tuple[set[int], pd.DataFrame, pd.DataFrame, int, int, list[str]]:
+    """Core suffix-array doubling detection, returning raw drop indices.
 
-    Parameters
-    ----------
-    pitch_key_mode : str
-        ``"identity"`` for exact pitch matching, ``"mod12"`` for
-        octave-equivalent matching.
-    drop_selector : callable
-        ``(inst_a, inst_b, passage_mean_a, passage_mean_b) -> inst_to_drop``
+    Returns
+    -------
+    drop_indices : set[int]
+        DataFrame indices to drop.
+    note_df : pd.DataFrame
+        Notes with ``_inst_key``, ``_onset_q``, ``_release_q`` columns.
+    df : pd.DataFrame
+        Copy of input df.
+    n_undedoubled_notes : int
+    n_non_notes : int
+    instrument_columns : list[str]
     """
     try:
         from pydivsufsort import divsufsort, kasai
@@ -138,7 +142,7 @@ def _find_doublings(
     )
 
     if note_df.empty:
-        return _build_output(df, set(), n_undedoubled_notes, n_non_notes)
+        return set(), note_df, df, n_undedoubled_notes, n_non_notes, instrument_columns
 
     # --- Compute pitch keys vectorized ---
     pitch_vals = note_df["pitch"].values
@@ -219,7 +223,7 @@ def _find_doublings(
     cand_idx = np.where(cand_mask)[0]
 
     if len(cand_idx) == 0:
-        return _build_output(df, set(), n_undedoubled_notes, n_non_notes)
+        return set(), note_df, df, n_undedoubled_notes, n_non_notes, instrument_columns
 
     pos_a_arr = sa_arr[cand_idx]
     pos_b_arr = sa_arr[cand_idx + 1]
@@ -257,7 +261,35 @@ def _find_doublings(
         valid_orig = orig[orig >= 0]
         drop_indices.update(valid_orig.tolist())
 
-    # --- Build output ---
+    return drop_indices, note_df, df, n_undedoubled_notes, n_non_notes, instrument_columns
+
+
+def _find_doublings(
+    df: pd.DataFrame,
+    instrument_columns: Sequence[str] | None,
+    min_length: int,
+    quantize: bool,
+    ticks_per_quarter: int,
+    pitch_key_mode: str,
+    drop_selector: Callable[[int, int, float, float], int],
+    release_ticks_per_quarter: int | None = None,
+) -> pd.DataFrame:
+    """Shared core for exact and octave dedoubling.
+
+    Parameters
+    ----------
+    pitch_key_mode : str
+        ``"identity"`` for exact pitch matching, ``"mod12"`` for
+        octave-equivalent matching.
+    drop_selector : callable
+        ``(inst_a, inst_b, passage_mean_a, passage_mean_b) -> inst_to_drop``
+    """
+    drop_indices, note_df, df, n_undedoubled_notes, n_non_notes, inst_cols = (
+        _find_doublings_drop_indices(
+            df, instrument_columns, min_length, quantize, ticks_per_quarter,
+            pitch_key_mode, drop_selector, release_ticks_per_quarter,
+        )
+    )
     return _build_output(df, drop_indices, n_undedoubled_notes, n_non_notes)
 
 
@@ -348,6 +380,163 @@ def dedouble_unisons_across_instruments(
     )
 
 
+def _find_polyphonic_octave_doublings(
+    note_df: pd.DataFrame,
+    polyphonic_insts: set[str],
+    already_dropped: set[int],
+    min_length: int,
+    pitch_threshold: float,
+    match_releases: bool = True,
+    max_gap_onsets: int = 0,
+    octave_intervals: set[int] = frozenset({12, 24, 36}),
+) -> set[int]:
+    """Find octave doublings involving polyphonic instruments via onset-grouped
+    cross-instrument matching.
+
+    For each instrument pair where at least one is polyphonic, groups notes by
+    onset, finds cross-instrument octave pairs, and tracks streaks using the
+    same ``_Streak`` / ``_finalize_streak`` logic as within-instrument
+    dedoubling.
+    """
+    if already_dropped:
+        mask = ~note_df.index.isin(already_dropped)
+        active = note_df[mask]
+    else:
+        active = note_df
+    if active.empty:
+        return set()
+
+    drop_indices: set[int] = set()
+    unique_insts = active["_inst_key"].unique()
+
+    # Pre-extract sorted arrays per instrument (once), keyed by inst_key
+    inst_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+    for inst_key in unique_insts:
+        inst_notes = active[active["_inst_key"] == inst_key].sort_values(
+            ["_onset_q", "pitch"]
+        )
+        inst_arrays[inst_key] = (
+            inst_notes["pitch"].values,
+            inst_notes["_onset_q"].values,
+            inst_notes["_release_q"].values,
+            inst_notes.index.values,
+        )
+
+    for i, inst_a in enumerate(unique_insts):
+        for inst_b in unique_insts[i + 1:]:
+            if inst_a not in polyphonic_insts and inst_b not in polyphonic_insts:
+                continue
+
+            pitches_a, onsets_a, releases_a, indices_a = inst_arrays[inst_a]
+            pitches_b, onsets_b, releases_b, indices_b = inst_arrays[inst_b]
+
+            shared_onsets = np.intersect1d(
+                np.unique(onsets_a), np.unique(onsets_b)
+            )
+            if len(shared_onsets) < min_length:
+                continue
+
+            shared_onsets.sort()
+
+            # Precompute onset boundaries via searchsorted
+            a_starts = np.searchsorted(onsets_a, shared_onsets, side="left")
+            a_ends = np.searchsorted(onsets_a, shared_onsets, side="right")
+            b_starts = np.searchsorted(onsets_b, shared_onsets, side="left")
+            b_ends = np.searchsorted(onsets_b, shared_onsets, side="right")
+
+            active_streaks: list[_Streak] = []
+
+            for o_idx in range(len(shared_onsets)):
+                sa, ea = a_starts[o_idx], a_ends[o_idx]
+                sb, eb = b_starts[o_idx], b_ends[o_idx]
+
+                # Find all cross-instrument octave pairs at this onset
+                pairs_at_onset: list[tuple[int, int, int, float, float]] = []
+                for ia in range(sa, ea):
+                    for ib in range(sb, eb):
+                        interval = int(abs(pitches_a[ia] - pitches_b[ib]))
+                        if interval not in octave_intervals:
+                            continue
+                        if match_releases and releases_a[ia] != releases_b[ib]:
+                            continue
+                        if pitches_a[ia] < pitches_b[ib]:
+                            lo_idx = int(indices_a[ia])
+                            hi_idx = int(indices_b[ib])
+                            lo_p = float(pitches_a[ia])
+                            hi_p = float(pitches_b[ib])
+                        else:
+                            lo_idx = int(indices_b[ib])
+                            hi_idx = int(indices_a[ia])
+                            lo_p = float(pitches_b[ib])
+                            hi_p = float(pitches_a[ia])
+                        pairs_at_onset.append((
+                            interval, lo_idx, hi_idx, lo_p, hi_p,
+                        ))
+
+                # Match active streaks to pairs (same logic as within-instrument)
+                consumed: set[int] = set()
+                streaks_to_remove: list[int] = []
+
+                for s_idx, streak in enumerate(active_streaks):
+                    best_pair_idx = None
+                    best_dist = float("inf")
+                    for p_idx, (interval, _li, _ui, lp, _up) in enumerate(
+                        pairs_at_onset
+                    ):
+                        if p_idx in consumed:
+                            continue
+                        if interval != streak.interval:
+                            continue
+                        dist = abs(lp - streak.last_lower_pitch)
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_pair_idx = p_idx
+
+                    if best_pair_idx is not None:
+                        consumed.add(best_pair_idx)
+                        _, li, ui, lp, up = pairs_at_onset[best_pair_idx]
+                        streak.lower_indices.append(li)
+                        streak.upper_indices.append(ui)
+                        streak.pitch_sum += lp + up
+                        streak.pitch_count += 2
+                        streak.last_lower_pitch = lp
+                        streak.length += 1
+                        streak.gap = 0
+                    else:
+                        streak.gap += 1
+                        if streak.gap > max_gap_onsets:
+                            if streak.length >= min_length:
+                                _finalize_streak(
+                                    streak, pitch_threshold, drop_indices
+                                )
+                            streaks_to_remove.append(s_idx)
+
+                for s_idx in reversed(streaks_to_remove):
+                    del active_streaks[s_idx]
+
+                for p_idx, (interval, li, ui, lp, up) in enumerate(
+                    pairs_at_onset
+                ):
+                    if p_idx in consumed:
+                        continue
+                    active_streaks.append(_Streak(
+                        interval=interval,
+                        lower_indices=[li],
+                        upper_indices=[ui],
+                        pitch_sum=lp + up,
+                        pitch_count=2,
+                        last_lower_pitch=lp,
+                        length=1,
+                        gap=0,
+                    ))
+
+            for streak in active_streaks:
+                if streak.length >= min_length:
+                    _finalize_streak(streak, pitch_threshold, drop_indices)
+
+    return drop_indices
+
+
 @transform(diff_func=_dedouble_diff)
 def dedouble_octaves(
     df: pd.DataFrame,
@@ -367,6 +556,11 @@ def dedouble_octaves(
     *pitch_threshold* controls which voice to keep: doublings whose mean pitch
     is >= threshold keep the higher voice (melody), otherwise keep the lower
     voice (bass).
+
+    Uses a two-pass approach: first a suffix-array pass (fast, handles
+    monophonic cases), then an onset-grouped cross-instrument pass for
+    pairs involving polyphonic instruments where the suffix array misses
+    doublings due to extra tokens from chords.
 
     >>> import pandas as pd
     >>> df = pd.DataFrame({
@@ -391,12 +585,41 @@ def dedouble_octaves(
             # Bass register: keep lower, drop higher
             return inst_a if passage_mean_a > passage_mean_b else inst_b
 
-    return _find_doublings(
-        df, instrument_columns, min_length, quantize, ticks_per_quarter,
-        pitch_key_mode="mod12",
-        drop_selector=_drop_by_register,
-        release_ticks_per_quarter=release_ticks_per_quarter,
+    # Pass 1: suffix array (handles monophonic instruments)
+    drop_indices, note_df, df_copy, n_undedoubled, n_non_notes, inst_cols = (
+        _find_doublings_drop_indices(
+            df, instrument_columns, min_length, quantize, ticks_per_quarter,
+            pitch_key_mode="mod12",
+            drop_selector=_drop_by_register,
+            release_ticks_per_quarter=release_ticks_per_quarter,
+        )
     )
+
+    # Pass 2: polyphonic fallback
+    if not note_df.empty:
+        # Fast O(N) check: any instrument with >1 note at same onset?
+        sorted_df = note_df.sort_values(["_inst_key", "_onset_q"])
+        ik = sorted_df["_inst_key"].values
+        oq = sorted_df["_onset_q"].values
+        is_dup = (ik[:-1] == ik[1:]) & (oq[:-1] == oq[1:])
+        has_poly = np.any(is_dup)
+        if has_poly:
+            # Only compute which instruments are polyphonic
+            dup_indices = np.where(is_dup)[0]
+            polyphonic_insts = set(ik[dup_indices])
+        else:
+            polyphonic_insts = set()
+        if polyphonic_insts:
+            poly_drops = _find_polyphonic_octave_doublings(
+                note_df,
+                polyphonic_insts,
+                already_dropped=drop_indices,
+                min_length=min_length,
+                pitch_threshold=pitch_threshold,
+            )
+            drop_indices |= poly_drops
+
+    return _build_output(df_copy, drop_indices, n_undedoubled, n_non_notes)
 
 
 # ---------------------------------------------------------------------------

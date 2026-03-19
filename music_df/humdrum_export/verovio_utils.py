@@ -38,7 +38,9 @@ def _probe_load(
                 "tk = verovio.toolkit(); "
                 f"{opts_snippet}"
                 f"tk.loadData(open({tmp_path!r}).read()); "
-                "sys.exit(0 if tk.getPageCount() > 0 else 1)",
+                "n = tk.getPageCount(); "
+                "[tk.renderToSVG(i) for i in range(1, n + 1)]; "
+                "sys.exit(0 if n > 0 else 1)",
             ],
             capture_output=True,
             timeout=timeout,

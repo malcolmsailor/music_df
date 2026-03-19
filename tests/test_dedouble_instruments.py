@@ -806,3 +806,105 @@ class TestWithinOctaveMixedNotes:
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
         # Higher voices (72,74,76) kept + non-doubled (67,69,71)
         assert remaining_pitches == [67, 69, 71, 72, 74, 76]
+
+
+# ===================================================================
+# Cross-instrument octave dedoubling with polyphonic instruments
+# ===================================================================
+
+
+class TestPolyphonicCrossInstrumentOctave:
+    def test_polyphonic_instrument_octave_doubling(self):
+        """Polyphonic instrument doubled at octave by monophonic instrument.
+
+        Track 1 plays 2-note chords; one voice is doubled at the octave
+        by track 4's monophonic line. 3 consecutive onsets -> caught with
+        min_length=3.
+        """
+        df = _make_df(
+            [
+                # Track 1: polyphonic (2-note chords), low register
+                ("note", 1, 38, 0.0, 1.0),
+                ("note", 1, 45, 0.0, 1.0),
+                ("note", 1, 40, 1.0, 2.0),
+                ("note", 1, 47, 1.0, 2.0),
+                ("note", 1, 42, 2.0, 3.0),
+                ("note", 1, 49, 2.0, 3.0),
+                # Track 4: monophonic, doubles track 1's upper voice an octave up
+                # 45+12=57, 47+12=59, 49+12=61
+                ("note", 4, 57, 0.0, 1.0),
+                ("note", 4, 59, 1.0, 2.0),
+                ("note", 4, 61, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        # The octave doubling should be detected and one voice removed
+        assert result.attrs["n_dedoubled_notes"] == 6
+
+    def test_both_instruments_polyphonic(self):
+        """Both instruments polyphonic; one voice in each doubles at octave."""
+        df = _make_df(
+            [
+                # Track 1: 2-note chords, low register
+                ("note", 1, 36, 0.0, 1.0),
+                ("note", 1, 43, 0.0, 1.0),
+                ("note", 1, 38, 1.0, 2.0),
+                ("note", 1, 45, 1.0, 2.0),
+                ("note", 1, 40, 2.0, 3.0),
+                ("note", 1, 47, 2.0, 3.0),
+                # Track 2: 2-note chords, upper voice doubles track 1 upper at +12
+                ("note", 2, 50, 0.0, 1.0),
+                ("note", 2, 55, 0.0, 1.0),  # 43+12=55
+                ("note", 2, 52, 1.0, 2.0),
+                ("note", 2, 57, 1.0, 2.0),  # 45+12=57
+                ("note", 2, 54, 2.0, 3.0),
+                ("note", 2, 59, 2.0, 3.0),  # 47+12=59
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        assert result.attrs["n_dedoubled_notes"] == 9
+
+    def test_no_polyphonic_instruments_skips_second_pass(self):
+        """Monophonic instruments only -> suffix array handles everything."""
+        df = _make_df(
+            [
+                ("note", 1, 60, 0.0, 1.0),
+                ("note", 1, 62, 1.0, 2.0),
+                ("note", 1, 64, 2.0, 3.0),
+                ("note", 2, 72, 0.0, 1.0),
+                ("note", 2, 74, 1.0, 2.0),
+                ("note", 2, 76, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        assert result.attrs["n_dedoubled_notes"] == 3
+
+    def test_mix_suffix_array_and_polyphonic_doublings(self):
+        """Some doublings caught by suffix array, others only by polyphonic pass."""
+        df = _make_df(
+            [
+                # Track 1: monophonic, high register
+                ("note", 1, 72, 0.0, 1.0),
+                ("note", 1, 74, 1.0, 2.0),
+                ("note", 1, 76, 2.0, 3.0),
+                # Track 2: monophonic, doubles track 1 at octave below
+                # suffix array can catch this
+                ("note", 2, 60, 0.0, 1.0),
+                ("note", 2, 62, 1.0, 2.0),
+                ("note", 2, 64, 2.0, 3.0),
+                # Track 3: polyphonic, upper voice doubles track 1 at -24
+                # Lower voice is NOT at an octave interval from anything
+                ("note", 3, 41, 0.0, 1.0),
+                ("note", 3, 48, 0.0, 1.0),
+                ("note", 3, 43, 1.0, 2.0),
+                ("note", 3, 50, 1.0, 2.0),
+                ("note", 3, 45, 2.0, 3.0),
+                ("note", 3, 52, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        # Track 1 + Track 2: suffix array drops lower (track 2, 3 notes)
+        # Track 3 upper (48,50,52) + Track 1 (72,74,76): polyphonic pass
+        #   catches 24-semitone doubling, drops lower (3 notes)
+        # Remaining: track 1 (3) + track 3 lower (3) = 6
+        assert result.attrs["n_dedoubled_notes"] == 6
