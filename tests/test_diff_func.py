@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from music_df.quantize_df import _quantize_diff, quantize_df
 from music_df.remove_repeated_bars import (
     _find_bars_to_keep,
     _remove_repeated_bars_diff,
@@ -220,6 +221,82 @@ def test_repeat_spans_empty_when_no_repeats():
     })
     result = remove_repeated_bars(df)
     assert result.attrs["repeat_spans"] == []
+
+
+# ---------------------------------------------------------------------------
+# quantize_df diff_func tests
+# ---------------------------------------------------------------------------
+
+
+def test_quantize_diff_func_registered():
+    """quantize_df has diff_func attached via the decorator."""
+    assert hasattr(quantize_df, "diff_func")
+    assert quantize_df.diff_func is _quantize_diff
+
+
+def test_quantize_diff_no_drops():
+    """Quantization with min_dur doesn't report any removed/added notes."""
+    df = pd.DataFrame({
+        "type": ["note", "note", "note"],
+        "onset": [0.13, 1.01, 2.9],
+        "release": [0.87, 2.03, 3.97],
+        "pitch": [60, 61, 62],
+    })
+    result = quantize_df(df, tpq=4)
+    removed, added = _quantize_diff(df, result)
+    assert removed == set()
+    assert added == set()
+
+
+def test_quantize_diff_with_drops():
+    """Quantization with zero_dur_action='remove' correctly reports dropped
+    notes without overcounting repositioned notes."""
+    df = pd.DataFrame({
+        "type": ["note", "note", "note"],
+        "onset": [0.0, 0.4, 1.0],
+        "release": [0.4, 0.6, 2.0],
+        "pitch": [60, 61, 62],
+    })
+    # At tpq=1, note 0 (onset=0.0, release=0.4) rounds to onset=0, release=0
+    # -> zero duration -> dropped
+    result = quantize_df(df, tpq=1, zero_dur_action="remove")
+    assert len(result[result["type"] == "note"]) == 2
+
+    removed, added = _quantize_diff(df, result)
+    assert len(removed) == 1
+    assert added == set()
+    # The removed tuple should have pitch 60
+    assert list(removed)[0][2] == 60
+
+
+def test_quantize_naive_diff_overcounts():
+    """Verify the naive set-diff overcounts for quantize_df, confirming the
+    diff_func is needed."""
+    df = pd.DataFrame({
+        "type": ["note", "note", "note"],
+        "onset": [0.13, 1.01, 2.9],
+        "release": [0.87, 2.03, 3.97],
+        "pitch": [60, 61, 62],
+    })
+    result = quantize_df(df, tpq=4)
+
+    before_tuples = set(
+        df[["onset", "release", "pitch"]].itertuples(index=False, name=None)
+    )
+    after_tuples = set(
+        result[["onset", "release", "pitch"]].itertuples(index=False, name=None)
+    )
+    naive_removed = before_tuples - after_tuples
+    naive_added = after_tuples - before_tuples
+
+    # Naive diff sees repositioned notes as removed+added
+    assert len(naive_removed) > 0
+    assert len(naive_added) > 0
+
+    # But the diff_func correctly reports nothing
+    removed, added = _quantize_diff(df, result)
+    assert removed == set()
+    assert added == set()
 
 
 def test_bar_onset_map_aac():

@@ -9,7 +9,34 @@ from music_df.transforms import transform
 ZeroDurAction = Literal["remove", "drop", "min_dur", "preserve"]
 
 
-@transform
+def _quantize_diff(before_df, after_df):
+    """Quantization repositions notes on a grid; the naive set-diff overcounts
+    because it sees every repositioned note as removed+added. Only zero-dur
+    drops are true removals.
+    """
+    dropped = after_df.attrs.get("_dropped_note_originals", [])
+    if not dropped:
+        return set(), set()
+
+    before_notes = before_df[before_df["type"] == "note"]
+    removed = set()
+    used_indices = set()
+    for orig_onset, orig_release, pitch in dropped:
+        candidates = before_notes[
+            (before_notes["pitch"] == pitch)
+            & (~before_notes.index.isin(used_indices))
+        ]
+        if candidates.empty:
+            continue
+        best_idx = (candidates["onset"] - orig_onset).abs().idxmin()
+        row = candidates.loc[best_idx]
+        removed.add((row["onset"], row["release"], row["pitch"]))
+        used_indices.add(best_idx)
+
+    return removed, set()
+
+
+@transform(diff_func=_quantize_diff)
 def quantize_df(
     df,
     tpq: int = 4,
@@ -124,6 +151,18 @@ def quantize_df(
     out.attrs["quantized_ticks_out"] = ticks_out
     out.attrs["quantized_zero_dur_action"] = zero_dur_action
     if zero_dur_action in {"remove", "drop"}:
+        zero_dur = out["onset"] == out["release"]
+        if zero_dur.any() and "type" in out.columns and "pitch" in df.columns:
+            note_drops = zero_dur & (out["type"] == "note")
+            if note_drops.any():
+                orig = df.loc[note_drops[note_drops].index]
+                out.attrs["_dropped_note_originals"] = list(
+                    zip(
+                        orig["onset"].astype(float),
+                        orig["release"].astype(float),
+                        orig["pitch"],
+                    )
+                )
         out = out[out["onset"] != out["release"]]
     if was_sorted:
         out = sort_df(out, force=True)

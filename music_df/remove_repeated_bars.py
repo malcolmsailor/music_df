@@ -1,5 +1,6 @@
 """Remove tandem-repeated bar sequences from a music_df."""
 
+import numpy as np
 import pandas as pd
 
 from music_df.add_feature import make_bar_explicit
@@ -17,24 +18,38 @@ def _bar_fingerprints(df: pd.DataFrame) -> list[int]:
     """
     instrument_cols = [c for c in CANDIDATE_INSTRUMENT_COLUMNS if c in df.columns]
 
-    bar_mask = df.type == "bar"
-    bar_rows = df.loc[bar_mask].sort_values("onset")
+    bar_rows = df.loc[df.type == "bar"].sort_values("onset")
     bar_numbers = bar_rows["bar_number"].tolist()
+
+    # Pre-compute bar onset/release as dicts (one pass instead of O(n) per bar)
+    bar_onset = dict(zip(bar_rows["bar_number"], bar_rows["onset"]))
+    bar_release = dict(zip(bar_rows["bar_number"], bar_rows["release"]))
+
+    # Pre-extract note data as arrays for fast per-bar grouping
+    notes = df[df.type == "note"]
+    fp_cols = ["pitch", "onset", "release"] + instrument_cols
+    note_values = {col: notes[col].values for col in fp_cols}
+    note_bar_nums = notes["bar_number"].values
 
     fingerprints: list[int] = []
     for bar_num in bar_numbers:
-        bar_onset = bar_rows.loc[bar_rows.bar_number == bar_num, "onset"].iloc[0]
-        bar_release = bar_rows.loc[bar_rows.bar_number == bar_num, "release"].iloc[0]
-        bar_dur = bar_release - bar_onset if pd.notna(bar_release) else None
+        b_onset = bar_onset[bar_num]
+        b_release = bar_release[bar_num]
+        bar_dur = b_release - b_onset if pd.notna(b_release) else None
 
-        notes = df[(df.bar_number == bar_num) & (df.type == "note")]
+        mask = note_bar_nums == bar_num
+        pitches = note_values["pitch"][mask]
+        onsets = note_values["onset"][mask]
+        releases = note_values["release"][mask]
+        inst_arrays = [note_values[c][mask] for c in instrument_cols]
+
         note_tuples = []
-        for _, row in notes.iterrows():
+        for i in range(len(pitches)):
             t = (
-                row.pitch,
-                round(row.onset - bar_onset, 10),
-                round(row.release - row.onset, 10),
-                *(row[c] for c in instrument_cols),
+                pitches[i],
+                round(onsets[i] - b_onset, 10),
+                round(releases[i] - onsets[i], 10),
+                *(arr[i] for arr in inst_arrays),
             )
             note_tuples.append(t)
         note_tuples.sort()
@@ -255,15 +270,11 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
 
     # Compute bar releases if missing
     if bar_rows["release"].isna().any():
-        bar_onsets = bar_rows["onset"].tolist()
-        max_release = df["release"].max()
-        for idx, bar_num in enumerate(bar_numbers):
-            bar_release = (
-                bar_onsets[idx + 1] if idx + 1 < len(bar_onsets) else max_release
-            )
-            df.loc[
-                (df.bar_number == bar_num) & (df.type == "bar"), "release"
-            ] = bar_release
+        bar_onsets_arr = bar_rows["onset"].values
+        releases = np.empty_like(bar_onsets_arr)
+        releases[:-1] = bar_onsets_arr[1:]
+        releases[-1] = df["release"].max()
+        df.loc[bar_rows.index, "release"] = releases
 
     fingerprints = _bar_fingerprints(df)
     keep_indices, repeat_span_indices = _find_bars_to_keep(fingerprints)
@@ -295,12 +306,10 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
     result = df[kept_mask].copy()
 
     # Compute onset shifts to close gaps from removed bars
-    bar_durations = {}
-    for bar_num in bar_numbers:
-        bar_row = df[(df.bar_number == bar_num) & (df.type == "bar")]
-        if not bar_row.empty:
-            row = bar_row.iloc[0]
-            bar_durations[bar_num] = row.release - row.onset
+    bar_durations = dict(zip(
+        bar_rows["bar_number"],
+        bar_rows["release"] - bar_rows["onset"],
+    ))
 
     cumulative_shift: dict[int, float] = {}
     shift = 0.0
@@ -318,10 +327,14 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         - result.loc[release_mask, "bar_number"].map(cumulative_shift)
     )
 
+    # Pre-compute bar onset/release dicts for O(1) lookups below
+    bar_onset_dict = dict(zip(bar_rows["bar_number"], bar_rows["onset"]))
+    bar_release_dict = dict(zip(bar_rows["bar_number"], bar_rows["release"]))
+
     # Build bar_onset_map: original bar onset -> shifted bar onset (for kept bars)
     bar_onset_map: dict[float, float] = {}
     for bar_num in bars_to_keep:
-        orig_onset = bar_rows.loc[bar_rows.bar_number == bar_num, "onset"].iloc[0]
+        orig_onset = bar_onset_dict[bar_num]
         bar_onset_map[orig_onset] = orig_onset - cumulative_shift[bar_num]
 
     # Convert index-based spans to onset/release time spans.
@@ -336,19 +349,10 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         pat_end_bar = bar_numbers[idx_pattern_end]
         if pat_start_bar not in bars_to_keep_set or pat_end_bar not in bars_to_keep_set:
             continue
-        before_start = bar_rows.loc[
-            bar_rows.bar_number == pat_start_bar, "onset"
-        ].iloc[0]
-        before_end = bar_rows.loc[
-            bar_rows.bar_number == bar_numbers[idx_span_end], "release"
-        ].iloc[0]
+        before_start = bar_onset_dict[pat_start_bar]
+        before_end = bar_release_dict[bar_numbers[idx_span_end]]
         after_start = before_start - cumulative_shift[pat_start_bar]
-        after_end = (
-            bar_rows.loc[
-                bar_rows.bar_number == pat_end_bar, "release"
-            ].iloc[0]
-            - cumulative_shift[pat_end_bar]
-        )
+        after_end = bar_release_dict[pat_end_bar] - cumulative_shift[pat_end_bar]
         repeat_spans.append((before_start, before_end, after_start, after_end))
 
     result = result.drop(columns=["bar_number"])

@@ -102,78 +102,160 @@ def split_notes_at_barlines(
         if "tie_to_prev" not in df.columns:
             df = df.copy()
             df["tie_to_prev"] = False
-    bars = df[df.type == "bar"].reset_index()
-    bars_i = 0
-    row_accumulator = []
-    for _, row in df.iterrows():
-        overhang = False
-        if row.type != "note":
-            row_accumulator.append(row)
-            continue
-        else:
-            while (bars_i < len(bars) - 1) and (
-                bars.loc[bars_i + 1].onset <= row.onset
-            ):
-                bars_i += 1
-            temp_row = row.copy()
-            # Handle note starting before the first applicable bar's onset
-            bar_onset = bars.loc[bars_i].onset
-            if temp_row.onset < bar_onset < row.release:
-                overhang = True
-                truncated_row = temp_row.copy()
-                truncated_row.release = bar_onset
-                if (
-                    min_overhang_dur is None
-                    or truncated_row.release - truncated_row.onset >= min_overhang_dur
-                ):
-                    row_accumulator.append(truncated_row)
-                    if tie_split_notes:
-                        temp_row.tie_to_prev = True
-                    if clear_on_split:
-                        for col in clear_on_split:
-                            if col in temp_row.index:
-                                temp_row[col] = ""
-                temp_row.onset = bar_onset
-                if tie_split_notes and (
-                    min_overhang_dur is None
-                    or temp_row.release - temp_row.onset >= min_overhang_dur
-                ):
-                    truncated_row.tie_to_next = True
-            for final_bars_i in range(bars_i, len(bars)):
-                bar_release = bars.loc[final_bars_i].release
-                if row.release > bar_release:
-                    overhang = True
-                    truncated_row = temp_row.copy()
-                    truncated_row.release = bar_release
-                    if (
-                        min_overhang_dur is None
-                        or truncated_row.release - truncated_row.onset
-                        >= min_overhang_dur
-                    ):
-                        row_accumulator.append(truncated_row)
-                        if tie_split_notes:
-                            temp_row.tie_to_prev = True
-                        if clear_on_split:
-                            for col in clear_on_split:
-                                if col in temp_row.index:
-                                    temp_row[col] = ""
 
-                    temp_row.onset = bar_release
-                    if tie_split_notes and (
-                        min_overhang_dur is None
-                        or temp_row.release - temp_row.onset >= min_overhang_dur
-                    ):
-                        truncated_row.tie_to_next = True
+    note_mask = df["type"].values == "note"
+    non_note_df = df[~note_mask]
+    notes_df = df[note_mask]
+
+    if len(notes_df) == 0:
+        out_df = df.copy()
+        out_df.attrs = df.attrs.copy()
+        return sort_df(out_df, force=True)
+
+    # Use both bar onsets and releases as split boundaries so notes
+    # extending past the last bar's release are handled correctly
+    bars_df = df[df["type"] == "bar"]
+    bar_boundaries = np.unique(np.concatenate([
+        bars_df["onset"].values,
+        bars_df["release"].dropna().values,
+    ]))
+
+    if len(bar_boundaries) == 0:
+        out_df = df.copy()
+        out_df.attrs = df.attrs.copy()
+        return sort_df(out_df, force=True)
+
+    onsets = notes_df["onset"].values
+    releases = notes_df["release"].values
+
+    # For each note, find bar boundaries strictly between onset and release
+    first_boundary_idx = np.searchsorted(bar_boundaries, onsets, side="right")
+    last_boundary_idx = np.searchsorted(bar_boundaries, releases, side="left")
+    n_splits = np.maximum(last_boundary_idx - first_boundary_idx, 0)
+    n_fragments = n_splits + 1
+
+    if not (n_splits > 0).any():
+        out_df = df.copy()
+        out_df.attrs = df.attrs.copy()
+        return sort_df(out_df, force=True)
+
+    n_notes = len(notes_df)
+    total_fragments = int(n_fragments.sum())
+
+    # Expand note rows: repeat each note's index by its fragment count
+    repeat_counts = n_fragments.astype(np.intp)
+    note_indices = np.repeat(np.arange(n_notes), repeat_counts)
+
+    # Fragment index within each note (0, 1, ..., n_fragments[i]-1)
+    offsets = np.zeros(total_fragments, dtype=np.intp)
+    positions = np.cumsum(repeat_counts)
+    offsets[positions[:-1]] = repeat_counts[:-1]
+    # After cumsum and subtract, fragment_idx[j] = position within its note
+    fragment_idx = np.arange(total_fragments) - np.repeat(
+        positions - repeat_counts, repeat_counts
+    )
+
+    # Compute onset/release for each fragment
+    exp_onsets = onsets[note_indices].copy()
+    exp_releases = releases[note_indices].copy()
+    exp_first_bi = first_boundary_idx[note_indices]
+    exp_n_frags = repeat_counts[note_indices]
+
+    is_first = fragment_idx == 0
+    is_last = fragment_idx == exp_n_frags - 1
+    was_split = exp_n_frags > 1
+
+    # Non-first fragments: onset = bar_boundaries[first_boundary_idx + frag_idx - 1]
+    non_first = ~is_first
+    exp_onsets[non_first] = bar_boundaries[
+        exp_first_bi[non_first] + fragment_idx[non_first] - 1
+    ]
+
+    # Non-last fragments: release = bar_boundaries[first_boundary_idx + frag_idx]
+    non_last = ~is_last
+    exp_releases[non_last] = bar_boundaries[
+        exp_first_bi[non_last] + fragment_idx[non_last]
+    ]
+
+    # Build the expanded notes DataFrame
+    expanded = notes_df.iloc[note_indices].copy()
+    expanded = expanded.reset_index(drop=True)
+    expanded["onset"] = exp_onsets
+    expanded["release"] = exp_releases
+
+    # Handle ties
+    if tie_split_notes:
+        tie_next = expanded["tie_to_next"].values.copy()
+        tie_prev = expanded["tie_to_prev"].values.copy()
+
+        # Non-last fragments of split notes: tie_to_next = True
+        tie_next[non_last & was_split] = True
+        # Non-first fragments of split notes: tie_to_prev = True
+        tie_prev[non_first & was_split] = True
+
+        expanded["tie_to_next"] = tie_next
+        expanded["tie_to_prev"] = tie_prev
+
+    # Handle clear_on_split: clear specified columns on non-first fragments
+    if clear_on_split:
+        for col in clear_on_split:
+            if col in expanded.columns:
+                expanded.loc[non_first & was_split, col] = ""
+
+    # Handle min_overhang_dur: filter out short fragments
+    if min_overhang_dur is not None:
+        durations = exp_releases - exp_onsets
+        keep = durations >= min_overhang_dur
+        # Unsplit notes are always kept
+        keep = keep | ~was_split
+
+        if tie_split_notes:
+            # Adjust ties: if a fragment is removed, adjacent fragments
+            # shouldn't point to it.
+            # For each note group, tie_to_next should be True only if the
+            # NEXT kept fragment exists; tie_to_prev only if the PREVIOUS
+            # kept fragment exists.
+            tie_next = expanded["tie_to_next"].values.copy()
+            tie_prev = expanded["tie_to_prev"].values.copy()
+
+            # Process per-note: for notes that had splits and have removals
+            notes_with_removals = np.unique(note_indices[~keep & was_split])
+            for ni in notes_with_removals:
+                mask = note_indices == ni
+                frag_keep = keep[mask]
+                n_kept = frag_keep.sum()
+                frag_positions = np.where(mask)[0]
+
+                if n_kept <= 1:
+                    # Single or no fragments left: no ties
+                    tie_next[frag_positions] = False
+                    tie_prev[frag_positions] = False
+                    # Restore original tie values for the surviving fragment
+                    if n_kept == 1:
+                        kept_pos = frag_positions[frag_keep][0]
+                        kept_frag_idx = fragment_idx[kept_pos]
+                        if kept_frag_idx == 0:
+                            tie_next[kept_pos] = False
+                        elif kept_frag_idx == exp_n_frags[kept_pos] - 1:
+                            tie_prev[kept_pos] = False
                 else:
-                    break
-            if (
-                (not overhang)
-                or (min_overhang_dur is None)
-                or (temp_row.release - temp_row.onset >= min_overhang_dur)
-            ):
-                row_accumulator.append(temp_row)
+                    kept_positions = frag_positions[frag_keep]
+                    # First kept: no tie_to_prev (unless it was the original
+                    # first fragment with an existing tie)
+                    if fragment_idx[kept_positions[0]] != 0:
+                        tie_prev[kept_positions[0]] = False
+                    # Last kept: no tie_to_next (unless it was the original
+                    # last fragment with an existing tie)
+                    if fragment_idx[kept_positions[-1]] != exp_n_frags[kept_positions[-1]] - 1:
+                        tie_next[kept_positions[-1]] = False
 
-    out_df = pd.DataFrame(row_accumulator)
+            expanded["tie_to_next"] = tie_next
+            expanded["tie_to_prev"] = tie_prev
+
+        expanded = expanded[keep].reset_index(drop=True)
+
+    # Combine non-notes and expanded notes
+    out_df = pd.concat([non_note_df, expanded], ignore_index=True)
     out_df.attrs = df.attrs.copy()
     out_df = sort_df(out_df, force=True)
     return out_df

@@ -349,7 +349,8 @@ class _Streak:
     interval: int = 0
     lower_indices: list[int] = field(default_factory=list)
     upper_indices: list[int] = field(default_factory=list)
-    all_pitches: list[float] = field(default_factory=list)
+    pitch_sum: float = 0.0
+    pitch_count: int = 0
     last_lower_pitch: float = 0.0
     length: int = 0
     gap: int = 0
@@ -437,41 +438,61 @@ def dedouble_octaves_within_instrument(
     octave_intervals_set = set(octave_intervals)
     drop_indices: set[int] = set()
 
-    # Rename helper columns to avoid underscore prefix (itertuples strips it)
-    note_df = note_df.rename(columns={
-        "_onset_q": "onset_q", "_release_q": "release_q", "_inst_key": "inst_key",
-    })
+    # Integer factor-encode instrument key for faster groupby
+    inst_cols = note_df[instrument_columns]
+    inst_key_int = np.zeros(len(note_df), dtype=np.int64)
+    for col in instrument_columns:
+        vals = inst_cols[col].values
+        _, codes = np.unique(vals, return_inverse=True)
+        inst_key_int = inst_key_int * (codes.max() + 1) + codes
+    note_df["_inst_key_int"] = inst_key_int
 
-    for _inst_name, grp in note_df.groupby("inst_key", sort=True):
-        grp_sorted = grp.sort_values(["onset_q", "pitch"])
-        onsets = sorted(grp_sorted["onset_q"].unique())
+    for _inst_key, grp in note_df.groupby("_inst_key_int", sort=True):
+        grp_sorted = grp.sort_values(["_onset_q", "pitch"])
+
+        # Extract arrays once per instrument group
+        pitches = grp_sorted["pitch"].values
+        onset_qs = grp_sorted["_onset_q"].values
+        release_qs = grp_sorted["_release_q"].values
+        orig_indices = grp_sorted.index.values
+
+        unique_onsets = np.unique(onset_qs)
+        onset_starts = np.searchsorted(onset_qs, unique_onsets, side="left")
+        onset_ends = np.searchsorted(onset_qs, unique_onsets, side="right")
 
         active_streaks: list[_Streak] = []
 
-        for onset_q in onsets:
-            at_onset = grp_sorted[grp_sorted["onset_q"] == onset_q]
-            notes = list(at_onset.itertuples())
+        for o_idx in range(len(unique_onsets)):
+            s = onset_starts[o_idx]
+            e = onset_ends[o_idx]
+            n_at = e - s
 
-            # Find all octave pairs at this onset
-            # Each element: (interval, lower_idx, upper_idx, lower_pitch, upper_pitch)
+            # Find all octave pairs at this onset using array slices
             pairs_at_onset: list[tuple[int, int, int, float, float]] = []
-            for i_a in range(len(notes)):
-                for i_b in range(i_a + 1, len(notes)):
-                    na, nb = notes[i_a], notes[i_b]
-                    interval = int(abs(na.pitch - nb.pitch))
+            for i_a in range(n_at):
+                for i_b in range(i_a + 1, n_at):
+                    pa = pitches[s + i_a]
+                    pb = pitches[s + i_b]
+                    interval = int(abs(pa - pb))
                     if interval not in octave_intervals_set:
                         continue
-                    lower = na if na.pitch < nb.pitch else nb
-                    upper = nb if na.pitch < nb.pitch else na
-                    if match_releases and lower.release_q != upper.release_q:
+                    if pa < pb:
+                        lo_idx, hi_idx = s + i_a, s + i_b
+                        lo_p, hi_p = pa, pb
+                    else:
+                        lo_idx, hi_idx = s + i_b, s + i_a
+                        lo_p, hi_p = pb, pa
+                    if match_releases and release_qs[lo_idx] != release_qs[hi_idx]:
                         continue
                     pairs_at_onset.append((
-                        interval, lower.Index, upper.Index,
-                        lower.pitch, upper.pitch,
+                        interval,
+                        int(orig_indices[lo_idx]),
+                        int(orig_indices[hi_idx]),
+                        lo_p, hi_p,
                     ))
 
             # Match active streaks to pairs at this onset
-            consumed: set[int] = set()  # indices into pairs_at_onset
+            consumed: set[int] = set()
             streaks_to_remove: list[int] = []
 
             for s_idx, streak in enumerate(active_streaks):
@@ -496,7 +517,8 @@ def dedouble_octaves_within_instrument(
                     _, li, ui, lp, up = pairs_at_onset[best_pair_idx]
                     streak.lower_indices.append(li)
                     streak.upper_indices.append(ui)
-                    streak.all_pitches.extend([lp, up])
+                    streak.pitch_sum += lp + up
+                    streak.pitch_count += 2
                     streak.last_lower_pitch = lp
                     streak.length += 1
                     streak.gap = 0
@@ -522,7 +544,8 @@ def dedouble_octaves_within_instrument(
                     interval=interval,
                     lower_indices=[li],
                     upper_indices=[ui],
-                    all_pitches=[lp, up],
+                    pitch_sum=lp + up,
+                    pitch_count=2,
                     last_lower_pitch=lp,
                     length=1,
                     gap=0,
@@ -541,7 +564,7 @@ def _finalize_streak(
     pitch_threshold: float,
     drop_indices: set[int],
 ) -> None:
-    mean_pitch = np.mean(streak.all_pitches)
+    mean_pitch = streak.pitch_sum / streak.pitch_count
     if mean_pitch >= pitch_threshold:
         # Melody register: keep higher, drop lower
         drop_indices.update(streak.lower_indices)
@@ -558,7 +581,7 @@ def _build_output(
 ) -> pd.DataFrame:
     # Drop temp columns if present
     temp_cols = [
-        c for c in ("_inst_key", "_onset_q", "_release_q",
+        c for c in ("_inst_key", "_inst_key_int", "_onset_q", "_release_q",
                      "inst_key", "onset_q", "release_q")
         if c in df.columns
     ]

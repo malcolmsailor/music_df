@@ -39,6 +39,7 @@ import bisect
 import json
 import random
 import sys
+import time
 from collections import Counter
 
 import yaml
@@ -117,6 +118,7 @@ class FileResult:
     # (before_start, before_end, after_start, after_end) for transforms
     # that shift the timeline.
     diff_bounds: list[tuple] = field(default_factory=list)
+    timings: dict[str, float] = field(default_factory=dict)
 
 
 def _ensure_barlines(df: pd.DataFrame) -> pd.DataFrame:
@@ -140,12 +142,15 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
     # transform that touches it).
     removed_by: dict[tuple, str] = {}
     added_by: dict[tuple, str] = {}
+    timings: dict[str, float] = {}
     all_diff_bounds: list[tuple[float, float]] = []
     current = df
     for step in steps:
         (name, kwargs), = step.items()
         before_q = _quantize_for_comparison(current)
+        t0 = time.perf_counter()
         current = apply_transforms(current, [step])
+        timings[name] = time.perf_counter() - t0
         after_q = _quantize_for_comparison(current)
 
         custom_diff = getattr(TRANSFORMS[name], "diff_func", None)
@@ -174,6 +179,7 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
         removed_by=removed_by,
         added_by=added_by,
         diff_bounds=all_diff_bounds,
+        timings=timings,
     )
 
 
@@ -591,6 +597,30 @@ def main(argv: list[str] | None = None) -> None:
         print(
             f"  {n:<{name_w}}  {removed:>8}  {added:>8}"
             f"  {net:>8}  {mu:>10.1f}  {med:>12.1f}"
+        )
+
+    # Per-transform timing breakdown
+    per_transform_times: dict[str, list[float]] = {n: [] for n in names}
+    for r in results:
+        for n in names:
+            per_transform_times[n].append(r.timings.get(n, 0.0))
+
+    t_header = (
+        f"  {'transform':<{name_w}}  {'total(s)':>9}  {'mean(ms)':>9}"
+        f"  {'median(ms)':>11}  {'max(ms)':>9}"
+    )
+    print(f"\n{t_header}")
+    print(f"  {'-' * (len(t_header) - 2)}")
+    for n in names:
+        times = per_transform_times[n]
+        total_s = sum(times)
+        times_ms = [t * 1000 for t in times]
+        mu = mean(times_ms) if times_ms else 0.0
+        med = median(times_ms) if times_ms else 0.0
+        mx = max(times_ms) if times_ms else 0.0
+        print(
+            f"  {n:<{name_w}}  {total_s:>9.2f}  {mu:>9.1f}"
+            f"  {med:>11.1f}  {mx:>9.1f}"
         )
 
     # Collect and save excerpt samples
