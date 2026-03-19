@@ -21,6 +21,7 @@ def _tempo2bpm(tempo: int) -> float:
     """Convert MIDI tempo (microseconds per beat) to BPM."""
     return 60_000_000 / tempo
 from music_df.sort_df import sort_df
+from music_df.transforms import transform
 
 
 def _to_dict_if_necessary(d):
@@ -76,59 +77,98 @@ def simplify_time_sigs(
     return music_df
 
 
+@transform
 def infer_barlines(
-    music_df: pd.DataFrame, keep_old_index: bool = False
+    df: pd.DataFrame, keep_old_index: bool = False
 ) -> pd.DataFrame:
-    time_sig_mask = music_df.type == "time_signature"
-    time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
+    from music_df.sort_df import DF_TYPE_SORT_ORDER
 
-    notes = music_df[music_df.type == "note"]
+    time_sig_mask = df.type == "time_signature"
+    ts_df = df[time_sig_mask]
+
+    notes = df[df.type == "note"]
     if notes.empty:
-        return music_df
+        return df
+
+    first_note_onset = notes.iloc[0].onset
+    ts_onsets = ts_df["onset"].values
+    ts_others = ts_df["other"].values if "other" in ts_df.columns else np.array([])
 
     # Add a default 4/4 time signature if none exists before the first note
-    first_note_onset = notes.iloc[0].onset
-    if not time_sigs or time_sigs[0].onset > first_note_onset:
-        default_ts = pd.DataFrame(
+    default_ts_row = None
+    if len(ts_onsets) == 0 or ts_onsets[0] > first_note_onset:
+        default_onset = min(first_note_onset, 0.0)
+        default_other = {"numerator": 4, "denominator": 4}
+        ts_onsets = np.concatenate([[default_onset], ts_onsets])
+        ts_others = np.concatenate([[default_other], ts_others])
+        default_ts_row = pd.DataFrame(
             {
                 "type": ["time_signature"],
-                "onset": [min(first_note_onset, 0.0)],
-                "other": [{"numerator": 4, "denominator": 4}],
+                "onset": [default_onset],
+                "other": [default_other],
             }
         )
-        # Preserve any extra columns from the original DataFrame
-        for col in music_df.columns:
-            if col not in default_ts.columns:
-                default_ts[col] = float("nan")
-        music_df = pd.concat([default_ts, music_df], ignore_index=True)
-        time_sig_mask = music_df.type == "time_signature"
-        time_sigs = [series for (_, series) in music_df[time_sig_mask].iterrows()]
+        for col in df.columns:
+            if col not in default_ts_row.columns:
+                default_ts_row[col] = float("nan")
 
-    assert len(time_sigs)
+    assert len(ts_onsets)
 
+    max_release = df.release.max()
     barline_onset_accumulator = []
 
-    for time_sig1, time_sig2 in zip(time_sigs, chain(time_sigs[1:], [None])):
-        time_sig_dur = _time_sig_dur(_to_dict_if_necessary(time_sig1.other))
-        if time_sig2 is not None:
-            end = time_sig2.onset
-        else:
-            end = music_df.release.max()
+    for i in range(len(ts_onsets)):
+        other = ts_others[i]
+        if isinstance(other, str):
+            other = literal_eval(other)
+        ts_dur = other["numerator"] * 4 / other["denominator"]
+        end = ts_onsets[i + 1] if i + 1 < len(ts_onsets) else max_release
         barline_onset_accumulator.append(
-            np.arange(time_sig1.onset, end, step=time_sig_dur)
+            np.arange(ts_onsets[i], end, step=ts_dur)
         )
     barline_onsets = np.concatenate(barline_onset_accumulator)
-    barline_releases = np.concatenate([barline_onsets[1:], [end]])  # type:ignore
-    barlines = pd.DataFrame({"onset": barline_onsets, "release": barline_releases})
-    barlines["type"] = "bar"
+    barline_releases = np.concatenate(
+        [barline_onsets[1:], [max_release]]
+    )
+    barlines_df = pd.DataFrame(
+        {"onset": barline_onsets, "release": barline_releases, "type": "bar"}
+    )
 
-    # Ensure that index values will be unique
-    barlines.index += max(music_df.index) + 1
+    # Prepend default time sig row if needed
+    if default_ts_row is not None:
+        df = pd.concat([default_ts_row, df], ignore_index=True)
 
-    out_df = pd.concat([music_df, barlines])
-    out_df = sort_df(out_df, ignore_index=False)
+    is_sorted = df.attrs.get("sorted")
 
-    out_df = out_df.reset_index(drop=not keep_old_index)
+    if is_sorted:
+        # Fast path: interleave barlines at correct positions using searchsorted
+        orig_type_order = df["type"].map(DF_TYPE_SORT_ORDER).values.astype("f8")
+        orig_keys = np.empty(
+            len(df), dtype=[("onset", "f8"), ("torder", "f8")]
+        )
+        orig_keys["onset"] = df["onset"].values
+        orig_keys["torder"] = orig_type_order
+
+        bar_keys = np.empty(
+            len(barline_onsets), dtype=[("onset", "f8"), ("torder", "f8")]
+        )
+        bar_keys["onset"] = barline_onsets
+        bar_keys["torder"] = float(DF_TYPE_SORT_ORDER["bar"])
+
+        positions = np.searchsorted(orig_keys, bar_keys)
+
+        combined = pd.concat([df, barlines_df], ignore_index=True)
+        orig_idx = np.arange(len(df))
+        bar_idx = np.arange(len(df), len(df) + len(barlines_df))
+        interleaved = np.insert(orig_idx, positions, bar_idx)
+        out_df = combined.iloc[interleaved].reset_index(
+            drop=not keep_old_index
+        )
+    else:
+        barlines_df.index += max(df.index) + 1
+        out_df = pd.concat([df, barlines_df])
+        out_df = sort_df(out_df, ignore_index=False)
+        out_df = out_df.reset_index(drop=not keep_old_index)
 
     return out_df
 

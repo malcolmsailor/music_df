@@ -148,6 +148,7 @@ _transforms_loaded = False
 
 
 _TRANSFORM_MODULES = (
+    "music_df.add_feature",
     "music_df.crop_df",
     "music_df.dedouble",
     "music_df.dedouble_instruments",

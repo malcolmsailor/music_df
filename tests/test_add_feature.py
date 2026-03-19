@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -67,6 +68,122 @@ def test_split_long_bars(n_kern_files):
         before_df_no_bars = before_df[before_df.type != "bar"].reset_index(drop=True)
 
         pd.testing.assert_frame_equal(after_df_no_bars, before_df_no_bars)
+
+
+class TestInferBarlinesDeterministic:
+    """Deterministic regression tests with exact expected barline onsets."""
+
+    def test_single_4_4(self):
+        """Single 4/4 time sig with known notes."""
+        df = pd.DataFrame(
+            {
+                "type": ["time_signature", "note", "note", "note"],
+                "onset": [0.0, 0.0, 4.0, 6.0],
+                "release": [float("nan"), 4.0, 6.0, 8.0],
+                "pitch": [float("nan"), 60.0, 62.0, 64.0],
+                "other": [
+                    {"numerator": 4, "denominator": 4},
+                    float("nan"),
+                    float("nan"),
+                    float("nan"),
+                ],
+            }
+        )
+        result = infer_barlines(df)
+        bar_onsets = result[result["type"] == "bar"]["onset"].values
+        np.testing.assert_array_equal(bar_onsets, [0.0, 4.0])
+
+    def test_two_time_sigs(self):
+        """Two time signatures (4/4 then 3/4) — barlines change spacing at boundary."""
+        df = pd.DataFrame(
+            {
+                "type": [
+                    "time_signature",
+                    "note",
+                    "note",
+                    "time_signature",
+                    "note",
+                    "note",
+                ],
+                "onset": [0.0, 0.0, 4.0, 8.0, 8.0, 11.0],
+                "release": [float("nan"), 4.0, 8.0, float("nan"), 11.0, 14.0],
+                "pitch": [float("nan"), 60.0, 62.0, float("nan"), 64.0, 66.0],
+                "other": [
+                    {"numerator": 4, "denominator": 4},
+                    float("nan"),
+                    float("nan"),
+                    {"numerator": 3, "denominator": 4},
+                    float("nan"),
+                    float("nan"),
+                ],
+            }
+        )
+        result = infer_barlines(df)
+        bar_onsets = result[result["type"] == "bar"]["onset"].values
+        # 4/4 bars at 0, 4; then 3/4 bars at 8, 11
+        np.testing.assert_array_equal(bar_onsets, [0.0, 4.0, 8.0, 11.0])
+
+    def test_keep_old_index(self):
+        """keep_old_index=True preserves original index in an 'index' column."""
+        df = pd.DataFrame(
+            {
+                "type": ["time_signature", "note", "note"],
+                "onset": [0.0, 0.0, 4.0],
+                "release": [float("nan"), 4.0, 8.0],
+                "pitch": [float("nan"), 60.0, 62.0],
+                "other": [
+                    {"numerator": 4, "denominator": 4},
+                    float("nan"),
+                    float("nan"),
+                ],
+            }
+        )
+        result = infer_barlines(df, keep_old_index=True)
+        assert "index" in result.columns
+        # Original rows should have their old index values preserved
+        orig_rows = result[result["type"] != "bar"]
+        assert list(orig_rows["index"]) == [0, 1, 2]
+
+    def test_sorted_fast_path(self):
+        """When df.attrs['sorted'] is True, result matches slow path."""
+        df = pd.DataFrame(
+            {
+                "type": ["time_signature", "note", "note", "note"],
+                "onset": [0.0, 0.0, 4.0, 6.0],
+                "release": [float("nan"), 4.0, 6.0, 8.0],
+                "pitch": [float("nan"), 60.0, 62.0, 64.0],
+                "other": [
+                    {"numerator": 4, "denominator": 4},
+                    float("nan"),
+                    float("nan"),
+                    float("nan"),
+                ],
+            }
+        )
+        df_sorted = sort_df(df)
+        assert df_sorted.attrs.get("sorted")
+
+        result = infer_barlines(df_sorted)
+        bar_onsets = result[result["type"] == "bar"]["onset"].values
+        np.testing.assert_array_equal(bar_onsets, [0.0, 4.0])
+
+        # Non-bar rows should be preserved
+        non_bars = result[result["type"] != "bar"].reset_index(drop=True)
+        assert len(non_bars) == len(df_sorted)
+
+    def test_default_ts_added_when_missing(self):
+        """No time sig → default 4/4 added, bars spaced at 4.0."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "onset": [0.0, 5.0],
+                "release": [4.0, 8.0],
+                "pitch": [60.0, 62.0],
+            }
+        )
+        result = infer_barlines(df)
+        bar_onsets = result[result["type"] == "bar"]["onset"].values
+        np.testing.assert_array_equal(bar_onsets, [0.0, 4.0])
 
 
 @pytest.mark.filterwarnings("ignore:note_off event")
