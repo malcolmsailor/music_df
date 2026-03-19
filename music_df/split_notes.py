@@ -174,7 +174,8 @@ def split_notes_at_barlines(
                 row_accumulator.append(temp_row)
 
     out_df = pd.DataFrame(row_accumulator)
-    out_df = sort_df(out_df)
+    out_df.attrs = df.attrs.copy()
+    out_df = sort_df(out_df, force=True)
     return out_df
 
 
@@ -254,4 +255,6 @@ def subdivide_notes(
                     )
                 )
 
-    return pd.DataFrame(new_rows).reset_index(drop=True)
+    out = pd.DataFrame(new_rows).reset_index(drop=True)
+    out.attrs = df.attrs.copy()
+    return out

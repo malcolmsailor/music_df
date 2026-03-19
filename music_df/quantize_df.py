@@ -3,6 +3,7 @@ from typing import Literal, get_args
 import numpy as np
 import pandas as pd
 
+from music_df.sort_df import sort_df
 from music_df.transforms import transform
 
 ZeroDurAction = Literal["remove", "drop", "min_dur", "preserve"]
@@ -89,6 +90,15 @@ def quantize_df(
     """
     assert zero_dur_action in get_args(ZeroDurAction)
 
+    if (
+        df.attrs.get("quantized_tpq") == tpq
+        and df.attrs.get("quantized_ticks_out") == ticks_out
+        and df.attrs.get("quantized_zero_dur_action") == zero_dur_action
+    ):
+        return df
+
+    was_sorted = df.attrs.get("sorted", False)
+
     onsets = np.rint(df.onset.apply(float).to_numpy() * tpq)
     releases = np.rint(df.release.apply(float).to_numpy() * tpq)
     if zero_dur_action == "min_dur":
@@ -109,6 +119,12 @@ def quantize_df(
             for col_name in df.columns
         }
     )
+    out.attrs = df.attrs.copy()
+    out.attrs["quantized_tpq"] = tpq
+    out.attrs["quantized_ticks_out"] = ticks_out
+    out.attrs["quantized_zero_dur_action"] = zero_dur_action
     if zero_dur_action in {"remove", "drop"}:
         out = out[out["onset"] != out["release"]]
+    if was_sorted:
+        out = sort_df(out, force=True)
     return out

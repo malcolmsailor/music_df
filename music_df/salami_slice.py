@@ -145,7 +145,7 @@ def salami_slice(
             release_i += 1
     new_df = pd.DataFrame(out)
     new_df.attrs = df.attrs.copy()
-    sort_df(new_df, inplace=True)
+    sort_df(new_df, inplace=True, force=True)
 
     new_df.attrs["salami_sliced"] = True
     new_df.attrs["n_salami_sliced_notes"] = int((new_df.type == "note").sum())
@@ -219,7 +219,9 @@ def slice_into_uniform_steps(
             row["onset"] = onset
             row["release"] = onset + step_dur
             rows.append(row_copy)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.attrs = df.attrs.copy()
+    return out
 
 
 def add_slice_ids(df: pd.DataFrame, check_salami_sliced: bool = True):
@@ -332,7 +334,7 @@ def undo_salami_slice(df: pd.DataFrame) -> pd.DataFrame:
         merged_note.release = notes.iloc[-1].release
         merged_notes.append(merged_note)
     out = pd.concat([non_notes, pd.DataFrame(merged_notes)])
-    out = sort_df(out, inplace=True)
+    out = sort_df(out, inplace=True, force=True)
     out.attrs = df.attrs.copy()
     out.drop(columns=["original_note_id"], inplace=True)
 

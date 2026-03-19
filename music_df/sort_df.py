@@ -20,7 +20,11 @@ DF_TYPE_SORT_ORDER = SortOrderMapping(
 
 
 @transform
-def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
+def sort_df(
+    df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True, force: bool = False
+):
+    if not force and df.attrs.get("sorted"):
+        return df if inplace else df.copy()
     if not inplace:
         df = df.sort_values(
             by="release",
@@ -74,4 +78,5 @@ def sort_df(df: pd.DataFrame, inplace: bool = False, ignore_index: bool = True):
         ignore_index=ignore_index,
         kind="mergesort",  # default sort is not stable
     )
+    df.attrs["sorted"] = True
     return df

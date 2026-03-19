@@ -86,6 +86,6 @@ def slice_df(
     new_df["sliced"] = new_df["sliced"].astype(
         pd.CategoricalDtype(categories=["no", "before", "after"])
     )
-    new_df = sort_df(new_df)
+    new_df = sort_df(new_df, force=True)
 
     return new_df

@@ -61,7 +61,7 @@ def merge_notes(
     - n_merged_notes (int)
     - n_unmerged_notes (int)
     >>> merged_df.attrs
-    {'n_unmerged_notes': 9, 'n_merged_notes': 4, 'merged_notes': True}
+    {'n_unmerged_notes': 9, 'n_merged_notes': 4, 'merged_notes': True, 'sorted': True}
     >>> merge_notes(df, store_unmerged_indices=False)
        type  pitch  onset  release
     0  note     60    0.0      3.0
@@ -103,5 +103,5 @@ def merge_notes(
     new_df.attrs["n_unmerged_notes"] = n_unmerged_notes
     new_df.attrs["n_merged_notes"] = (new_df.type == "note").sum()
     new_df.attrs["merged_notes"] = True
-    new_df = sort_df(new_df)
+    new_df = sort_df(new_df, force=True)
     return new_df

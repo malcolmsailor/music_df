@@ -282,7 +282,7 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         df.attrs["bar_onset_map"] = {}
         if "bar_number" in df.columns:
             df = df.drop(columns=["bar_number"])
-        return sort_df(df)
+        return sort_df(df, force=True)
 
     bars_to_keep_set = set(bars_to_keep)
     bars_removed = [b for b in bar_numbers if b not in bars_to_keep_set]
@@ -363,4 +363,4 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
     result.attrs["repeat_spans"] = repeat_spans
     result.attrs["bar_onset_map"] = bar_onset_map
 
-    return sort_df(result)
+    return sort_df(result, force=True)
