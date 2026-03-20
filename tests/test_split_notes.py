@@ -85,3 +85,29 @@ def test_note_starting_at_bar_boundary_not_crossing_barline():
     assert note62["release"] == 5.0
     assert note62["tie_to_next"] == False  # noqa: E712
     assert note62["tie_to_prev"] == False  # noqa: E712
+
+
+def test_split_duplicates_note_id_on_fragments():
+    """When a tracking column '_note_id' is present, all fragments should
+    carry the original note's _note_id. (It's the caller's responsibility
+    to detect duplicates and treat them as additions.)"""
+    df = pd.DataFrame(
+        {
+            "type": ["bar", "note", "bar"],
+            "onset": [0.0, 0.0, 4.0],
+            "release": [4.0, 6.0, 8.0],
+            "pitch": [None, 60, None],
+            "tie_to_next": [False] * 3,
+            "tie_to_prev": [False] * 3,
+            "_note_id": [None, 0, None],
+        }
+    )
+    result = split_notes_at_barlines(df)
+
+    notes = result[result["type"] == "note"]
+    assert len(notes) == 2
+
+    # Both fragments carry the original _note_id
+    assert (notes["_note_id"].dropna() == 0).all()
+    # Callers detect the duplicate to find the added note
+    assert notes["_note_id"].duplicated(keep="first").sum() == 1

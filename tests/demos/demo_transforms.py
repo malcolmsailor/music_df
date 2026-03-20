@@ -184,6 +184,19 @@ def _process_one(path: Path, steps: list[dict[str, dict]]) -> FileResult | None:
         current = apply_transforms(current, [step])
         timings[name] = time.perf_counter() - t0
 
+        # If a transform duplicated rows (e.g., split a note into
+        # fragments), multiple note rows will share the same _note_id.
+        # Keep the ID only on the first occurrence; clear duplicates to
+        # NaN so they are detected as additions below.
+        note_mask_after = current["type"] == "note"
+        dup_mask = (
+            current[_NOTE_ID_COL].duplicated(keep="first")
+            & note_mask_after
+            & current[_NOTE_ID_COL].notna()
+        )
+        if dup_mask.any():
+            current.loc[dup_mask, _NOTE_ID_COL] = pd.NA
+
         after_notes = current[current["type"] == "note"]
         ids_after = set(after_notes[_NOTE_ID_COL].dropna().astype(int))
 
