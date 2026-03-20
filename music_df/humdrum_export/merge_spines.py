@@ -15,9 +15,15 @@ from music_df.humdrum_export.constants import USER_SIGNIFIERS
 UNSPELLER = Unspeller(pitches=True, letter_format="kern")
 
 
+_PITCH_LETTERS = set("abcdefgABCDEFG")
+
+
 def _is_note_token(token: str):
-    # pretty sure there are other chars to check token[0] against
-    return token[-1] not in (".", "r") and token[0] not in ("*", "!")
+    return (
+        token[0] not in ("*", "!")
+        and token[-1] not in (".", "r")
+        and any(c in _PITCH_LETTERS for c in token)
+    )
 
 
 TOKEN_PITCH_PATTERN = re.compile(
@@ -37,7 +43,7 @@ def _get_token_pitch(token: str):
     'F#'
     """
     m = re.match(TOKEN_PITCH_PATTERN, token)
-    assert m is not None
+    assert m is not None, f"Could not extract pitch from token {token!r}"
     return m.group("pitch")
 
 

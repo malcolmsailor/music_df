@@ -12,7 +12,7 @@ from functools import partial
 import pandas as pd
 from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
-from music_df.dedouble_instruments import DEFAULT_PITCH_THRESHOLD, dedouble_octaves
+from music_df.dedouble_instruments import dedouble_octaves
 
 
 def _find_octave_partner_indices(
@@ -38,10 +38,8 @@ def _find_octave_partner_indices(
     return partners
 
 
-def _transform(df, min_length, pitch_threshold):
-    result = dedouble_octaves(
-        df, min_length=min_length, pitch_threshold=pitch_threshold
-    )
+def _transform(df, min_length):
+    result = dedouble_octaves(df, min_length=min_length)
     dropped = set(df.index) - set(result["original_index"])
     partners = _find_octave_partner_indices(df, result, dropped)
     result.attrs["involved_indices"] = dropped | partners
@@ -53,12 +51,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Demo: dedouble octaves and save before/after excerpts."
     )
     add_common_args(parser)
-    parser.add_argument(
-        "--pitch-threshold",
-        type=float,
-        default=DEFAULT_PITCH_THRESHOLD,
-        help=f"MIDI pitch threshold for melody/bass register (default: {DEFAULT_PITCH_THRESHOLD})",
-    )
     # Override min-length default to 3 (octave matching needs more notes
     # to avoid false positives from contrary motion)
     parser.set_defaults(min_length=3)
@@ -67,9 +59,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    transform = partial(
-        _transform, min_length=args.min_length, pitch_threshold=args.pitch_threshold
-    )
+    transform = partial(_transform, min_length=args.min_length)
     meta = {
         "input_folder": str(args.input_folder),
         "max_files": args.max_files,
@@ -77,7 +67,6 @@ def main(argv: list[str] | None = None) -> None:
         "bars": args.bars,
         "quarter_notes": args.quarter_notes,
         "min_length": args.min_length,
-        "pitch_threshold": args.pitch_threshold,
         "seed": args.seed,
     }
     run_demo(args, transform, meta)

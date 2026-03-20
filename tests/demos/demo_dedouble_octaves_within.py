@@ -12,10 +12,7 @@ from functools import partial
 import pandas as pd
 from _demo_helpers import TICKS_PER_QUARTER, add_common_args, run_demo
 
-from music_df.dedouble_instruments import (
-    DEFAULT_PITCH_THRESHOLD,
-    dedouble_octaves_within_instrument,
-)
+from music_df.dedouble_instruments import dedouble_octaves_within_instrument
 
 
 def _find_within_octave_partner_indices(
@@ -49,7 +46,6 @@ def _find_within_octave_partner_indices(
 def _transform(
     df,
     min_length,
-    pitch_threshold,
     match_releases,
     max_gap_onsets,
     max_streak_pitch_distance,
@@ -57,7 +53,6 @@ def _transform(
     result = dedouble_octaves_within_instrument(
         df,
         min_length=min_length,
-        pitch_threshold=pitch_threshold,
         match_releases=match_releases,
         max_gap_onsets=max_gap_onsets,
         max_streak_pitch_distance=max_streak_pitch_distance,
@@ -73,12 +68,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Demo: dedouble within-instrument octaves and save before/after excerpts."
     )
     add_common_args(parser)
-    parser.add_argument(
-        "--pitch-threshold",
-        type=float,
-        default=DEFAULT_PITCH_THRESHOLD,
-        help=f"MIDI pitch threshold for melody/bass register (default: {DEFAULT_PITCH_THRESHOLD})",
-    )
     parser.add_argument(
         "--no-match-releases",
         action="store_true",
@@ -105,7 +94,6 @@ def main(argv: list[str] | None = None) -> None:
     transform = partial(
         _transform,
         min_length=args.min_length,
-        pitch_threshold=args.pitch_threshold,
         match_releases=not args.no_match_releases,
         max_gap_onsets=args.max_gap_onsets,
         max_streak_pitch_distance=args.max_streak_pitch_distance,
@@ -117,7 +105,6 @@ def main(argv: list[str] | None = None) -> None:
         "bars": args.bars,
         "quarter_notes": args.quarter_notes,
         "min_length": args.min_length,
-        "pitch_threshold": args.pitch_threshold,
         "match_releases": not args.no_match_releases,
         "max_gap_onsets": args.max_gap_onsets,
         "max_streak_pitch_distance": args.max_streak_pitch_distance,

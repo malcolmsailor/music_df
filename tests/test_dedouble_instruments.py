@@ -4,7 +4,6 @@ import pytest
 
 from music_df.dedouble_instruments import (
     CANDIDATE_INSTRUMENT_COLUMNS,
-    DEFAULT_PITCH_THRESHOLD,
     dedouble_octaves,
     dedouble_octaves_within_instrument,
     dedouble_unisons_across_instruments,
@@ -375,8 +374,8 @@ class TestOctaveDoubling:
 
 class TestOctaveDoublingKeepsHighVoice:
     def test_high_register_keeps_higher(self):
-        """High-register octave doubling -> lower voice dropped."""
-        # Both voices above threshold (default ~53): mean ~66 and ~78
+        """Non-bass octave doubling -> lower voice dropped, higher kept."""
+        # Track 3 plays bass below the doubling, so tracks 1/2 are NOT the bass
         df = _make_df(
             [
                 ("note", 1, 64, 0.0, 1.0),
@@ -385,13 +384,78 @@ class TestOctaveDoublingKeepsHighVoice:
                 ("note", 2, 76, 0.0, 1.0),  # octave above
                 ("note", 2, 78, 1.0, 2.0),
                 ("note", 2, 80, 2.0, 3.0),
+                # Bass instrument below both
+                ("note", 3, 36, 0.0, 1.0),
+                ("note", 3, 38, 1.0, 2.0),
+                ("note", 3, 40, 2.0, 3.0),
             ]
         )
         result = dedouble_octaves(df, instrument_columns=["track"])
-        assert result.attrs["n_dedoubled_notes"] == 3
-        # Higher voice (track 2) should be kept
+        assert result.attrs["n_dedoubled_notes"] == 6
+        # Higher voice (track 2) kept, lower voice (track 1) dropped
         remaining = result[result.type == "note"]
-        assert sorted(remaining["track"].unique()) == [2]
+        assert sorted(remaining["track"].unique()) == [2, 3]
+
+
+class TestOctaveDoublingBassDetection:
+    def test_bass_doubling_keeps_lower(self):
+        """When lower note IS the global bass, keep lower even in high register."""
+        df = _make_df(
+            [
+                ("note", 1, 60, 0.0, 1.0),
+                ("note", 1, 62, 1.0, 2.0),
+                ("note", 1, 64, 2.0, 3.0),
+                ("note", 2, 72, 0.0, 1.0),
+                ("note", 2, 74, 1.0, 2.0),
+                ("note", 2, 76, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        remaining = result[result.type == "note"]
+        # Lower voice IS the bass → keep lower (track 1)
+        assert sorted(remaining["track"].unique()) == [1]
+
+    def test_non_bass_doubling_keeps_higher(self):
+        """When another instrument is lower, the doubled passage keeps higher."""
+        df = _make_df(
+            [
+                ("note", 1, 64, 0.0, 1.0),
+                ("note", 1, 66, 1.0, 2.0),
+                ("note", 1, 68, 2.0, 3.0),
+                ("note", 2, 76, 0.0, 1.0),
+                ("note", 2, 78, 1.0, 2.0),
+                ("note", 2, 80, 2.0, 3.0),
+                # Track 3: bass below both
+                ("note", 3, 36, 0.0, 1.0),
+                ("note", 3, 38, 1.0, 2.0),
+                ("note", 3, 40, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        assert result.attrs["n_dedoubled_notes"] == 6
+        remaining = result[result.type == "note"]
+        assert sorted(remaining["track"].unique()) == [2, 3]
+
+    def test_sustained_bass_makes_doubling_non_bass(self):
+        """Sustained note from earlier onset makes the doubled note NOT the bass."""
+        df = _make_df(
+            [
+                # Track 3: sustained bass from onset 0 through onset 2
+                ("note", 3, 30, 0.0, 3.0),
+                # Track 1: octave doubling starting at onset 0
+                ("note", 1, 60, 0.0, 1.0),
+                ("note", 1, 62, 1.0, 2.0),
+                ("note", 1, 64, 2.0, 3.0),
+                ("note", 2, 72, 0.0, 1.0),
+                ("note", 2, 74, 1.0, 2.0),
+                ("note", 2, 76, 2.0, 3.0),
+            ]
+        )
+        result = dedouble_octaves(df, instrument_columns=["track"])
+        assert result.attrs["n_dedoubled_notes"] == 4
+        remaining = result[result.type == "note"]
+        # Track 1 (lower of pair) is NOT bass (track 3 is) → keep higher (track 2)
+        assert sorted(remaining["track"].unique()) == [2, 3]
 
 
 class TestOctaveDoublingKeepsLowVoice:
@@ -510,9 +574,9 @@ class TestBasicWithinOctave:
 
 
 class TestWithinOctavePitchThreshold:
-    def test_high_register_keeps_higher(self):
-        """High-register doubling -> lower voice dropped."""
-        # Mean pitch (60+72+62+74+64+76)/6 = 68 > 53 threshold
+    def test_non_bass_keeps_higher(self):
+        """Non-bass doubling -> lower voice dropped, higher kept."""
+        # Track 2 plays bass below, so track 1's lower voice is NOT the bass
         df = _make_df(
             [
                 ("note", 1, 60, 0.0, 1.0),
@@ -521,13 +585,17 @@ class TestWithinOctavePitchThreshold:
                 ("note", 1, 74, 1.0, 2.0),
                 ("note", 1, 64, 2.0, 3.0),
                 ("note", 1, 76, 2.0, 3.0),
+                # Bass instrument below
+                ("note", 2, 36, 0.0, 1.0),
+                ("note", 2, 38, 1.0, 2.0),
+                ("note", 2, 40, 2.0, 3.0),
             ]
         )
         result = dedouble_octaves_within_instrument(df, instrument_columns=["track"])
-        assert result.attrs["n_dedoubled_notes"] == 3
+        assert result.attrs["n_dedoubled_notes"] == 6
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
-        # Higher voice kept: 72, 74, 76
-        assert remaining_pitches == [72, 74, 76]
+        # Higher voice kept from track 1, plus track 2 bass
+        assert remaining_pitches == [36, 38, 40, 72, 74, 76]
 
     def test_low_register_keeps_lower(self):
         """Low-register doubling -> higher voice dropped."""
@@ -804,8 +872,8 @@ class TestWithinOctaveMixedNotes:
         # 3 doubled notes dropped, 6 remain (3 kept from doubling + 3 non-doubled)
         assert result.attrs["n_dedoubled_notes"] == 6
         remaining_pitches = sorted(result[result.type == "note"]["pitch"])
-        # Higher voices (72,74,76) kept + non-doubled (67,69,71)
-        assert remaining_pitches == [67, 69, 71, 72, 74, 76]
+        # Lower voice IS the bass → keep lower (60,62,64) + non-doubled (67,69,71)
+        assert remaining_pitches == [60, 62, 64, 67, 69, 71]
 
 
 # ===================================================================
