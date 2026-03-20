@@ -8,6 +8,8 @@ from music_df.dedouble_instruments import CANDIDATE_INSTRUMENT_COLUMNS
 from music_df.sort_df import sort_df
 from music_df.transforms import transform
 
+DEFAULT_MAX_BARS = 512
+
 
 def _bar_fingerprints(df: pd.DataFrame) -> list[int]:
     """Return a list of fingerprint hashes, one per bar.
@@ -95,6 +97,9 @@ def _find_bars_to_keep(
             if not found:
                 i += 1
 
+    assert all(0 <= idx < len(fingerprints) for idx in bars), (
+        "keep_indices out of range"
+    )
     return bars, repeat_spans
 
 
@@ -129,8 +134,31 @@ def _remove_repeated_bars_diff(
     return removed_tuples, set(), diff_bounds
 
 
+def _find_bars_to_keep_chunked(
+    fingerprints: list[int],
+    max_bars: int,
+) -> tuple[list[int], list[tuple[int, int, int]]]:
+    """Split fingerprints into chunks of max_bars, process each independently."""
+    n = len(fingerprints)
+    all_keep: list[int] = []
+    all_spans: list[tuple[int, int, int]] = []
+    for chunk_start in range(0, n, max_bars):
+        chunk_end = min(chunk_start + max_bars, n)
+        chunk_fps = fingerprints[chunk_start:chunk_end]
+        keep, spans = _find_bars_to_keep(chunk_fps)
+        all_keep.extend(idx + chunk_start for idx in keep)
+        all_spans.extend(
+            (s + chunk_start, e + chunk_start, last + chunk_start)
+            for s, e, last in spans
+        )
+    assert all(0 <= idx < n for idx in all_keep), "keep_indices out of range"
+    return all_keep, all_spans
+
+
 @transform(diff_func=_remove_repeated_bars_diff)
-def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
+def remove_repeated_bars(
+    df: pd.DataFrame, max_bars: int = DEFAULT_MAX_BARS
+) -> pd.DataFrame:
     """Remove tandem-repeated bar sequences from a music_df.
 
     A "tandem repeat" is a consecutive repetition of a bar sequence.
@@ -277,7 +305,12 @@ def remove_repeated_bars(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[bar_rows.index, "release"] = releases
 
     fingerprints = _bar_fingerprints(df)
-    keep_indices, repeat_span_indices = _find_bars_to_keep(fingerprints)
+    if len(fingerprints) <= max_bars:
+        keep_indices, repeat_span_indices = _find_bars_to_keep(fingerprints)
+    else:
+        keep_indices, repeat_span_indices = _find_bars_to_keep_chunked(
+            fingerprints, max_bars
+        )
     bars_to_keep = [bar_numbers[i] for i in keep_indices]
 
     n_bars_after = len(bars_to_keep)

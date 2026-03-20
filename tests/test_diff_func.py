@@ -7,6 +7,7 @@ import pytest
 from music_df.quantize_df import _quantize_diff, quantize_df
 from music_df.remove_repeated_bars import (
     _find_bars_to_keep,
+    _find_bars_to_keep_chunked,
     _remove_repeated_bars_diff,
     remove_repeated_bars,
 )
@@ -297,6 +298,57 @@ def test_quantize_naive_diff_overcounts():
     removed, added = _quantize_diff(df, result)
     assert removed == set()
     assert added == set()
+
+
+# ---------------------------------------------------------------------------
+# Chunked _find_bars_to_keep tests
+# ---------------------------------------------------------------------------
+
+
+def test_chunked_matches_unchunked_for_small_input():
+    """When input fits in one chunk, chunked and unchunked give same results."""
+    a, b, c = hash("A"), hash("B"), hash("C")
+    fps = [a, b, a, b, c, c]
+    keep_plain, spans_plain = _find_bars_to_keep(fps)
+    keep_chunked, spans_chunked = _find_bars_to_keep_chunked(fps, max_bars=len(fps))
+    assert keep_plain == keep_chunked
+    assert spans_plain == spans_chunked
+
+
+def test_chunked_removes_within_chunk_repeats():
+    """Repeats within a chunk are correctly removed."""
+    a, b, c = hash("A"), hash("B"), hash("C")
+    # Two chunks of 4: [A B A B] [C C A A]
+    fps = [a, b, a, b, c, c, a, a]
+    keep, spans = _find_bars_to_keep_chunked(fps, max_bars=4)
+    # Chunk 0 [A B A B] -> keep [0, 1], span (0,1,3)
+    # Chunk 1 [C C A A] -> keep [4, 6], spans (4,4,5), (6,6,7)
+    assert keep == [0, 1, 4, 6]
+    assert len(spans) == 3
+
+
+def test_chunked_cross_boundary_repeats_preserved():
+    """Repeats straddling chunk boundaries are not removed (acceptable)."""
+    a = hash("A")
+    # 6 identical bars, chunk size 4: [A A A A] [A A]
+    fps = [a] * 6
+    keep, spans = _find_bars_to_keep_chunked(fps, max_bars=4)
+    # Chunk 0 reduces AAAA -> A (keep [0])
+    # Chunk 1 reduces AA -> A (keep [4])
+    # Cross-boundary repeat A|A is not caught — that's fine
+    assert keep == [0, 4]
+
+
+def test_chunked_indices_valid():
+    """All returned indices are valid into the original fingerprints list."""
+    a, b = hash("A"), hash("B")
+    fps = [a, b] * 20
+    keep, spans = _find_bars_to_keep_chunked(fps, max_bars=8)
+    assert all(0 <= idx < len(fps) for idx in keep)
+    for s, e, last in spans:
+        assert 0 <= s < len(fps)
+        assert 0 <= e < len(fps)
+        assert 0 <= last < len(fps)
 
 
 def test_bar_onset_map_aac():
