@@ -423,18 +423,22 @@ def _save_samples(
         else:
             eff_qn = end_time - start_time
 
-        # If no after-coordinate bounds were provided, use bar_onset_map
-        # to translate before coordinates to after coordinates (handles
-        # timeline shifts from remove_repeated_bars). Falls back to the
-        # same window if no mapping is available.
-        if after_start_time is None:
-            bom = cand.file_result.bar_onset_map
-            if bom:
-                after_start_time = bom.get(start_time, start_time)
-                after_end_time = bom.get(end_time, end_time)
-            else:
-                after_start_time = start_time
-                after_end_time = end_time
+        # Use bar_onset_map to translate the full before window, then
+        # expand to include diff_bounds' after-coordinates if present.
+        bom = cand.file_result.bar_onset_map
+        if bom:
+            mapped_start = bom.get(start_time, start_time)
+            mapped_end = bom.get(end_time, end_time)
+        else:
+            mapped_start = start_time
+            mapped_end = end_time
+
+        if after_start_time is not None:
+            after_start_time = min(after_start_time, mapped_start)
+            after_end_time = max(after_end_time, mapped_end)
+        else:
+            after_start_time = mapped_start
+            after_end_time = mapped_end
         # Snap after window to bar boundaries in the after_df
         after_bar_onsets = sorted(
             after_df.loc[after_df["type"] == "bar", "onset"].unique()
