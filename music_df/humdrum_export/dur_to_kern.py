@@ -90,8 +90,12 @@ else:
         '12'
         >>> duration_float_to_recip(3 / 4)
         '8.'
+
+        9/8 and 9/2 full-bar durations are not representable as a single
+        standard note value, so they fall through to the "q" prefix:
+
         >>> duration_float_to_recip(9 / 2)
-        '8%9'
+        'q4.5'
         >>> duration_float_to_recip(0.3333)
         '12'
         >>> duration_float_to_recip(0.333)
@@ -159,25 +163,20 @@ else:
         if abs(input - (4.0 * 4.0 / 3.0)) < 0.0001:
             return "3%4"
 
-        # special case for 9/8 full rests
-        if abs(input - (4.0 * 9.0 / 8.0)) < 0.0001:
-            return "8%9"
-
-        # special case for 9/2 full-measure rest
-        if abs(input - 18.0) < 0.0001:
-            return "2%9"
-
         # handle special rounding cases primarily for SCORE which
-        # only stores 4 digits for a duration
-        if math.isclose(input, 1 / 3, abs_tol=0.01):
+        # only stores 4 digits for a duration.
+        # abs_tol=0.005 is tight enough to avoid catching adjacent
+        # durations (e.g., 1/20=0.05 vs 1/24=0.0417) while still
+        # absorbing 4-digit truncation.
+        if math.isclose(input, 1 / 3, abs_tol=0.005):
             return "12"
-        if math.isclose(input, 1 / 6, abs_tol=0.01):
+        if math.isclose(input, 1 / 6, abs_tol=0.005):
             return "24"
-        if math.isclose(input, 1 / 12, abs_tol=0.01):
+        if math.isclose(input, 1 / 12, abs_tol=0.005):
             # triplet 32nd note, which has a real duration of 0.0833333 etc.
             return "48"
-        if math.isclose(input, 1 / 24, abs_tol=0.01):
-            # triplet 64th note, which has a real duration of 0.0833333 etc.
+        if math.isclose(input, 1 / 24, abs_tol=0.005):
+            # triplet 64th note, which has a real duration of 0.0417 etc.
             return "96"
 
         basic = 4.0 / input
@@ -266,7 +265,7 @@ else:
         >>> dur_to_kern(5.5, 2.0, "3/4")
         [(1.0, '4'), (3.0, '2.'), (1.5, '4.')]
         >>> dur_to_kern(9.25, 0.5, "9/8")
-        [(0.5, '8'), (0.5, '8'), (1.5, '4.'), (1.5, '4.'), (4.5, '8%9'), (0.75, '8.')]
+        [(0.5, '8'), (0.5, '8'), (1.5, '4.'), (1.5, '4.'), (0.5, '8'), (0.5, '8'), (1.5, '4.'), (1.5, '4.'), (0.5, '8'), (0.75, '8.')]
         >>> dur_to_kern(0.3333, 0.0, "4/4")
         [(0.3333333333333333, '12')]
         >>> dur_to_kern(0.1666, 0.0, "4/4")
@@ -348,6 +347,13 @@ else:
                     whole /= divisor
                     if whole <= 0.0:
                         continue
+                    # Cap at breve (8.0 qn) to prevent infinite recursion
+                    # when the full duration isn't representable as a
+                    # single note value (e.g., 18.0 qn in 9/2).
+                    MAX_REPRESENTABLE = 8.0
+                    if whole > MAX_REPRESENTABLE:
+                        remainder += whole - MAX_REPRESENTABLE
+                        whole = MAX_REPRESENTABLE
                     result1 = dur_to_kern(
                         whole,
                         temp_offset,

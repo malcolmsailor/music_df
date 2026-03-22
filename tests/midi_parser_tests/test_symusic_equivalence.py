@@ -9,11 +9,17 @@ import fractions
 import math
 import os
 import tempfile
+import warnings
 
 import pandas as pd
 import pytest
+import symusic
 
-from music_df.conversions import read_midi_symusic, write_midi_symusic
+from music_df.conversions import (
+    read_midi_symusic,
+    symusic_score_to_df,
+    write_midi_symusic,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 PALMID = os.path.join(SCRIPT_DIR, "test_files", "misc_Palestrina.mid")
@@ -107,6 +113,33 @@ def test_tempo_extraction():
     for _, tempo in tempos.iterrows():
         assert "tempo" in tempo["other"]
         assert isinstance(tempo["other"]["tempo"], (int, float))
+
+
+@pytest.mark.parametrize(
+    "numerator, denominator",
+    [(0, 4), (4, 0), (0, 0)],
+)
+def test_invalid_time_signature_replaced_with_default(numerator, denominator):
+    """Invalid time signatures in MIDI should be replaced with 4/4."""
+    score = symusic.Score(ttype="tick")
+    score.time_signatures.append(
+        symusic.TimeSignature(time=0, numerator=numerator, denominator=denominator)
+    )
+    track = symusic.Track(name="test")
+    track.notes.append(symusic.Note(time=0, duration=480, pitch=60, velocity=64))
+    score.tracks.append(track)
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        df = symusic_score_to_df(score, time_type=float)
+        assert len(w) == 1
+        assert "replacing with 4/4" in str(w[0].message)
+
+    ts_rows = df[df["type"] == "time_signature"]
+    assert len(ts_rows) == 1
+    other = ts_rows.iloc[0]["other"]
+    assert other["numerator"] == 4
+    assert other["denominator"] == 4
 
 
 if __name__ == "__main__":

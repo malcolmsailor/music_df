@@ -3,6 +3,7 @@ Functions for converting between symusic Score objects and music_df DataFrames.
 """
 
 import fractions
+import warnings
 from typing import Type
 
 import pandas as pd
@@ -85,11 +86,15 @@ def symusic_score_to_df(
 
         # Extract time signature events
         for ts in score.time_signatures:
-            if ts.denominator <= 0:
-                raise ValueError(
-                    f"Malformed MIDI file: invalid time signature denominator ({ts.denominator}). "
-                    f"Time signature numerator was {ts.numerator}."
+            numerator = ts.numerator
+            denominator = ts.denominator
+            if numerator <= 0 or denominator <= 0:
+                warnings.warn(
+                    f"Invalid time signature {numerator}/{denominator}"
+                    " — replacing with 4/4."
                 )
+                numerator = 4
+                denominator = 4
             rows.append(
                 {
                     "type": "time_signature",
@@ -99,7 +104,7 @@ def symusic_score_to_df(
                     "channel": None,
                     "pitch": None,
                     "velocity": None,
-                    "other": {"numerator": ts.numerator, "denominator": ts.denominator},
+                    "other": {"numerator": numerator, "denominator": denominator},
                 }
             )
 

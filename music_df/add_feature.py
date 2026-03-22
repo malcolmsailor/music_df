@@ -117,7 +117,14 @@ def infer_barlines(
 
     assert len(ts_onsets)
 
-    max_release = df.release.max()
+    # Cap max_release to avoid generating excessive barlines when MIDI files
+    # have missing note-off events (producing absurd release values).
+    last_ts_other = ts_others[-1]
+    if isinstance(last_ts_other, str):
+        last_ts_other = literal_eval(last_ts_other)
+    last_bar_dur = last_ts_other["numerator"] * 4 / last_ts_other["denominator"]
+    max_onset = notes["onset"].max()
+    max_release = min(df.release.max(), max_onset + last_bar_dur * 4)
     barline_onset_accumulator = []
 
     for i in range(len(ts_onsets)):

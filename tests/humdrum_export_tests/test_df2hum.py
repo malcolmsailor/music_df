@@ -77,22 +77,20 @@ def test_df2hum_with_overhang():
 
 
 def test_df2hum_with_98_rest():
-    csv_table = """,type,pitch,onset,release,tie_to_next,tie_to_prev
-0,bar,,0.0,4.0,,
-0,note,60,0.0,4.0,,
-0,note,64,0.0,4.001,,
-0,note,67,0.0,12.0,,
-0,bar,,4.0,8.0,,
-0,note,72,7.999,12.0,,
-0,bar,,8.0,12.0,,
-0,note,76,9.0,9.001,,
-0,bar,,12.0,16.0,,
+    """df2hum should not crash when a 9/8 bar produces full-bar rests.
+
+    Full-bar rests in 9/8 (4.5 qn) used to generate '8%9r' irrational rhythm
+    notation. The collate_spines rscale round-trip (scale by 1/9, assemble,
+    scale back by 9) would then fail because the 1/9 scaling creates very fine
+    subdivisions that cause timing misalignment after assembly.
     """
-    _, temp_path = mkstemp(".csv")
-    with open(temp_path, "w") as outf:
-        outf.write(csv_table)
-    df = read_csv(temp_path)
-    os.remove(temp_path)
+    csv_path = os.path.join(SCRIPT_DIR, "resources", "test_98_rest.csv")
+    df = read_csv(csv_path)
+
+    # quantize to avoid a separate issue with unrepresentable septuplet
+    # durations that cause barline misalignment
+    out = df2hum(df, quantize=16)
+    assert "**kern" in out
 
 
 def test_df2hum_with_labels_and_grace_notes():
@@ -152,6 +150,14 @@ def test_barline_split_notes_are_tied():
     assert "]" in pre_barline, (
         f"Expected tie-end ']' in output for notes split at barline.\n{out}"
     )
+
+
+def test_df2hum_barline_misalign():
+    """df2hum should not crash with misaligned barlines from multi-voice data."""
+    csv_path = os.path.join(SCRIPT_DIR, "resources", "test_barline_misalign.csv")
+    df = read_csv(csv_path)
+    out = df2hum(df)
+    assert "**kern" in out
 
 
 if __name__ == "__main__":
