@@ -67,7 +67,8 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
 
     If `quality_col` is provided, we only expand tonicized chords that are not
     dominant sevenths, augmented sixths, or diminished or augmented triads
-    (i.e., quality doesn't contain "Mm7", "aug6", "o", or "+").
+    (i.e., quality doesn't contain "Mm7", "It", "Fr", "Ger", "aug6", "o",
+    or "+").
 
     >>> df = pd.read_csv(
     ...     io.StringIO(
@@ -204,6 +205,8 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     ... V,V,M,M,Ab
     ... V,I,_,aug6,Ab
     ... V,V,M,M,Ab
+    ... V,I,_,Ger,Ab
+    ... V,V,M,M,Ab
     ... V,I,_,o,Ab
     ... V,V,M,M,Ab
     ... V,I,_,+,Ab
@@ -212,16 +215,18 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     ...     )
     ... )
     >>> expand_tonicizations(df, quality_col="quality")
-      primary_degree secondary_degree secondary_mode quality key
-    0              V                V              M       M  Ab
-    1              V                I              _     Mm7  Ab
-    2              V                V              M       M  Ab
-    3              V                I              _    aug6  Ab
-    4              V                V              M       M  Ab
-    5              V                I              _       o  Ab
-    6              V                V              M       M  Ab
-    7              V                I              _       +  Ab
-    8              V                V              M       M  Ab
+       primary_degree secondary_degree secondary_mode quality key
+    0               V                V              M       M  Ab
+    1               V                I              _     Mm7  Ab
+    2               V                V              M       M  Ab
+    3               V                I              _    aug6  Ab
+    4               V                V              M       M  Ab
+    5               V                I              _     Ger  Ab
+    6               V                V              M       M  Ab
+    7               V                I              _       o  Ab
+    8               V                V              M       M  Ab
+    9               V                I              _       +  Ab
+    10              V                V              M       M  Ab
     """
 
     _warn_if_lowercase_degrees(df)
@@ -281,8 +286,8 @@ def expand_tonicizations(df: pd.DataFrame, quality_col: str | None = None):
     )
 
     if quality_col is not None:
-        non_dominant_mask &= ~df[quality_col].str.contains("Mm7|aug6|o|\\+")
-        dominant_mask &= ~df[quality_col].str.contains("Mm7|aug6|o|\\+")
+        non_dominant_mask &= ~df[quality_col].str.contains("Mm7|It|Fr|Ger|aug6|o|\\+")
+        dominant_mask &= ~df[quality_col].str.contains("Mm7|It|Fr|Ger|aug6|o|\\+")
 
     def _apply_mask(mask):
         df.loc[mask, "secondary_degree"] = df.loc[mask, "primary_degree"]

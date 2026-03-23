@@ -331,11 +331,15 @@ class TestRnbertToMusic21:
             ("VM/Vm", "V/v"),
             ("IVm/bIIm", "iv/bii"),
             ("VM/V", "V/V"),
-            # augmented sixths
+            # augmented sixths (v1)
             ("xaug665", "Ger65"),
             ("xaug643", "Fr43"),
             ("xaug63", "It6"),
             ("xaug642", "It6"),
+            # augmented sixths (v2)
+            ("A6Ger65", "Ger65"),
+            ("A6Fr43", "Fr43"),
+            ("A6It6", "It6"),
         ],
     )
     def test_translate(self, rnbert, expected_music21):

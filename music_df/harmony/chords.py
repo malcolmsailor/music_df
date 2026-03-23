@@ -311,6 +311,11 @@ def get_key_pc_cache(
 
 def _translate_single_rnbert_part(part: str) -> str:
     """Translate one atomic rnbert token (no ``/``) to music21 format."""
+    # v2 augmented sixth tokens: "A6Ger65", "A6Fr43", "A6It6", etc.
+    m = re.match(r"^A6(Ger|Fr|It)(.*)", part)
+    if m:
+        return m.group(1) + m.group(2)
+    # v1 augmented sixth tokens (backward compat)
     match part:
         case "xaug665":
             return "Ger65"
@@ -365,11 +370,18 @@ def translate_rns(
     >>> translate_rns("xaug643")
     'Fr43'
 
-    # TODO: (Malcolm 2026-01-22) improve augmented sixth handling
-    All other "inversions" should return It6 for now but this should be improved on!
+    v1 catch-all: other xaug6 variants map to It6
     >>> translate_rns("xaug63")
     'It6'
     >>> translate_rns("xaug642")
+    'It6'
+
+    v2 augmented sixth tokens
+    >>> translate_rns("A6Ger65")
+    'Ger65'
+    >>> translate_rns("A6Fr43")
+    'Fr43'
+    >>> translate_rns("A6It6")
     'It6'
 
     >>> translate_rns("VM/VM")

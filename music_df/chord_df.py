@@ -820,10 +820,6 @@ def add_key_pcs(
 
 
 def get_quality_for_merging(quality: pd.Series | str) -> pd.Series | str:
-    # (Malcolm 2024-04-18) possibly we want to do further processing, e.g.
-    #   - remove 6 from augmented 6 chords "aug6" quality and otherwise simplify
-    #   - only display the quality when it contradicts the expected value for the
-    #       scale (this of course would require a lot more coding)
     if isinstance(quality, str):
         return quality.replace("7", "")
     else:
@@ -1061,15 +1057,23 @@ def inversion_number_to_figure(
     '42'
     >>> inversion_number_to_figure(3, "M")
     '42'
+    >>> inversion_number_to_figure(0, "It")
+    ''
+    >>> inversion_number_to_figure(1, "It")
+    '6'
+    >>> inversion_number_to_figure(1, "Ger")
+    '65'
+    >>> inversion_number_to_figure(2, "Fr")
+    '43'
     """
-    # If the chord is a 7th or augmented 6th, we use 7th chord inversions. (Since
-    #   we only have integers to indicate 1st, 2nd inversion etc., we can't distinguish
-    #   German and Italian 6th chords.)
+    # French and German augmented 6ths are 4-note chords, so they use 7th-chord
+    #   inversions. Italian augmented 6ths are triads and fall through below.
+    #   "aug6" is kept for backward compatibility.
     temp_inversion_number = float(inversion_number)
     if isnan(temp_inversion_number):
         return ""
     inversion_number = int(temp_inversion_number)
-    if "7" in quality or quality == "aug6":
+    if "7" in quality or quality in {"Fr", "Ger", "aug6"}:
         if seventh_chord_inversions_mapping is None:
             seventh_chord_inversions_mapping = SEVENTH_CHORD_INVERSIONS
         return seventh_chord_inversions_mapping.get(inversion_number, "?")
