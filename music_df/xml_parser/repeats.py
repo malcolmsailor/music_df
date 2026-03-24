@@ -288,6 +288,15 @@ def get_repeat_segments(
                     segment_types.append("simple_repeat")
             last_backward_repeat = onset
     if ending_jump_from is not None:
+        if not segments and last_backward_repeat == 0:
+            # Endings without any backward repeat are an encoding error;
+            # treat as no repeats.
+            if warn:
+                warnings.warn(
+                    "Endings found without any associated backward repeat "
+                    "barline; ignoring endings"
+                )
+            return ([(0, float("inf"))], [(0, float("inf"))], ["no_repeat"])
         segments.extend(
             [
                 (last_forward_repeat, ending_jump_from),
