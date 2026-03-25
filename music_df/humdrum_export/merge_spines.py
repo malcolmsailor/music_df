@@ -54,7 +54,11 @@ def _sort_measure_spines(measure: t.List[t.List[str]]):
     """
 
     def _get_mean_pitch(spine):
-        pitches = UNSPELLER([_get_token_pitch(t) for t in spine if _is_note_token(t)])
+        # Chord tokens contain space-separated sub-tokens (e.g., "4FF 4E-")
+        sub_tokens = [
+            st for t in spine if _is_note_token(t) for st in t.split(" ")
+        ]
+        pitches = UNSPELLER([_get_token_pitch(st) for st in sub_tokens])
         if not pitches:
             return 0
         return sum(pitches) / len(pitches)
