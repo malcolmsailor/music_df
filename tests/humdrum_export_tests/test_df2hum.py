@@ -160,5 +160,21 @@ def test_df2hum_barline_misalign():
     assert "**kern" in out
 
 
+def test_df2hum_midi_barline_misalign():
+    """df2hum should not crash when MIDI note durations cause KernDurError
+    right before a barline.
+
+    When handle_rest fails for a rest gap just before a barline, the
+    `continue` used to skip the barline processing entirely, leaving
+    measure_start stale and producing spines with missing barlines.
+    """
+    csv_path = os.path.join(
+        SCRIPT_DIR, "resources", "test_midi_barline_misalign.csv"
+    )
+    df = pd.read_csv(csv_path)
+    out = df2hum(df)
+    assert "**kern" in out
+
+
 if __name__ == "__main__":
     test_df2hum_with_grace_duration()

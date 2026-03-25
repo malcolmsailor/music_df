@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import typing as t
@@ -13,12 +14,41 @@ from music_df.humdrum_export.constants import DEFAULT_COLOR_MAPPING, USER_SIGNIF
 from music_df.humdrum_export.df_to_spines import df_to_spines, kern_to_float_dur
 from music_df.humdrum_export.df_utils.spell_df import spell_df
 from music_df.humdrum_export.df_utils.split_df_by_pitch import split_df_by_pitch
-from music_df.humdrum_export.dur_to_kern import dur_to_kern
+from music_df.humdrum_export.dur_to_kern import dur_to_kern, duration_float_to_recip, _snap_to_musical
 from music_df.humdrum_export.merge_spines import merge_spines
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
 from music_df.split_notes import split_notes_at_barlines
 from music_df.transpose import PERCUSSION_CHANNEL
+
+LOGGER = logging.getLogger(__name__)
+
+# If at least this fraction of unique note durations are unrepresentable
+# in kern, auto-quantize.
+_AUTO_QUANTIZE_THRESHOLD = 0.2
+_AUTO_QUANTIZE_TPQ = 16
+
+
+def _needs_quantization(df: pd.DataFrame) -> bool:
+    """Check whether note durations are representable in kern notation.
+
+    Returns True when too many unique durations can't be expressed by
+    ``duration_float_to_recip`` (they get the ``q`` grace-note prefix,
+    meaning "unknown duration").
+    """
+    notes = df.loc[df.type == "note"]
+    if notes.empty:
+        return False
+    durs = (notes.release - notes.onset).unique()
+    durs = durs[durs > 0]  # exclude grace notes
+    if len(durs) == 0:
+        return False
+    n_bad = sum(
+        1
+        for d in durs
+        if duration_float_to_recip(_snap_to_musical(float(d))).startswith("q")
+    )
+    return n_bad / len(durs) > _AUTO_QUANTIZE_THRESHOLD
 
 
 def _write_spine(spine: t.List[str], path: str) -> None:
@@ -266,6 +296,12 @@ def df2hum(
     df = spell_df(df)
     if quantize:
         df = quantize_df(df, tpq=quantize)
+    elif quantize is None and _needs_quantization(df):
+        LOGGER.info(
+            "Auto-quantizing to %d tpq; pass quantize=<int> to override",
+            _AUTO_QUANTIZE_TPQ,
+        )
+        df = quantize_df(df, tpq=_AUTO_QUANTIZE_TPQ)
     df = add_bar_durs(df)
     df = split_notes_at_barlines(
         df,

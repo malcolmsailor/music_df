@@ -35,6 +35,7 @@ from music_df.harmony.chords import (
     get_key_pc_cache,
     get_rn_pc_cache,
 )
+from music_df.keys import pc_and_mode_to_key
 
 # =============================================================================
 # chord_df Specification
@@ -878,6 +879,7 @@ def merge_annotations(
     quality_col: str = "quality",
     include_key: bool = True,
     key_col: str = "key",
+    chromatic_key_col: str = "chromatic_key",
 ) -> pd.Series:
     """
     We rely on the dataframe being sorted to only show new annotations.
@@ -927,6 +929,11 @@ def merge_annotations(
     dtype: object
     """
     df = df.copy()
+    if include_key and key_col not in df.columns:
+        assert chromatic_key_col in df.columns, (
+            f"{chromatic_key_col=} not in {df.columns=}"
+        )
+        df[key_col] = df[chromatic_key_col].apply(pc_and_mode_to_key)
 
     df["inversion_figure"] = df.apply(
         lambda row: inversion_number_to_figure(row[inversion_col], row[quality_col]),
@@ -1608,8 +1615,13 @@ def compare_chords(
         Number of rows where any compared column differs.
 
     >>> df1 = pd.DataFrame(
-    ...     {"onset": [0.0, 1.0], "key": ["C", "C"],
-    ...      "degree": ["I", "V"], "quality": ["M", "M"], "inversion": [0, 0]}
+    ...     {
+    ...         "onset": [0.0, 1.0],
+    ...         "key": ["C", "C"],
+    ...         "degree": ["I", "V"],
+    ...         "quality": ["M", "M"],
+    ...         "inversion": [0, 0],
+    ...     }
     ... )
     >>> compare_chords(df1, df1)
     0
@@ -1646,9 +1658,7 @@ def _auto_compare_cols(df1: pd.DataFrame, df2: pd.DataFrame) -> list[str]:
 
     split_candidates = SPLIT_FORMAT_REQUIRED_COLUMNS - {"onset"}
     if split_candidates <= cols1 and split_candidates <= cols2:
-        extra = (
-            {"secondary_mode"} if "secondary_mode" in cols1 & cols2 else set()
-        )
+        extra = {"secondary_mode"} if "secondary_mode" in cols1 & cols2 else set()
         return sorted(split_candidates | extra)
 
     # Fallback: any columns from either format set present in both

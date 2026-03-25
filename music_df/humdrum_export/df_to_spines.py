@@ -393,6 +393,12 @@ else:
                     LOGGER.warning(
                         f"Could not fill skipped measure with rest due to {exc}"
                     )
+                    # Fallback: emit a whole rest to keep barlines aligned
+                    this_measure_tokens.append(
+                        (measure_start, TOKEN_ORDER["note"], "1r")
+                    )
+                    if label_col is not None or nth_note_label_col is not None:
+                        this_measure_labels.append("REMOVE")
                 prev_release: float = row.onset
 
             if row.onset > prev_release + REST_TOLERANCE:
@@ -410,9 +416,35 @@ else:
                         ),
                     )
                 except KernDurError as exc:
-                    skip_measure = True
                     LOGGER.warning(f"Replacing measure contents with rest due to {exc}")
-                    continue
+                    if row.type == "bar":
+                        # Replace the current measure with a whole rest and
+                        # fall through to bar processing so the barline is
+                        # emitted and measure_start stays correct.
+                        _has_labels = (
+                            label_col is not None or nth_note_label_col is not None
+                        )
+                        this_measure_tokens = []
+                        this_measure_labels = []
+                        try:
+                            handle_rest(
+                                measure_start,
+                                row.onset,
+                                measure_start,
+                                meter,
+                                this_measure_tokens,
+                                this_measure_labels if _has_labels else None,
+                            )
+                        except KernDurError:
+                            this_measure_tokens.append(
+                                (measure_start, TOKEN_ORDER["note"], "1r")
+                            )
+                            if _has_labels:
+                                this_measure_labels.append("REMOVE")
+                        prev_release = row.onset
+                    else:
+                        skip_measure = True
+                        continue
 
                 # TODO: (Malcolm 2024-03-01) remove dead code
                 # offsets, rests = get_kern_rest(
