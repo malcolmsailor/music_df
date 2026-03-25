@@ -10,7 +10,7 @@ import pytest
 import symusic
 
 from music_df.conversions import read_midi_symusic, write_midi_symusic
-from music_df.conversions.symusic_conv import symusic_score_to_df
+from music_df.conversions.symusic_conv import df_to_symusic_score, symusic_score_to_df
 import numpy as np
 
 from music_df.transpose import (
@@ -83,6 +83,53 @@ class TestSymusicDrumTrack:
                 & (reloaded_df["channel"] == PERCUSSION_CHANNEL)
             ]
             assert len(reloaded_drum_notes) == 1
+        finally:
+            os.remove(temp_path)
+
+
+class TestDfToSymusicPercussion:
+    """Tests for percussion handling in df_to_symusic_score()."""
+
+    def test_channel_9_sets_is_drum(self):
+        """Tracks with channel=9 notes should have is_drum=True in the Score."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+                "track": [0, 1],
+                "channel": [0, PERCUSSION_CHANNEL],
+                "pitch": [60, 36],
+                "velocity": [64, 100],
+                "other": [None, None],
+            }
+        )
+        score = df_to_symusic_score(df)
+        assert not score.tracks[0].is_drum
+        assert score.tracks[1].is_drum
+
+    def test_df_round_trip_preserves_is_drum(self):
+        """channel=9 → df_to_symusic_score → dump_midi → reload → is_drum."""
+        df = pd.DataFrame(
+            {
+                "type": ["note", "note"],
+                "onset": [0.0, 0.0],
+                "release": [1.0, 1.0],
+                "track": [0, 1],
+                "channel": [0, PERCUSSION_CHANNEL],
+                "pitch": [60, 36],
+                "velocity": [64, 100],
+                "other": [None, None],
+            }
+        )
+        with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as f:
+            temp_path = f.name
+        try:
+            score = df_to_symusic_score(df)
+            score.dump_midi(temp_path)
+            reloaded = symusic.Score(temp_path)
+            assert not reloaded.tracks[0].is_drum
+            assert reloaded.tracks[1].is_drum
         finally:
             os.remove(temp_path)
 

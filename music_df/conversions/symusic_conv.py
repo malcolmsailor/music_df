@@ -11,6 +11,7 @@ import symusic
 
 from music_df.add_feature import _to_dict_if_necessary
 from music_df.sort_df import sort_df
+from music_df.transpose import PERCUSSION_CHANNEL
 
 
 def symusic_score_to_df(
@@ -240,9 +241,20 @@ def df_to_symusic_score(
     else:
         n_tracks = 1
 
+    # Determine which tracks contain percussion notes
+    percussion_tracks: set[int] = set()
+    if "channel" in df.columns:
+        note_rows = df[df.get("type", pd.Series()) == "note"]
+        for track_i, ch in zip(note_rows["track"], note_rows["channel"]):
+            if pd.notna(track_i) and pd.notna(ch) and int(ch) == PERCUSSION_CHANNEL:
+                percussion_tracks.add(int(track_i))
+
     # Create tracks
-    for _ in range(n_tracks):
-        score.tracks.append(symusic.Track())
+    for i in range(n_tracks):
+        track = symusic.Track()
+        if i in percussion_tracks:
+            track.is_drum = True
+        score.tracks.append(track)
 
     # Process rows
     for _, row in df.iterrows():
