@@ -22,6 +22,7 @@ packages = [
     "music_df.humdrum_export",
     "music_df.humdrum_export.df_utils",
     "music_df.midi_parser",
+    "music_df.playback",
     "music_df.plot_piano_rolls",
     "music_df.scripts",
     "music_df.scripts.configs",
@@ -49,6 +50,7 @@ humdrum = [
 ]
 scripts = ["omegaconf", "pyyaml", "h5py"]
 doublings = ["pydivsufsort"]
+playback = ["pyfluidsynth"]
 dev = ["pytest", "pdoc3"]
 full = [
     "music_df[visualization]",
@@ -56,4 +58,5 @@ full = [
     "music_df[humdrum]",
     "music_df[scripts]",
     "music_df[doublings]",
+    "music_df[playback]",
 ]
