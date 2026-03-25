@@ -18,6 +18,7 @@ from music_df.humdrum_export.merge_spines import merge_spines
 from music_df.quantize_df import quantize_df
 from music_df.sort_df import sort_df
 from music_df.split_notes import split_notes_at_barlines
+from music_df.transpose import PERCUSSION_CHANNEL
 
 
 def _write_spine(spine: t.List[str], path: str) -> None:
@@ -250,6 +251,18 @@ def df2hum(
             character). Missing colors are given default values.
             There can be at most 7 distinct colors.
     """
+    if "channel" in df.columns:
+        perc_mask = df["channel"] == PERCUSSION_CHANNEL
+        if perc_mask.any():
+            import warnings
+
+            n_perc = perc_mask.sum()
+            warnings.warn(
+                f"Filtering {n_perc} percussion note(s) (channel={PERCUSSION_CHANNEL}) "
+                f"from DataFrame before Humdrum export."
+            )
+            df = df[~perc_mask]
+
     df = spell_df(df)
     if quantize:
         df = quantize_df(df, tpq=quantize)
