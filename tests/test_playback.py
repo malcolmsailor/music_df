@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -79,13 +80,15 @@ def _simple_df() -> pd.DataFrame:
 def mock_fluidsynth():
     """Patch fluidsynth module inside _player with mocks."""
     mock_synth_cls = MagicMock()
-    mock_player_cls = MagicMock()
 
     synth_instance = mock_synth_cls.return_value
     synth_instance.sfload.return_value = 1
 
-    player_instance = mock_player_cls.return_value
-    player_instance.get_status.return_value = 1  # FLUID_PLAYER_PLAYING
+    # fluid_player_stop signals the player to finish; fluid_player_join
+    # blocks until that signal arrives.  We simulate this so the cleanup
+    # thread (which calls join without a prior stop) blocks until
+    # _stop_unlocked calls fluid_player_stop, which opens the gate.
+    join_gate = threading.Event()
 
     with (
         patch("music_df.playback._player.fluidsynth") as mock_mod,
@@ -93,14 +96,20 @@ def mock_fluidsynth():
         patch("music_df.playback._player.df_to_midi"),
     ):
         mock_mod.Synth = mock_synth_cls
-        mock_mod.Player = mock_player_cls
+        mock_mod.FLUID_PLAYER_PLAYING = 1
+        fluid_player = MagicMock(name="fluid_player_handle")
+        mock_mod.new_fluid_player.return_value = fluid_player
+        mock_mod.fluid_player_get_status.return_value = 1
+        mock_mod.fluid_player_join.side_effect = lambda p: join_gate.wait()
+        mock_mod.fluid_player_stop.side_effect = lambda p: join_gate.set()
         yield {
             "module": mock_mod,
             "synth_cls": mock_synth_cls,
             "synth": synth_instance,
-            "player_cls": mock_player_cls,
-            "player": player_instance,
+            "fluid_player": fluid_player,
+            "join_gate": join_gate,
         }
+        join_gate.set()  # unblock cleanup thread on teardown
 
 
 class TestPlayer:
@@ -121,29 +130,49 @@ class TestPlayer:
     def test_stop_calls_player_stop(self, mock_fluidsynth: dict) -> None:
         from music_df.playback._player import Player
 
+        mod = mock_fluidsynth["module"]
         p = Player()
         p.play(_simple_df())
         p.stop()
 
-        mock_fluidsynth["player"].stop.assert_called()
-        mock_fluidsynth["player"].join.assert_called()
+        fp = mock_fluidsynth["fluid_player"]
+        mod.fluid_player_stop.assert_called_with(fp)
+        mod.fluid_player_join.assert_called_with(fp)
+        mod.delete_fluid_player.assert_called_with(fp)
+
+    def test_stop_silences_all_channels(self, mock_fluidsynth: dict) -> None:
+        from music_df.playback._player import Player
+
+        mod = mock_fluidsynth["module"]
+        synth_handle = mock_fluidsynth["synth"].synth
+        p = Player()
+        p.play(_simple_df())
+        mod.fluid_synth_all_sounds_off.reset_mock()
+        p.stop()
+
+        assert mod.fluid_synth_all_sounds_off.call_count == 16
+        for chan in range(16):
+            mod.fluid_synth_all_sounds_off.assert_any_call(synth_handle, chan)
 
     def test_play_with_start_offset(self, mock_fluidsynth: dict) -> None:
         from music_df.playback._player import Player, _TICKS_PER_QUARTER
 
+        mod = mock_fluidsynth["module"]
+        fp = mock_fluidsynth["fluid_player"]
         p = Player()
         p.play(_simple_df(), start=4.0)
 
         expected_ticks = int(4.0 * _TICKS_PER_QUARTER)
-        mock_fluidsynth["player"].seek.assert_called_with(expected_ticks)
+        mod.fluid_player_seek.assert_called_with(fp, expected_ticks)
 
     def test_play_no_seek_at_zero(self, mock_fluidsynth: dict) -> None:
         from music_df.playback._player import Player
 
+        mod = mock_fluidsynth["module"]
         p = Player()
         p.play(_simple_df(), start=0.0)
 
-        mock_fluidsynth["player"].seek.assert_not_called()
+        mod.fluid_player_seek.assert_not_called()
 
     def test_is_playing(self, mock_fluidsynth: dict) -> None:
         from music_df.playback._player import Player
@@ -161,7 +190,7 @@ class TestPlayer:
         p.play(_simple_df())
         p.cleanup()
 
-        mock_fluidsynth["synth"].delete.assert_called()
+        mock_fluidsynth["synth_cls"].return_value.delete.assert_called()
 
 
 # ---------------------------------------------------------------------------

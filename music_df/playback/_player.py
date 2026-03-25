@@ -101,6 +101,9 @@ class Player:
             fluidsynth.fluid_player_join(self._fluid_player)
             fluidsynth.delete_fluid_player(self._fluid_player)
             self._fluid_player = None
+        # Silence any notes still sounding in the synth
+        for chan in range(16):
+            fluidsynth.fluid_synth_all_sounds_off(self._synth.synth, chan)
         self._remove_tmp_file()
 
     def is_playing(self) -> bool:
