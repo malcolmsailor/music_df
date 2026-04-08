@@ -160,6 +160,7 @@ _TRANSFORM_MODULES = (
     "music_df.slice_df",
     "music_df.sort_df",
     "music_df.split_notes",
+    "music_df.to_absolute_time",
 )
 
 

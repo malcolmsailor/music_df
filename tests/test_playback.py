@@ -90,6 +90,13 @@ def mock_fluidsynth():
     # _stop_unlocked calls fluid_player_stop, which opens the gate.
     join_gate = threading.Event()
 
+    # Snapshot live threads so we can drain any cleanup threads spawned
+    # during the test before patch() restores the real fluidsynth module.
+    # If we don't, a cleanup thread unblocked at teardown will call
+    # `fluidsynth.delete_fluid_player(mock_player)` against the *real* C
+    # library with a MagicMock as a pointer -> bus error.
+    pre_existing_threads = set(threading.enumerate())
+
     with (
         patch("music_df.playback._player.fluidsynth") as mock_mod,
         patch("music_df.playback._player.find_soundfont", return_value="/fake.sf2"),
@@ -102,14 +109,24 @@ def mock_fluidsynth():
         mock_mod.fluid_player_get_status.return_value = 1
         mock_mod.fluid_player_join.side_effect = lambda p: join_gate.wait()
         mock_mod.fluid_player_stop.side_effect = lambda p: join_gate.set()
-        yield {
-            "module": mock_mod,
-            "synth_cls": mock_synth_cls,
-            "synth": synth_instance,
-            "fluid_player": fluid_player,
-            "join_gate": join_gate,
-        }
-        join_gate.set()  # unblock cleanup thread on teardown
+        try:
+            yield {
+                "module": mock_mod,
+                "synth_cls": mock_synth_cls,
+                "synth": synth_instance,
+                "fluid_player": fluid_player,
+                "join_gate": join_gate,
+            }
+        finally:
+            # Unblock any parked cleanup threads, then wait for them to
+            # finish touching the mock *before* patch() unwinds.
+            join_gate.set()
+            for t in threading.enumerate():
+                if (
+                    t not in pre_existing_threads
+                    and t is not threading.current_thread()
+                ):
+                    t.join(timeout=2.0)
 
 
 class TestPlayer:
