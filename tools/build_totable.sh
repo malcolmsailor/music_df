@@ -5,13 +5,13 @@
 #   - C++ compiler (g++ or clang++)
 #
 # Usage (from repository root):
-#   ./scripts/build_totable.sh
+#   ./tools/build_totable.sh
 #
 # The script will detect the platform and output a binary with the appropriate
 # suffix (e.g., totable-linux-x86_64, totable-macos-arm64) to music_df/bin/.
 #
 # For cross-compilation on macOS to x86_64:
-#   ARCH=x86_64 ./scripts/build_totable.sh
+#   ARCH=x86_64 ./tools/build_totable.sh
 
 set -euo pipefail
 
@@ -60,7 +60,7 @@ echo "Output: ${OUTPUT_DIR}/${OUTPUT_NAME}"
 # Check for required files
 if [ ! -f "${HUMLIB_DIR}/humlib.h" ]; then
     echo "Error: humlib.h not found in ${HUMLIB_DIR}"
-    echo "Make sure the humlib sources are in scripts/humlib/"
+    echo "Make sure the humlib sources are in tools/humlib/"
     exit 1
 fi
 
