@@ -58,6 +58,8 @@ SPECIAL_KWARGS = {
 SKIP_TRANSFORMS = {
     # Requires original_note_id column from salami_slice
     "undo_salami_slice",
+    # Requires df.attrs["to_absolute_time_metadata"] from to_absolute_time
+    "from_absolute_time",
 }
 
 
