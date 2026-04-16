@@ -191,6 +191,11 @@ def scale_time_sigs(music_df: pd.DataFrame, factor: int | float) -> pd.DataFrame
     if not time_sig_mask.any():
         return music_df
     music_df = music_df.copy()
+    # After a parquet round-trip, `other` may arrive as string[pyarrow] with
+    # dict-repr string values. We need to write dict values back in, which a
+    # string-dtype column rejects — so coerce to object dtype up front.
+    if music_df["other"].dtype != object:
+        music_df["other"] = music_df["other"].astype(object)
     time_sigs = music_df[music_df.type == "time_signature"]
     time_sigs.loc[:, "other"] = time_sigs["other"].apply(_to_dict_if_necessary)
     updated_time_sigs = []
