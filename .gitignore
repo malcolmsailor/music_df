@@ -7,3 +7,4 @@ notebooks/.ipynb_checkpoints
 .claude
 CLAUDE.md
 temp_*
+uv.lock
